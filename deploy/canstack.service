@@ -1,0 +1,20 @@
+[Unit]
+Description=CanStack — collection de canettes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=canstack
+Group=canstack
+WorkingDirectory=/srv/app/canStack/server
+Environment=CANSTACK_DB=/var/lib/canstack/canstack.db
+Environment=CANSTACK_HOST=127.0.0.1
+Environment=CANSTACK_PORT=8055
+ExecStart=/srv/app/canStack/server/.venv/bin/python -m uvicorn app:app --host ${CANSTACK_HOST} --port ${CANSTACK_PORT}
+Restart=on-failure
+RestartSec=5
+StateDirectory=canstack
+
+[Install]
+WantedBy=multi-user.target
