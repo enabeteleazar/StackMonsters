@@ -9,10 +9,11 @@ export default defineConfig({
   plugins: [react()],
   build: {
     outDir: 'dist',
+    assetsInlineLimit: 0,
     // ZXing part dans son propre morceau, chargé au premier scan seulement.
     rollupOptions: {
       output: {
-        manualChunks: { zxing: ['@zxing/library'] },
+        manualChunks: { zxing: ['barcode-detector'] },
       },
     },
   },

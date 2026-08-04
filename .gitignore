@@ -3,3 +3,6 @@ dist/
 server/.venv/
 *.db
 .DS_Store
+tsconfig.tsbuildinfo
+pnpm-lock.yaml
+pnpm-workspace.yaml
