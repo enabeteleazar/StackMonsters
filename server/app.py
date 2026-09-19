@@ -17,7 +17,16 @@ from typing import Iterator
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-VERSION = "0.1.0"
+def _version() -> str:
+    """Lit VERSION à la racine du projet, seule source de vérité pour le numéro."""
+    chemin = Path(__file__).resolve().parent.parent / "VERSION"
+    try:
+        return chemin.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return "0.0.0"
+
+
+VERSION = _version()
 DB = Path(os.environ.get("CANSTACK_DB", "/var/lib/canstack/canstack.db"))
 
 SCHEMA = """
