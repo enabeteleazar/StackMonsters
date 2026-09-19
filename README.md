@@ -21,11 +21,11 @@ mais ne montre rien — c'est assumé pour cette version.
 
 ```bash
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin canstack
-sudo mkdir -p /srv/app/canStack
+sudo mkdir -p /srv/canStack
 # copier le contenu de cette archive dedans, puis :
-sudo chown -R canstack:canstack /srv/app/canStack
-sudo chmod -R a+rX /srv/app/canStack        # Caddy (utilisateur caddy) lit dist/
-cd /srv/app/canStack
+sudo chown -R canstack:canstack /srv/canStack
+sudo chmod -R a+rX /srv/canStack        # Caddy (utilisateur caddy) lit dist/
+cd /srv/canStack
 ```
 
 Le projet vit hors du dépôt Néron : `/srv` est fait pour les données servies par
@@ -49,7 +49,7 @@ bons droits. Vérifier avant tout que le port 8055 est libre : `ss -ltnp | grep 
 ### 3. Le front
 
 ```bash
-cd /srv/app/canStack
+cd /srv/canStack
 npm ci
 npm run build          # produit dist/
 ```
@@ -109,7 +109,7 @@ La base est un fichier unique :
 sqlite3 /var/lib/canstack/canstack.db ".backup '/chemin/sauvegarde.db'"
 ```
 
-L'écran Collection permet aussi un export JSON et CSV depuis le téléphone.
+L'écran Réglages permet aussi un export JSON et CSV depuis le téléphone.
 
 ## Points ouverts assumés
 
