@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Home, LayoutGrid, PlusCircle, ScanLine, Settings2 } from 'lucide-react'
 import { api } from './api'
 import Camera from './components/Camera'
 import Collection from './components/Collection'
+import Dashboard from './components/Dashboard'
+import Logo from './components/Logo'
+import Settings from './components/Settings'
 import Verdict from './components/Verdict'
 import { moteurNatif } from './scanner'
 import type { Canette } from './types'
 
-type Vue = 'scan' | 'collec'
+type Vue = 'accueil' | 'collec' | 'reglages'
 
 export default function App() {
   const [canettes, setCanettes] = useState<Canette[]>([])
-  const [vue, setVue] = useState<Vue>('scan')
+  const [vue, setVue] = useState<Vue>('accueil')
   const [camera, setCamera] = useState(false)
   const [ean, setEan] = useState<string | null>(null)
-  const [saisie, setSaisie] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [joignable, setJoignable] = useState(true)
 
@@ -71,87 +74,55 @@ export default function App() {
     }
   }
 
-  const rayures = Array.from({ length: 46 }, (_, i) => {
-    const src = ean ?? '4006391110'
-    const d = Number(src[i % src.length]) || 1
-    return <i key={i} style={{ width: 1 + (d % 4), opacity: 0.35 + (d % 5) / 10 }} />
-  })
+  const ajouterSansCode = () => setEan('LOCAL-' + Date.now().toString(36).toUpperCase())
 
   return (
     <>
       <header>
-        <div className="marque">
-          Can<em>Stack</em>
+        <div className="logo">
+          <Logo />
+          <div className="logo-marque">
+            Can<em>Stack</em>
+          </div>
         </div>
         <div className={`compteur ${joignable ? '' : 'hors-ligne'}`}>
+          <span className="point" />
           {joignable ? `${canettes.length} réf · ${total} canettes` : 'service injoignable'}
         </div>
       </header>
 
-      <main>
-        {vue === 'scan' ? (
-          <section>
-            <div className="zebre" aria-hidden="true">
-              {rayures}
-            </div>
-            <h1 className="accroche">
-              Déjà dans<span>la collection ?</span>
-            </h1>
-            <p className="sous">
-              Vise le code-barres de la canette. La collection vit sur Homebox, pas dans ce
-              téléphone.
-            </p>
+      <main className={vue === 'collec' ? 'large' : ''}>
+        {vue === 'accueil' && (
+          <Dashboard
+            canettes={canettes}
+            surScanner={() => setCamera(true)}
+            surAjouter={ajouterSansCode}
+            surOuvrir={setEan}
+            surReglages={() => setVue('reglages')}
+            surCodeManuel={setEan}
+            toast={toast}
+          />
+        )}
+        {vue === 'collec' && <Collection canettes={canettes} surOuvrir={setEan} />}
+        {vue === 'reglages' && <Settings canettes={canettes} joignable={joignable} />}
 
-            <button className="bouton-scan" onClick={() => setCamera(true)}>
-              ◉ Scanner une canette
-            </button>
-            <button
-              className="secondaire"
-              onClick={() => setEan('LOCAL-' + Date.now().toString(36).toUpperCase())}
-            >
-              Ajouter sans code-barres
-            </button>
-
-            <div className="manuel">
-              <input
-                value={saisie}
-                inputMode="numeric"
-                placeholder="Code saisi à la main"
-                aria-label="Code saisi à la main"
-                onChange={(e) => setSaisie(e.target.value)}
-              />
-              <button
-                onClick={() => {
-                  const v = saisie.trim()
-                  if (!v) return toast('Entre un code')
-                  setSaisie('')
-                  setEan(v)
-                }}
-              >
-                OK
-              </button>
-            </div>
-
-            {!joignable && (
-              <p className="sous" style={{ marginTop: 18 }}>
-                Le service ne répond pas. Vérifie que Tailscale est actif sur ce téléphone, puis
-                recharge la page.
-              </p>
-            )}
-            {!moteurNatif() && (
-              <p className="sous" style={{ marginTop: 18 }}>
-                Lecteur ZXing chargé au premier scan, depuis Homebox.
-              </p>
-            )}
-          </section>
-        ) : (
-          <Collection canettes={canettes} surOuvrir={setEan} />
+        {!joignable && vue === 'accueil' && (
+          <p className="sous" style={{ marginTop: 18 }}>
+            Le service ne répond pas. Vérifie que Tailscale est actif sur ce téléphone, puis
+            recharge la page.
+          </p>
+        )}
+        {!moteurNatif() && vue === 'accueil' && (
+          <p className="sous" style={{ marginTop: 18 }}>
+            Lecteur ZXing chargé au premier scan, depuis Homebox.
+          </p>
         )}
       </main>
 
-      <nav>
-        <button aria-current={vue === 'scan'} onClick={() => setVue('scan')}>
-          Scanner
+      <nav className="nav-bas">
+        <button aria-current={vue === 'accueil'} onClick={() => setVue('accueil')}>
+          <Home size={19} />
+          Accueil
         </button>
         <button
           aria-current={vue === 'collec'}
@@ -160,7 +131,22 @@ export default function App() {
             recharger()
           }}
         >
+          <LayoutGrid size={19} />
           Collection
+        </button>
+        <button className="nav-scan" onClick={() => setCamera(true)} aria-label="Scanner une canette">
+          <span className="nav-scan-rond">
+            <ScanLine size={22} strokeWidth={2.4} />
+          </span>
+          Scan
+        </button>
+        <button onClick={ajouterSansCode}>
+          <PlusCircle size={19} />
+          Ajouter
+        </button>
+        <button aria-current={vue === 'reglages'} onClick={() => setVue('reglages')}>
+          <Settings2 size={19} />
+          Réglages
         </button>
       </nav>
 

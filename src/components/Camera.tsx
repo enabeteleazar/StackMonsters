@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Loader2, ScanLine, X } from 'lucide-react'
 import { demarrerScanner, type Scanner } from '../scanner'
 
 type Props = {
@@ -40,15 +41,20 @@ export default function Camera({ surCode, surFermeture, surErreur }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const preparation = indice.startsWith('Préparation')
+
   return (
     <div className="camera">
       <video ref={video} playsInline muted autoPlay />
       <div className="viseur">
         <div className="fenetre" />
-        <p className="indice">{indice}</p>
+        <div className="etat-scan">
+          {preparation ? <Loader2 size={15} className="anim-tourne" /> : <ScanLine size={15} />}
+          <p className="indice">{indice}</p>
+        </div>
       </div>
-      <button className="fermer" onClick={surFermeture} aria-label="Fermer le scanner">
-        ✕
+      <button className="btn-icone fermer" onClick={surFermeture} aria-label="Fermer le scanner">
+        <X size={20} />
       </button>
     </div>
   )

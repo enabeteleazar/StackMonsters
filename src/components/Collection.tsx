@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { ImageOff, PackageSearch, Search } from 'lucide-react'
 import type { Canette } from '../types'
 
 type Props = {
@@ -6,9 +7,12 @@ type Props = {
   surOuvrir: (ean: string) => void
 }
 
+type Tri = 'recent' | 'nom' | 'nb'
+
 export default function Collection({ canettes, surOuvrir }: Props) {
   const [q, setQ] = useState('')
   const [edition, setEdition] = useState('')
+  const [tri, setTri] = useState<Tri>('recent')
 
   const editions = useMemo(() => {
     const m = new Map<string, number>()
@@ -21,36 +25,21 @@ export default function Collection({ canettes, surOuvrir }: Props) {
 
   const vues = useMemo(() => {
     const t = q.trim().toLowerCase()
-    return canettes
+    const filtrees = canettes
       .filter((c) => !t || c.nom.toLowerCase().includes(t) || c.ean.includes(t))
       .filter((c) => !edition || (c.edition || '—') === edition)
-      .sort((a, b) => b.ajout.localeCompare(a.ajout))
-  }, [canettes, q, edition])
+    return filtrees.sort((a, b) => {
+      if (tri === 'nom') return a.nom.localeCompare(b.nom)
+      if (tri === 'nb') return b.nb - a.nb
+      return b.ajout.localeCompare(a.ajout)
+    })
+  }, [canettes, q, edition, tri])
 
   const total = canettes.reduce((n, c) => n + c.nb, 0)
 
-  const telecharger = (nom: string, contenu: string, type: string) => {
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([contenu], { type }))
-    a.download = nom
-    a.click()
-    URL.revokeObjectURL(a.href)
-  }
-
-  const exportCsv = () => {
-    const cols: (keyof Canette)[] = ['ean', 'nom', 'edition', 'volume', 'etat', 'nb', 'notes', 'ajout']
-    const csv = [cols.join(';')]
-      .concat(
-        canettes.map((c) =>
-          cols.map((k) => `"${String(c[k] ?? '').replace(/"/g, '""')}"`).join(';'),
-        ),
-      )
-      .join('\n')
-    telecharger('canstack.csv', '\ufeff' + csv, 'text/csv')
-  }
-
   return (
     <section>
+      <span className="eyebrow">Collection</span>
       <div className="stats">
         <div className="stat">
           <b>{canettes.length}</b>
@@ -67,14 +56,19 @@ export default function Collection({ canettes, surOuvrir }: Props) {
       </div>
 
       <div className="filtres">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Chercher un nom"
-          aria-label="Chercher un nom"
-        />
+        <div className="recherche">
+          <Search size={16} />
+          <input
+            value={q}
+            name="recherche"
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Chercher un nom"
+            aria-label="Chercher un nom"
+          />
+        </div>
         <select
           value={edition}
+          name="edition"
           onChange={(e) => setEdition(e.target.value)}
           aria-label="Filtrer par édition"
         >
@@ -83,43 +77,38 @@ export default function Collection({ canettes, surOuvrir }: Props) {
             <option key={e}>{e}</option>
           ))}
         </select>
+        <select value={tri} name="tri" onChange={(e) => setTri(e.target.value as Tri)} aria-label="Trier">
+          <option value="recent">Plus récentes</option>
+          <option value="nom">Nom A→Z</option>
+          <option value="nb">Quantité</option>
+        </select>
       </div>
 
       {vues.length ? (
-        <ul className="liste">
+        <div className="grille-collection">
           {vues.map((c) => (
-            <li key={c.ean}>
-              <button onClick={() => surOuvrir(c.ean)}>
-                {c.photo ? <img src={c.photo} alt="" /> : <img alt="" />}
-                <span>
-                  <span className="nom">{c.nom || 'Sans nom'}</span>
-                  <span className="meta" style={{ display: 'block' }}>
-                    {c.ean} · {c.edition || '—'} · {c.volume || '—'}
-                  </span>
-                </span>
-                <span className="nb">×{c.nb}</span>
-              </button>
-            </li>
+            <button key={c.ean} className="carte-canette" onClick={() => surOuvrir(c.ean)}>
+              <div className="carte-photo">
+                {c.photo ? (
+                  <img src={c.photo} alt="" />
+                ) : (
+                  <ImageOff className="ph-vide" size={26} />
+                )}
+                {c.nb > 1 && <span className="nb-badge">×{c.nb}</span>}
+              </div>
+              <div className="carte-corps">
+                <span className="nom">{c.nom || 'Sans nom'}</span>
+                <span className="meta">{c.edition || '—'} · {c.volume || '—'}</span>
+              </div>
+            </button>
           ))}
-        </ul>
+        </div>
       ) : (
-        <p className="vide">Rien ici pour l'instant. Scanne ta première canette.</p>
+        <p className="vide">
+          <PackageSearch size={30} />
+          Rien ici pour l'instant. Scanne ta première canette.
+        </p>
       )}
-
-      <div className="outils">
-        <button
-          onClick={() =>
-            telecharger(
-              `canstack-${new Date().toISOString().slice(0, 10)}.json`,
-              JSON.stringify(canettes, null, 2),
-              'application/json',
-            )
-          }
-        >
-          Sauvegarde JSON
-        </button>
-        <button onClick={exportCsv}>Export CSV</button>
-      </div>
     </section>
   )
 }
