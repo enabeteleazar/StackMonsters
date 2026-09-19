@@ -8,7 +8,7 @@ canStack/
 ├── src/            front (React + TypeScript)
 ├── server/         service FastAPI + SQLite
 ├── deploy/         unité systemd et extrait de Caddyfile
-└── dist/           produit par `npm run build`, servi par Caddy
+└── dist/           produit par `pnpm run build`, servi par Caddy
 ```
 
 **Ce que le front ne fait pas** : il ne stocke rien. Toute la collection vit
@@ -50,8 +50,8 @@ bons droits. Vérifier avant tout que le port 8055 est libre : `ss -ltnp | grep 
 
 ```bash
 cd /srv/canStack
-npm ci
-npm run build          # produit dist/
+pnpm install --frozen-lockfile
+pnpm run build          # produit dist/
 ```
 
 Node 18 ou plus. Le build est fait à la main : pas d'`ExecStartPre` de build
@@ -93,9 +93,9 @@ Safari, puis Partager → Sur l'écran d'accueil.
 ## Développement
 
 ```bash
-npm run dev     # http://localhost:5273/monsters/ , proxie /monsters/api vers 8055
-npm run build
-npm run typecheck
+pnpm run dev     # http://localhost:5273/monsters/ , proxie /monsters/api vers 8055
+pnpm run build
+pnpm run typecheck
 ```
 
 Le service doit tourner en parallèle (`./server/.venv/bin/python -m uvicorn app:app --port 8055`
