@@ -4,3 +4,4 @@ server/.venv/
 *.db
 .DS_Store
 tsconfig.tsbuildinfo
+.vercel
