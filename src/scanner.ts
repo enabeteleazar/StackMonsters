@@ -9,7 +9,7 @@ import { LECTURES_CONFIRMATION } from './config'
  * plus rapide et plus tolérant que l'ancienne implémentation JavaScript,
  * ce qui compte sur une canette, dont le code-barres est courbé.
  *
- * Le fichier .wasm est servi par Homebox, jamais par un CDN.
+ * Le fichier .wasm est servi par le site lui-même, jamais par un CDN.
  */
 
 const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'] as const

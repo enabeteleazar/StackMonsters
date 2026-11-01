@@ -1,11 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// La base correspond au chemin servi par Caddy sur Homebox.
+// Sur Vercel le site est servi à la racine, et l'API sous /api (voir api/index.py).
 // Aucune URL absolue ni aucun port ne doit apparaître dans le bundle :
 // le front parle toujours au service par un chemin relatif (voir src/config.ts).
 export default defineConfig({
-  base: '/monsters/',
+  base: '/',
   plugins: [react()],
   build: {
     outDir: 'dist',
@@ -19,12 +19,9 @@ export default defineConfig({
   },
   server: {
     port: 5273,
+    // En développement, ./dev.sh lance l'API (uvicorn) sur 8055.
     proxy: {
-      '/monsters/api': {
-        target: 'http://127.0.0.1:8055',
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/monsters\/api/, ''),
-      },
+      '/api': { target: 'http://127.0.0.1:8055', changeOrigin: true },
     },
   },
 })
