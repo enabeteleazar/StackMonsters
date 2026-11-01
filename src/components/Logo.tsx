@@ -1,6 +1,6 @@
 type Props = { taille?: number }
 
-/** Marque CanStack : une canette stylisée traversée d'un éclair, posée sur une pile. */
+/** Marque StackMonster : une canette stylisée traversée d'un éclair, posée sur une pile. */
 export default function Logo({ taille = 30 }: Props) {
   return (
     <svg

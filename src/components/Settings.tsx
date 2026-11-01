@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Cpu, Database, Download, FileJson, Radio, Server } from 'lucide-react'
-import { api } from '../api'
+import { Cpu, Database, Download, FileJson, Lock, Radio, Server } from 'lucide-react'
+import { api, jeton } from '../api'
 import { moteurNatif } from '../scanner'
 import type { Canette } from '../types'
 
 type Props = {
   canettes: Canette[]
   joignable: boolean
+  surVerrouiller: () => void
 }
 
-export default function Settings({ canettes, joignable }: Props) {
+export default function Settings({ canettes, joignable, surVerrouiller }: Props) {
   const [sante, setSante] = useState<{ status: string; version: string; canettes: number } | null>(null)
 
   useEffect(() => {
@@ -45,7 +46,7 @@ export default function Settings({ canettes, joignable }: Props) {
 
   return (
     <section>
-      <span className="eyebrow">CanStack</span>
+      <span className="eyebrow">StackMonster</span>
       <h1 className="tb-titre" style={{ fontSize: 'clamp(26px,7vw,34px)' }}>
         Réglages
       </h1>
@@ -57,7 +58,7 @@ export default function Settings({ canettes, joignable }: Props) {
         <div className="reglages-ligne">
           <span className="libelle">
             <Server size={17} />
-            Connexion Homebox
+            Connexion au service
           </span>
           <span className={`valeur ${joignable ? 'ok' : 'ko'}`}>
             {joignable ? 'En ligne' : 'Injoignable'}
@@ -99,9 +100,18 @@ export default function Settings({ canettes, joignable }: Props) {
             <Download size={15} />
             Export CSV
           </button>
+          <button
+            onClick={() => {
+              jeton.effacer()
+              surVerrouiller()
+            }}
+          >
+            <Lock size={15} />
+            Verrouiller
+          </button>
         </div>
         <p className="sous" style={{ marginTop: 14 }}>
-          La collection vit sur Homebox, pas sur ce téléphone. Ces exports sont une copie locale,
+          La collection vit dans la base en ligne, pas sur ce téléphone. Ces exports sont une copie locale,
           pas une sauvegarde de remplacement.
         </p>
       </div>

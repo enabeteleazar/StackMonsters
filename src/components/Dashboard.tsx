@@ -60,7 +60,7 @@ export default function Dashboard({
           <i key={i} style={{ width: r.largeur, opacity: r.opacite }} />
         ))}
       </div>
-      <span className="eyebrow">CanStack · Collection</span>
+      <span className="eyebrow">StackMonster · Collection</span>
       <h1 className="tb-titre">
         Ta collection
         <span>en un coup d'œil</span>

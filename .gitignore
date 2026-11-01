@@ -1,8 +1,11 @@
 node_modules/
 dist/
 server/.venv/
+.venv/
+__pycache__/
 *.db
 .DS_Store
 tsconfig.tsbuildinfo
 .vercel
 .env*
+!.env.example

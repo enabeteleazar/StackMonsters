@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Home, LayoutGrid, PlusCircle, ScanLine, Settings2 } from 'lucide-react'
-import { api } from './api'
+import { api, jeton, NonAutorise } from './api'
+import Acces from './components/Acces'
+import HorsLigne from './components/HorsLigne'
 import Camera from './components/Camera'
 import Collection from './components/Collection'
 import Dashboard from './components/Dashboard'
@@ -19,20 +21,30 @@ export default function App() {
   const [ean, setEan] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [joignable, setJoignable] = useState(true)
+  const [autorise, setAutorise] = useState(true)
+  const [refuse, setRefuse] = useState(false)
 
   const toast = useCallback((m: string) => {
     setMessage(m)
     window.setTimeout(() => setMessage(null), 2400)
   }, [])
 
+  // Retour à l'écran d'accès. « refuse » distingue un jeton rejeté d'un jeton absent.
+  const verrouiller = useCallback(() => {
+    setRefuse(jeton.lire() !== '')
+    setAutorise(false)
+  }, [])
+
   const recharger = useCallback(async () => {
     try {
       setCanettes(await api.liste())
       setJoignable(true)
-    } catch {
-      setJoignable(false)
+      setAutorise(true)
+    } catch (e) {
+      if (e instanceof NonAutorise) verrouiller()
+      else setJoignable(false)
     }
-  }, [])
+  }, [verrouiller])
 
   useEffect(() => {
     recharger()
@@ -48,7 +60,8 @@ export default function App() {
       toast('Fiche enregistrée')
       setEan(null)
     } catch (e) {
-      toast(`Enregistrement refusé — ${(e as Error).message}`)
+      if (e instanceof NonAutorise) verrouiller()
+      else toast(`Enregistrement refusé — ${(e as Error).message}`)
     }
   }
 
@@ -59,7 +72,8 @@ export default function App() {
       toast(`${c.nom || 'Canette'} : ${c.nb} exemplaires`)
       setEan(null)
     } catch (err) {
-      toast(`Service injoignable — ${(err as Error).message}`)
+      if (err instanceof NonAutorise) verrouiller()
+      else toast(`Service injoignable — ${(err as Error).message}`)
     }
   }
 
@@ -70,11 +84,30 @@ export default function App() {
       toast('Retirée de la collection')
       setEan(null)
     } catch (err) {
-      toast(`Suppression refusée — ${(err as Error).message}`)
+      if (err instanceof NonAutorise) verrouiller()
+      else toast(`Suppression refusée — ${(err as Error).message}`)
     }
   }
 
   const ajouterSansCode = () => setEan('LOCAL-' + Date.now().toString(36).toUpperCase())
+
+  if (!autorise) {
+    return (
+      <>
+        <header>
+          <div className="logo">
+            <Logo />
+            <div className="logo-marque">
+              Stack<em>Monster</em>
+            </div>
+          </div>
+        </header>
+        <main>
+          <Acces refuse={refuse} surValider={recharger} />
+        </main>
+      </>
+    )
+  }
 
   return (
     <>
@@ -82,7 +115,7 @@ export default function App() {
         <div className="logo">
           <Logo />
           <div className="logo-marque">
-            Can<em>Stack</em>
+            Stack<em>Monster</em>
           </div>
         </div>
         <div className={`compteur ${joignable ? '' : 'hors-ligne'}`}>
@@ -92,6 +125,7 @@ export default function App() {
       </header>
 
       <main className={vue === 'collec' ? 'large' : ''}>
+        <HorsLigne />
         {vue === 'accueil' && (
           <Dashboard
             canettes={canettes}
@@ -104,17 +138,18 @@ export default function App() {
           />
         )}
         {vue === 'collec' && <Collection canettes={canettes} surOuvrir={setEan} />}
-        {vue === 'reglages' && <Settings canettes={canettes} joignable={joignable} />}
+        {vue === 'reglages' && (
+          <Settings canettes={canettes} joignable={joignable} surVerrouiller={verrouiller} />
+        )}
 
         {!joignable && vue === 'accueil' && (
           <p className="sous" style={{ marginTop: 18 }}>
-            Le service ne répond pas. Vérifie que Tailscale est actif sur ce téléphone, puis
-            recharge la page.
+            Le service ne répond pas. Vérifie ta connexion, puis recharge la page.
           </p>
         )}
         {!moteurNatif() && vue === 'accueil' && (
           <p className="sous" style={{ marginTop: 18 }}>
-            Lecteur ZXing chargé au premier scan, depuis Homebox.
+            Lecteur ZXing chargé au premier scan.
           </p>
         )}
       </main>

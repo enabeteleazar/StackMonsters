@@ -8,3 +8,10 @@ createRoot(document.getElementById('racine')!).render(
     <App />
   </StrictMode>,
 )
+
+// PWA : le service worker met l'appli et la dernière collection en cache.
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
