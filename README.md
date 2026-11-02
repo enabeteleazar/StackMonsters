@@ -3,27 +3,33 @@
 PWA de collection de canettes : scan du code-barres, fiche, compteur, photo.
 Front React + TypeScript (Vite), API FastAPI (`api/index.py`), Postgres (Neon), Vercel.
 
-**PWA** : manifeste + icônes (installable), service worker (`public/sw.js`) qui garde
-l'appli et la dernière liste de canettes pour une ouverture sans réseau. Les
-modifications exigent le réseau (pas de file d'attente). Le lecteur de codes ne
-fonctionne hors ligne qu'après un premier scan fait en ligne.
-
-**Accès** : site public, donc jeton `API_TOKEN` exigé sur chaque route de l'API.
+## Comptes
+Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais, 5 demandes par heure et
+par adresse). Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
+Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
 
 ## Déployer
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).
-2. Variable `API_TOKEN` : `openssl rand -hex 24`.
-3. `vercel --prod`.
-4. iPhone : ouvrir l'URL dans Safari, entrer le jeton, Partager → Sur l'écran d'accueil.
-5. Reprise d'anciennes données : `scripts/migrer.py` (base SQLite ou export JSON).
+2. Variables d'environnement (voir `.env.example`) : `SESSION_SECRET`, `RESEND_API_KEY`,
+   `MAIL_FROM`, `OWNER_EMAIL`. Supprime `API_TOKEN`, devenu inutile.
+3. Compte **Resend** pour l'envoi des codes. Sans domaine vérifié, l'expéditeur de test
+   (`onboarding@resend.dev`) ne livre qu'à l'adresse du compte : à vérifier chez Resend.
+4. `vercel --prod`, puis connecte-toi avec `OWNER_EMAIL` : l'ancienne collection (table
+   `canettes`) est copiée dans ton compte, une seule fois, à la création de ton utilisateur.
+
+Import d'anciennes données : `scripts/migrer.py` écrit dans `canettes` ; fais-le **avant** la
+première connexion du propriétaire.
 
 ## Développer
 ```bash
 export DATABASE_URL=postgresql://postgres:dev@127.0.0.1:55432/postgres
-pnpm install && ./dev.sh      # http://localhost:5273, jeton « dev »
+pnpm install && ./dev.sh      # http://localhost:5273
 ```
-Tests : `pnpm test` (front) ; `TEST_DATABASE_URL=… python -m pytest tests` (API, base de test).
+En local, saisis un e-mail : le code s'affiche dans le terminal (ligne `[dev]`).
+Tests : `pnpm test` ; `TEST_DATABASE_URL=… python -m pytest tests` (jamais sur la production).
 
-## À savoir
-Le service worker ne s'active qu'en production (`pnpm build`), pas avec `pnpm dev`.
-Pour publier une nouvelle version du cache, incrémente `V` dans `public/sw.js`.
+## Limites assumées
+- Aucune protection contre l'inscription en masse (un compte se crée à la première vérification).
+- Session stockée dans `localStorage`, envoyée en `Bearer` (pas de cookie).
+- Pas de suppression de compte ni de partage de collection.
+- Hors ligne : lecture seule de la dernière liste ; « Se déconnecter » vide ce cache.

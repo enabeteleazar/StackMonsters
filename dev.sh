@@ -18,7 +18,8 @@ if [ -z "${DATABASE_URL:-}" ]; then
   echo "                        export DATABASE_URL=postgresql://postgres:dev@localhost:5432/postgres" >&2
   exit 1
 fi
-export API_TOKEN="${API_TOKEN:-dev}"
+export SESSION_SECRET="${SESSION_SECRET:-dev-secret}"
+export AUTH_DEV=1   # sans RESEND_API_KEY, le code de connexion s'affiche dans ce terminal
 
 if [ ! -d .venv ]; then
   python3 -m venv .venv
@@ -29,5 +30,5 @@ fi
 API=$!
 trap 'kill $API 2>/dev/null || true' EXIT
 
-echo "Jeton d'accès local : ${API_TOKEN}"
+echo "Connexion locale : saisis un e-mail, puis lis le code dans ce terminal (ligne [dev])."
 pnpm run dev

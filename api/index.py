@@ -1,16 +1,20 @@
-"""Service StackMonster pour Vercel — la collection vit dans Postgres (Neon).
+"""API StackMonster (Vercel) : connexion par e-mail + code, collection par utilisateur.
 
-Sur Vercel, le disque est éphémère : on ne peut plus garder un fichier SQLite.
-La base est donc externe (variable DATABASE_URL, injectée par l'intégration
-Neon). L'URL du site est publique, donc chaque route exige le jeton API_TOKEN
-(en-tête « Authorization: Bearer … »).
+Flux : POST /auth/demande {email} envoie un code à 6 chiffres ; POST /auth/verification
+{email, code} renvoie un jeton de session (30 jours). Toutes les autres routes exigent
+« Authorization: Bearer <session> » et ne voient que la collection de leur propriétaire.
 """
 
 from __future__ import annotations
 
+import hashlib
 import hmac
+import json
 import os
+import re
+import secrets
 import time
+import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -22,32 +26,37 @@ from pydantic import BaseModel, Field
 
 
 def _version() -> str:
-    """Lit VERSION à la racine du projet, seule source de vérité pour le numéro."""
-    chemin = Path(__file__).resolve().parent.parent / "VERSION"
     try:
-        return chemin.read_text(encoding="utf-8").strip()
+        return (Path(__file__).resolve().parent.parent / "VERSION").read_text(encoding="utf-8").strip()
     except FileNotFoundError:
         return "0.0.0"
 
 
 VERSION = _version()
-
 COLONNES = "ean, nom, edition, volume, etat, nb, notes, photo, ajout"
+DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS canettes (
-    ean      TEXT PRIMARY KEY,
-    nom      TEXT NOT NULL DEFAULT '',
-    edition  TEXT NOT NULL DEFAULT '',
-    volume   TEXT NOT NULL DEFAULT '',
-    etat     TEXT NOT NULL DEFAULT '',
-    nb       INTEGER NOT NULL DEFAULT 1,
-    notes    TEXT NOT NULL DEFAULT '',
-    photo    TEXT,
-    ajout    TEXT NOT NULL,
-    maj      TEXT NOT NULL
-)
+CHAMPS = """ean TEXT NOT NULL, nom TEXT NOT NULL DEFAULT '', edition TEXT NOT NULL DEFAULT '',
+    volume TEXT NOT NULL DEFAULT '', etat TEXT NOT NULL DEFAULT '', nb INTEGER NOT NULL DEFAULT 1,
+    notes TEXT NOT NULL DEFAULT '', photo TEXT, ajout TEXT NOT NULL, maj TEXT NOT NULL"""
+
+SCHEMA = f"""
+CREATE TABLE IF NOT EXISTS canettes (ean TEXT PRIMARY KEY, nom TEXT NOT NULL DEFAULT '',
+    edition TEXT NOT NULL DEFAULT '', volume TEXT NOT NULL DEFAULT '', etat TEXT NOT NULL DEFAULT '',
+    nb INTEGER NOT NULL DEFAULT 1, notes TEXT NOT NULL DEFAULT '', photo TEXT,
+    ajout TEXT NOT NULL, maj TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS users (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL UNIQUE, cree BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS codes (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL, hash TEXT NOT NULL,
+    expire BIGINT NOT NULL, essais INTEGER NOT NULL DEFAULT 0, cree BIGINT NOT NULL);
+CREATE INDEX IF NOT EXISTS codes_email ON codes (email);
+CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expire BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS collection (user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    {CHAMPS}, PRIMARY KEY (user_id, ean));
 """
+# « canettes » est la table historique (collection unique) : scripts/migrer.py y écrit encore,
+# et elle est reprise dans la collection de OWNER_EMAIL à sa toute première connexion.
 
 
 class Canette(BaseModel):
@@ -58,7 +67,6 @@ class Canette(BaseModel):
     etat: str = ""
     nb: int = Field(default=1, ge=1, le=9999)
     notes: str = ""
-    # Une photo réduite à 640 px pèse ~40 ko en base64 : 300 000 caractères suffisent.
     photo: str | None = Field(default=None, max_length=300_000)
     ajout: str = ""
 
@@ -67,7 +75,15 @@ class Delta(BaseModel):
     delta: int = Field(ge=-99, le=99)
 
 
-# --- base de données ---------------------------------------------------------
+class Demande(BaseModel):
+    email: str = Field(max_length=254)
+
+
+class Verification(Demande):
+    code: str = Field(min_length=6, max_length=6)
+
+
+# --- base --------------------------------------------------------------------
 
 _schema_pret = False
 
@@ -80,10 +96,6 @@ def _url() -> str:
 
 
 def _creer_schema(cx: psycopg.Connection) -> None:
-    """Création de la table au premier appel de chaque instance.
-
-    Le verrou évite que deux démarrages à froid simultanés se marchent dessus.
-    """
     global _schema_pret
     if _schema_pret:
         return
@@ -95,108 +107,195 @@ def _creer_schema(cx: psycopg.Connection) -> None:
 
 @contextmanager
 def base() -> Iterator[psycopg.Connection]:
-    # prepare_threshold=None : la chaîne Neon « pooled » passe par pgbouncer,
-    # qui n'accepte pas les requêtes préparées côté serveur.
-    with psycopg.connect(
-        _url(), row_factory=dict_row, prepare_threshold=None, connect_timeout=10
-    ) as cx:
+    with psycopg.connect(_url(), row_factory=dict_row, prepare_threshold=None, connect_timeout=10) as cx:
         _creer_schema(cx)
-        yield cx  # commit à la sortie du bloc, rollback sur exception
+        yield cx
 
 
 def maintenant() -> str:
-    """Même format que le front (toISOString) : les dates se trient comme du texte."""
     return time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
 
-# --- accès -------------------------------------------------------------------
+# --- e-mail et sessions --------------------------------------------------------
 
 
-def verifier_jeton(authorization: str | None = Header(default=None)) -> None:
-    attendu = os.environ.get("API_TOKEN", "")
-    if not attendu:
-        # Sans jeton configuré, mieux vaut tout refuser que tout ouvrir.
-        raise HTTPException(503, "API_TOKEN non configuré")
-    fourni = (authorization or "").removeprefix("Bearer ").strip()
-    if not hmac.compare_digest(fourni.encode(), attendu.encode()):
-        raise HTTPException(401, "jeton invalide")
+def _secret() -> bytes:
+    s = os.environ.get("SESSION_SECRET", "")
+    if not s:
+        raise HTTPException(503, "SESSION_SECRET non configuré")
+    return s.encode()
 
 
-# --- routes ------------------------------------------------------------------
+def _hash_code(email: str, code: str) -> str:
+    return hmac.new(_secret(), f"{email}:{code}".encode(), hashlib.sha256).hexdigest()
 
-router = APIRouter(dependencies=[Depends(verifier_jeton)])
+
+def _hash_session(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def envoyer_code(email: str, code: str) -> None:
+    cle = os.environ.get("RESEND_API_KEY")
+    if not cle:
+        if os.environ.get("AUTH_DEV") == "1":
+            print(f"[dev] code de connexion pour {email} : {code}", flush=True)
+            return
+        raise HTTPException(503, "envoi d'e-mail non configuré")
+    corps = {
+        "from": os.environ.get("MAIL_FROM", "StackMonster <onboarding@resend.dev>"),
+        "to": [email],
+        "subject": f"Ton code StackMonster : {code}",
+        "text": f"Ton code de connexion : {code}\nIl est valable 10 minutes. Si tu n'es pas à l'origine de cette demande, ignore ce message.",
+    }
+    req = urllib.request.Request(
+        "https://api.resend.com/emails", data=json.dumps(corps).encode(), method="POST",
+        headers={"Authorization": f"Bearer {cle}", "Content-Type": "application/json", "User-Agent": "stackmonster/1"},
+    )
+    try:
+        urllib.request.urlopen(req, timeout=10).close()
+    except Exception:
+        raise HTTPException(502, "envoi d'e-mail impossible") from None
+
+
+def utilisateur(authorization: str | None = Header(default=None)) -> dict:
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    if token:
+        h = _hash_session(token)
+        with base() as cx:
+            u = cx.execute(
+                "SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id "
+                "WHERE s.hash = %s AND s.expire > %s", (h, int(time.time())),
+            ).fetchone()
+        if u:
+            return {**u, "hash": h}
+    raise HTTPException(401, "connexion requise")
+
+
+# --- routes publiques : connexion ----------------------------------------------
+
+auth = APIRouter(prefix="/auth")
+
+
+@auth.post("/demande")
+def demande(d: Demande) -> dict:
+    email = d.email.strip().lower()
+    if not EMAIL_RE.match(email):
+        raise HTTPException(422, "adresse invalide")
+    now = int(time.time())
+    code = f"{secrets.randbelow(10**6):06d}"
+    with base() as cx:
+        cx.execute("DELETE FROM codes WHERE expire < %s", (now,))
+        cx.execute("DELETE FROM sessions WHERE expire < %s", (now,))
+        n = cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s AND cree > %s", (email, now - 3600)).fetchone()["n"]
+        if n >= DEMANDES_MAX:
+            raise HTTPException(429, "trop de demandes")
+        cx.execute("INSERT INTO codes (email, hash, expire, cree) VALUES (%s, %s, %s, %s)",
+                   (email, _hash_code(email, code), now + DUREE_CODE, now))
+    envoyer_code(email, code)
+    return {"ok": True}  # même réponse que l'adresse existe ou non
+
+
+@auth.post("/verification")
+def verification(v: Verification) -> dict:
+    email, now = v.email.strip().lower(), int(time.time())
+    with base() as cx:
+        c = cx.execute("SELECT id, hash, essais FROM codes WHERE email = %s AND expire > %s ORDER BY id DESC LIMIT 1",
+                       (email, now)).fetchone()
+        if not c or c["essais"] >= ESSAIS_MAX:
+            raise HTTPException(401, "code invalide ou expiré")
+        cx.execute("UPDATE codes SET essais = essais + 1 WHERE id = %s", (c["id"],))
+        cx.commit()  # le compteur d'essais doit survivre à l'erreur qui suit
+        if not hmac.compare_digest(c["hash"], _hash_code(email, v.code)):
+            raise HTTPException(401, "code invalide ou expiré")
+        cx.execute("DELETE FROM codes WHERE email = %s", (email,))
+        u = cx.execute("INSERT INTO users (email, cree) VALUES (%s, %s) ON CONFLICT (email) DO NOTHING RETURNING id",
+                       (email, now)).fetchone()
+        if u:  # premier passage : le propriétaire récupère la collection historique
+            if email == os.environ.get("OWNER_EMAIL", "").strip().lower():
+                cx.execute(
+                    f"INSERT INTO collection (user_id, {COLONNES}, maj) SELECT %s, {COLONNES}, maj FROM canettes ON CONFLICT DO NOTHING",
+                    (u["id"],))
+        else:
+            u = cx.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
+        token = secrets.token_urlsafe(32)
+        cx.execute("INSERT INTO sessions (hash, user_id, expire) VALUES (%s, %s, %s)",
+                   (_hash_session(token), u["id"], now + DUREE_SESSION))
+    return {"token": token, "email": email}
+
+
+# --- routes protégées : la collection de l'utilisateur connecté -----------------
+
+router = APIRouter(dependencies=[Depends(utilisateur)])
+
+
+@router.get("/auth/moi")
+def moi(u: dict = Depends(utilisateur)) -> dict:
+    return {"email": u["email"]}
+
+
+@router.post("/auth/deconnexion", status_code=204)
+def deconnexion(u: dict = Depends(utilisateur)) -> None:
+    with base() as cx:
+        cx.execute("DELETE FROM sessions WHERE hash = %s", (u["hash"],))
 
 
 @router.get("/health")
-def sante() -> dict:
+def sante(u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
-        n = cx.execute("SELECT COUNT(*) AS n FROM canettes").fetchone()["n"]
+        n = cx.execute("SELECT COUNT(*) AS n FROM collection WHERE user_id = %s", (u["id"],)).fetchone()["n"]
     return {"status": "ok", "version": VERSION, "canettes": n}
 
 
 @router.get("/cans")
-def liste() -> list[dict]:
+def liste(u: dict = Depends(utilisateur)) -> list[dict]:
     with base() as cx:
-        return cx.execute(
-            f"SELECT {COLONNES} FROM canettes ORDER BY ajout DESC"
-        ).fetchall()
+        return cx.execute(f"SELECT {COLONNES} FROM collection WHERE user_id = %s ORDER BY ajout DESC", (u["id"],)).fetchall()
 
 
 @router.get("/cans/{ean}")
-def lire(ean: str) -> dict:
+def lire(ean: str, u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
-        r = cx.execute(f"SELECT {COLONNES} FROM canettes WHERE ean = %s", (ean,)).fetchone()
+        r = cx.execute(f"SELECT {COLONNES} FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).fetchone()
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
 
 
 @router.put("/cans")
-def enregistrer(c: Canette) -> dict:
-    """Création ou mise à jour. La date d'ajout d'origine n'est jamais écrasée."""
+def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
         return cx.execute(
-            f"""INSERT INTO canettes (ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (ean) DO UPDATE SET
-                  nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume,
-                  etat=EXCLUDED.etat, nb=EXCLUDED.nb, notes=EXCLUDED.notes,
-                  photo=EXCLUDED.photo, maj=EXCLUDED.maj
+            f"""INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, ean) DO UPDATE SET
+                  nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
+                  nb=EXCLUDED.nb, notes=EXCLUDED.notes, photo=EXCLUDED.photo, maj=EXCLUDED.maj
                 RETURNING {COLONNES}""",
-            (
-                c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
-                c.ajout or maintenant(), maintenant(),
-            ),
+            (u["id"], c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
+             c.ajout or maintenant(), maintenant()),
         ).fetchone()
 
 
 @router.patch("/cans/{ean}/nb")
-def ajuster(ean: str, d: Delta) -> dict:
-    # Une seule instruction : pas de « lire puis écrire », donc pas de +1 perdu
-    # si deux requêtes arrivent en même temps.
+def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
         r = cx.execute(
-            f"""UPDATE canettes SET nb = GREATEST(1, nb + %s), maj = %s
-                WHERE ean = %s RETURNING {COLONNES}""",
-            (d.delta, maintenant(), ean),
-        ).fetchone()
+            f"UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s RETURNING {COLONNES}",
+            (d.delta, maintenant(), u["id"], ean)).fetchone()
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
 
 
 @router.delete("/cans/{ean}", status_code=204)
-def supprimer(ean: str) -> None:
+def supprimer(ean: str, u: dict = Depends(utilisateur)) -> None:
     with base() as cx:
-        supprimees = cx.execute("DELETE FROM canettes WHERE ean = %s", (ean,)).rowcount
-    if supprimees == 0:
+        n = cx.execute("DELETE FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).rowcount
+    if n == 0:
         raise HTTPException(404, "canette inconnue")
 
 
-app = FastAPI(
-    title="StackMonster", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None
-)
-# Selon la configuration, Vercel transmet le chemin avec ou sans le préfixe /api
-# (et le serveur local de développement le garde) : on répond aux deux.
-app.include_router(router)
-app.include_router(router, prefix="/api")
+app = FastAPI(title="StackMonster", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+for r in (auth, router):  # avec et sans le préfixe /api (selon ce que Vercel transmet)
+    app.include_router(r)
+    app.include_router(r, prefix="/api")

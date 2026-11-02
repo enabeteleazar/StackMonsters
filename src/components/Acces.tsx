@@ -1,56 +1,115 @@
 import { useState } from 'react'
-import { jeton } from '../api'
+import { api, jeton, NonAutorise } from '../api'
 
 type Props = {
-  /** Appelé après enregistrement du jeton : le parent recharge la collection. */
+  /** Appelé après connexion : le parent recharge la collection. */
   surValider: () => void
+  /** Vrai quand une session existante a été rejetée (expirée, révoquée). */
   refuse: boolean
 }
 
 export default function Acces({ surValider, refuse }: Props) {
-  const [saisie, setSaisie] = useState('')
+  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
+  const [etape, setEtape] = useState<'email' | 'code'>('email')
+  const [message, setMessage] = useState('')
+  const [occupe, setOccupe] = useState(false)
 
-  const valider = () => {
-    const v = saisie.trim()
-    if (!v) return
-    jeton.ecrire(v)
-    setSaisie('')
-    surValider()
+  const demander = async () => {
+    const e = email.trim().toLowerCase()
+    if (!e || occupe) return
+    setOccupe(true)
+    setMessage('')
+    try {
+      await api.demande(e)
+      setEmail(e)
+      setEtape('code')
+    } catch (err) {
+      setMessage(
+        (err as Error).message.startsWith('429')
+          ? 'Trop de demandes. Réessaie dans une heure.'
+          : 'Envoi impossible. Vérifie l\u2019adresse et réessaie.',
+      )
+    } finally {
+      setOccupe(false)
+    }
+  }
+
+  const verifier = async () => {
+    const c = code.trim()
+    if (!c || occupe) return
+    setOccupe(true)
+    setMessage('')
+    try {
+      const r = await api.verification(email, c)
+      jeton.ecrire(r.token)
+      surValider()
+    } catch (err) {
+      setMessage(err instanceof NonAutorise ? 'Code invalide ou expiré.' : 'Service injoignable.')
+      setCode('')
+    } finally {
+      setOccupe(false)
+    }
   }
 
   return (
     <section className="tableau-bord">
       <span className="eyebrow">StackMonster</span>
       <h1 className="tb-titre">
-        Accès
-        <span>privé</span>
+        Connexion
+        <span>par e-mail</span>
       </h1>
       <p className="sous">
-        {refuse
-          ? 'Jeton refusé. Vérifie-le et réessaie.'
-          : 'Entre le jeton d\u2019accès de ta collection. Il reste sur cet appareil.'}
+        {message ||
+          (etape === 'email'
+            ? refuse
+              ? 'Ta session a expiré. Reconnecte-toi avec ton e-mail.'
+              : 'Entre ton e-mail : tu recevras un code à 6 chiffres.'
+            : `Code envoyé à ${email}. Il est valable 10 minutes.`)}
       </p>
       <div className="champs">
-        <div>
-          <label htmlFor="f-jeton">Jeton</label>
-          <input
-            id="f-jeton"
-            name="jeton"
-            type="password"
-            autoComplete="current-password"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            value={saisie}
-            onChange={(e) => setSaisie(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && valider()}
-          />
-        </div>
+        {etape === 'email' ? (
+          <div>
+            <label htmlFor="f-email">E-mail</label>
+            <input
+              id="f-email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="off"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && demander()}
+            />
+          </div>
+        ) : (
+          <div>
+            <label htmlFor="f-code">Code</label>
+            <input
+              id="f-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={(e) => e.key === 'Enter' && verifier()}
+            />
+          </div>
+        )}
       </div>
       <div className="actions">
-        <button className="btn btn-primaire actions-principal" onClick={valider}>
-          Entrer
+        <button
+          className="btn btn-primaire actions-principal"
+          disabled={occupe}
+          onClick={etape === 'email' ? demander : verifier}
+        >
+          {etape === 'email' ? 'Recevoir le code' : 'Se connecter'}
         </button>
+        {etape === 'code' && (
+          <button className="btn" onClick={() => { setEtape('email'); setCode(''); setMessage('') }}>
+            Changer d&rsquo;e-mail
+          </button>
+        )}
       </div>
     </section>
   )
