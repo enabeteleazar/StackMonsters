@@ -102,12 +102,13 @@ export default function Settings({ canettes, joignable, surVerrouiller }: Props)
           </button>
           <button
             onClick={() => {
+              void api.deconnexion().catch(() => {})
               jeton.effacer()
               surVerrouiller()
             }}
           >
             <Lock size={15} />
-            Verrouiller
+            Se déconnecter
           </button>
         </div>
         <p className="sous" style={{ marginTop: 14 }}>

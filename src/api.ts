@@ -63,5 +63,14 @@ export const api = {
     }),
   supprimer: (ean: string) =>
     requete<void>(`/cans/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
+  demande: (email: string) =>
+    requete<{ ok: boolean }>('/auth/demande', { method: 'POST', body: JSON.stringify({ email }) }),
+  verification: (email: string, code: string) =>
+    requete<{ token: string; email: string }>('/auth/verification', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    }),
+  moi: () => requete<{ email: string }>('/auth/moi'),
+  deconnexion: () => requete<void>('/auth/deconnexion', { method: 'POST' }),
   sante: () => requete<{ status: string; version: string; canettes: number }>('/health'),
 }

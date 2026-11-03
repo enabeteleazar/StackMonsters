@@ -22,8 +22,6 @@ These defaults are optimized for AI coding agents (and humans) working on apps t
   needed. Always curl https://ai-gateway.vercel.sh/v1/models first; never trust model IDs from memory
 - For durable agent loops or untrusted code: use Workflow (pause/resume/state) + Sandbox; use Vercel MCP for secure infra access
 <!-- VERCEL BEST PRACTICES END -->
-<!-- VERCEL BEST PRACTICES END -->
-
 ## Application-specific instructions
 
 This is an existing multi-user PWA for managing beverage can collections.
@@ -32,19 +30,19 @@ This is an existing multi-user PWA for managing beverage can collections.
 - Preserve the existing application architecture.
 - Do not rewrite existing features without explicit approval.
 - Inspect the existing code before making changes.
-- Reuse existing components and services.
+- Reuse existing components and services whenever possible.
 - Avoid unnecessary dependencies.
 
-### Multi-user security
-- Users must only access their own private collections.
+### Multi-user architecture
+- Each user must only access their own private collection.
 - Enforce authorization on the server side.
 - Never trust user IDs supplied by the client.
 - Keep the shared can catalog separate from personal collections.
 
 ### PWA
 - Preserve PWA installation capabilities.
-- Maintain existing offline functionality.
-- Ensure synchronization does not create duplicate entries.
+- Maintain offline functionality.
+- Ensure synchronization does not create duplicate collection entries.
 - Prioritize mobile-first responsive design.
 
 ### Database

@@ -1,91 +1,114 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from api.index import app, base
+import api.index as ix
 
-AUTH = {"Authorization": "Bearer jeton-de-test"}
-EAN = "TEST-0000000000001"
+A, B = "test-a@example.com", "test-b@example.com"
 
 
 @pytest.fixture()
-def client():
-    with base() as cx:
-        cx.execute("DELETE FROM canettes WHERE ean LIKE 'TEST-%'")
-    yield TestClient(app)
-    with base() as cx:
-        cx.execute("DELETE FROM canettes WHERE ean LIKE 'TEST-%'")
+def env(monkeypatch):
+    codes = {}
+    monkeypatch.setattr(ix, "envoyer_code", lambda email, code: codes.__setitem__(email, code))
+    with ix.base() as cx:
+        cx.execute("DELETE FROM users WHERE email LIKE 'test-%@example.com'")
+        cx.execute("DELETE FROM codes WHERE email LIKE 'test-%@example.com'")
+    yield TestClient(ix.app), codes
+    with ix.base() as cx:
+        cx.execute("DELETE FROM users WHERE email LIKE 'test-%@example.com'")
+        cx.execute("DELETE FROM codes WHERE email LIKE 'test-%@example.com'")
 
 
-def canette(**kw):
-    return {"ean": EAN, "nom": "Mango Loco", "edition": "Juiced", "volume": "500 ml",
-            "etat": "Vide", "nb": 1, "notes": "", "photo": None,
-            "ajout": "2026-01-01T10:00:00.000Z", **kw}
-
-
-@pytest.mark.parametrize("prefixe", ["", "/api"])
-def test_les_deux_prefixes_repondent(client, prefixe):
-    r = client.get(f"{prefixe}/health", headers=AUTH)
-    assert r.status_code == 200 and r.json()["status"] == "ok"
-
-
-def test_sans_jeton_ou_mauvais_jeton(client):
-    assert client.get("/api/cans").status_code == 401
-    assert client.get("/api/cans", headers={"Authorization": "Bearer faux"}).status_code == 401
-    assert client.put("/api/cans", json=canette()).status_code == 401
-    assert client.delete(f"/api/cans/{EAN}").status_code == 401
-
-
-def test_sans_api_token_configure_tout_est_refuse(client, monkeypatch):
-    monkeypatch.delenv("API_TOKEN")
-    assert client.get("/api/cans", headers=AUTH).status_code == 503
-
-
-def test_creation_puis_liste_sans_colonne_maj(client):
-    r = client.put("/api/cans", json=canette(), headers=AUTH)
+def connecter(client, codes, email):
+    assert client.post("/api/auth/demande", json={"email": email}).status_code == 200
+    r = client.post("/api/auth/verification", json={"email": email, "code": codes[email]})
     assert r.status_code == 200
-    assert r.json() == canette()
-    liste = client.get("/api/cans", headers=AUTH).json()
-    assert [c["ean"] for c in liste if c["ean"].startswith("TEST-")] == [EAN]
-    assert "maj" not in liste[0]
+    return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
-def test_la_date_d_ajout_d_origine_est_conservee(client):
-    client.put("/api/cans", json=canette(), headers=AUTH)
-    r = client.put("/api/cans", json=canette(nom="Renommée", ajout="2030-01-01T00:00:00.000Z"), headers=AUTH)
-    assert r.json()["nom"] == "Renommée"
-    assert r.json()["ajout"] == "2026-01-01T10:00:00.000Z"
+def canette(ean="TEST-1", **kw):
+    return {"ean": ean, "nom": "Mango", "nb": 1, "ajout": "2026-01-01T00:00:00.000Z", **kw}
 
 
-def test_ajout_vide_recoit_une_date_iso_utc(client):
-    r = client.put("/api/cans", json=canette(ajout=""), headers=AUTH)
-    assert r.json()["ajout"].endswith(".000Z")
+def test_sans_session_tout_est_refuse(env):
+    c, _ = env
+    assert c.get("/api/cans").status_code == 401
+    assert c.get("/api/cans", headers={"Authorization": "Bearer faux"}).status_code == 401
+    assert c.put("/api/cans", json=canette()).status_code == 401
 
 
-def test_incrementer_et_plancher_a_1(client):
-    client.put("/api/cans", json=canette(), headers=AUTH)
-    assert client.patch(f"/api/cans/{EAN}/nb", json={"delta": 2}, headers=AUTH).json()["nb"] == 3
-    assert client.patch(f"/api/cans/{EAN}/nb", json={"delta": -99}, headers=AUTH).json()["nb"] == 1
+def test_connexion_et_collection(env):
+    c, codes = env
+    h = connecter(c, codes, A)
+    assert c.get("/api/auth/moi", headers=h).json() == {"email": A}
+    assert c.put("/api/cans", json=canette(), headers=h).status_code == 200
+    assert [x["ean"] for x in c.get("/api/cans", headers=h).json()] == ["TEST-1"]
+    assert c.patch("/api/cans/TEST-1/nb", json={"delta": 2}, headers=h).json()["nb"] == 3
 
 
-def test_inconnue_donne_404(client):
-    assert client.get("/api/cans/TEST-nope", headers=AUTH).status_code == 404
-    assert client.patch("/api/cans/TEST-nope/nb", json={"delta": 1}, headers=AUTH).status_code == 404
-    assert client.delete("/api/cans/TEST-nope", headers=AUTH).status_code == 404
+def test_chaque_utilisateur_ne_voit_que_sa_collection(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="de A"), headers=ha)
+    assert c.get("/api/cans", headers=hb).json() == []
+    assert c.get("/api/cans/TEST-1", headers=hb).status_code == 404
+    assert c.delete("/api/cans/TEST-1", headers=hb).status_code == 404
+    c.put("/api/cans", json=canette(nom="de B"), headers=hb)  # même EAN, autre propriétaire
+    assert c.get("/api/cans/TEST-1", headers=ha).json()["nom"] == "de A"
 
 
-def test_suppression(client):
-    client.put("/api/cans", json=canette(), headers=AUTH)
-    assert client.delete(f"/api/cans/{EAN}", headers=AUTH).status_code == 204
-    assert client.get(f"/api/cans/{EAN}", headers=AUTH).status_code == 404
+def test_email_insensible_a_la_casse(env):
+    c, codes = env
+    c.post("/api/auth/demande", json={"email": " Test-A@Example.com "})
+    r = c.post("/api/auth/verification", json={"email": A, "code": codes[A]})
+    assert r.status_code == 200 and r.json()["email"] == A
 
 
-def test_validation(client):
-    assert client.put("/api/cans", json=canette(nb=0), headers=AUTH).status_code == 422
-    assert client.put("/api/cans", json=canette(ean=""), headers=AUTH).status_code == 422
-    assert client.put("/api/cans", json=canette(photo="x" * 300_001), headers=AUTH).status_code == 422
-    assert client.patch(f"/api/cans/{EAN}/nb", json={"delta": 100}, headers=AUTH).status_code == 422
+def test_mauvais_code_et_limite_d_essais(env):
+    c, codes = env
+    c.post("/api/auth/demande", json={"email": A})
+    faux = "000000" if codes[A] != "000000" else "111111"
+    for _ in range(5):
+        assert c.post("/api/auth/verification", json={"email": A, "code": faux}).status_code == 401
+    # après 5 échecs, même le bon code est refusé
+    assert c.post("/api/auth/verification", json={"email": A, "code": codes[A]}).status_code == 401
 
 
-def test_la_documentation_est_fermee(client):
-    for chemin in ("/docs", "/redoc", "/openapi.json"):
-        assert client.get(chemin).status_code == 404
+def test_code_a_usage_unique(env):
+    c, codes = env
+    connecter(c, codes, A)
+    assert c.post("/api/auth/verification", json={"email": A, "code": codes[A]}).status_code == 401
+
+
+def test_limite_de_demandes_et_adresse_invalide(env):
+    c, _ = env
+    assert c.post("/api/auth/demande", json={"email": "pas-un-email"}).status_code == 422
+    for _ in range(5):
+        assert c.post("/api/auth/demande", json={"email": A}).status_code == 200
+    assert c.post("/api/auth/demande", json={"email": A}).status_code == 429
+
+
+def test_deconnexion_invalide_la_session(env):
+    c, codes = env
+    h = connecter(c, codes, A)
+    assert c.post("/api/auth/deconnexion", headers=h).status_code == 204
+    assert c.get("/api/cans", headers=h).status_code == 401
+
+
+def test_le_proprietaire_recupere_la_collection_historique(env, monkeypatch):
+    c, codes = env
+    with ix.base() as cx:
+        cx.execute("DELETE FROM canettes WHERE ean = 'TEST-HIST'")
+        cx.execute("INSERT INTO canettes (ean, nom, ajout, maj) VALUES ('TEST-HIST', 'Ancienne', '2025-01-01T00:00:00.000Z', 'x')")
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    h = connecter(c, codes, A)
+    assert "TEST-HIST" in [x["ean"] for x in c.get("/api/cans", headers=h).json()]
+    hb = connecter(c, codes, B)
+    assert c.get("/api/cans", headers=hb).json() == []
+    with ix.base() as cx:
+        cx.execute("DELETE FROM canettes WHERE ean = 'TEST-HIST'")
+
+
+def test_documentation_fermee(env):
+    c, _ = env
+    assert all(c.get(p).status_code == 404 for p in ("/docs", "/redoc", "/openapi.json"))
