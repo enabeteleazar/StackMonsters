@@ -6,7 +6,7 @@ function startCountdown() {
   const secondsEl = document.getElementById('seconds');
 
   // Date cible de fin de maintenance (Modifiable au format AAAA-MM-JJTHH:MM:SS)
-  const targetDateString = "2026-11-06T18:00:00";
+  const targetDateString = "2026-11-04T17:00:00";
   const targetTime = new Date(targetDateString).getTime();
 
   function update() {
