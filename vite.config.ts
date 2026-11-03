@@ -1,12 +1,16 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // Sur Vercel le site est servi à la racine, et l'API sous /api (voir api/index.py).
 // Aucune URL absolue ni aucun port ne doit apparaître dans le bundle :
 // le front parle toujours au service par un chemin relatif (voir src/config.ts).
 export default defineConfig({
   base: '/',
-  plugins: [react()],
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
   build: {
     outDir: 'dist',
     assetsInlineLimit: 0,
