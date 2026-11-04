@@ -31,4 +31,4 @@ API=$!
 trap 'kill $API 2>/dev/null || true' EXIT
 
 echo "Connexion locale : saisis un e-mail, puis lis le code dans ce terminal (ligne [dev])."
-pnpm run dev
+pnpm run dev --host 0.0.0.0 --port 4212
