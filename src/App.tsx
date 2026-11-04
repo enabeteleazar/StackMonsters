@@ -8,11 +8,12 @@ import Collection from './components/Collection'
 import Dashboard from './components/Dashboard'
 import Logo from './components/Logo'
 import Settings from './components/Settings'
+import Stats from './components/Stats'
 import Verdict from './components/Verdict'
 import { moteurNatif } from './scanner'
 import type { Canette } from './types'
 
-type Vue = 'accueil' | 'collec' | 'reglages'
+type Vue = 'accueil' | 'collec' | 'reglages' | 'stats'
 
 export default function App() {
   const [canettes, setCanettes] = useState<Canette[]>([])
@@ -139,8 +140,14 @@ export default function App() {
         )}
         {vue === 'collec' && <Collection canettes={canettes} surOuvrir={setEan} />}
         {vue === 'reglages' && (
-          <Settings canettes={canettes} joignable={joignable} surVerrouiller={verrouiller} />
+          <Settings
+            canettes={canettes}
+            joignable={joignable}
+            surVerrouiller={verrouiller}
+            surStats={() => setVue('stats')}
+          />
         )}
+        {vue === 'stats' && <Stats surRetour={() => setVue('reglages')} />}
 
         {!joignable && vue === 'accueil' && (
           <p className="sous" style={{ marginTop: 18 }}>
@@ -179,7 +186,7 @@ export default function App() {
           <PlusCircle size={19} />
           Ajouter
         </button>
-        <button aria-current={vue === 'reglages'} onClick={() => setVue('reglages')}>
+        <button aria-current={vue === 'reglages' || vue === 'stats'} onClick={() => setVue('reglages')}>
           <Settings2 size={19} />
           Réglages
         </button>

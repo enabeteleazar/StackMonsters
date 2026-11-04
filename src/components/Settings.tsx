@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Cpu, Database, Download, FileJson, Lock, Radio, Server } from 'lucide-react'
+import { BarChart3, Cpu, Database, Download, FileJson, Lock, Radio, Server } from 'lucide-react'
 import { api, jeton } from '../api'
 import { moteurNatif } from '../scanner'
 import type { Canette } from '../types'
@@ -8,13 +8,18 @@ type Props = {
   canettes: Canette[]
   joignable: boolean
   surVerrouiller: () => void
+  surStats: () => void
 }
 
-export default function Settings({ canettes, joignable, surVerrouiller }: Props) {
+export default function Settings({ canettes, joignable, surVerrouiller, surStats }: Props) {
   const [sante, setSante] = useState<{ status: string; version: string; canettes: number } | null>(null)
+
+  // Seul le propriétaire (OWNER_EMAIL) obtient une réponse : sinon l'API répond 403 et le bouton reste caché.
+  const [proprietaire, setProprietaire] = useState(false)
 
   useEffect(() => {
     api.sante().then(setSante).catch(() => setSante(null))
+    api.stats().then(() => setProprietaire(true)).catch(() => setProprietaire(false))
   }, [joignable])
 
   const telecharger = (nom: string, contenu: string, type: string) => {
@@ -100,6 +105,12 @@ export default function Settings({ canettes, joignable, surVerrouiller }: Props)
             <Download size={15} />
             Export CSV
           </button>
+          {proprietaire && (
+            <button onClick={surStats}>
+              <BarChart3 size={15} />
+              Statistiques
+            </button>
+          )}
           <button
             onClick={() => {
               void api.deconnexion().catch(() => {})

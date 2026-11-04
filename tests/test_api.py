@@ -112,3 +112,26 @@ def test_le_proprietaire_recupere_la_collection_historique(env, monkeypatch):
 def test_documentation_fermee(env):
     c, _ = env
     assert all(c.get(p).status_code == 404 for p in ("/docs", "/redoc", "/openapi.json"))
+
+
+def test_stats_reservees_au_proprietaire(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    assert c.get("/api/stats").status_code == 401
+    assert c.get("/api/stats", headers=hb).status_code == 403
+    c.put("/api/cans", json=canette(nb=3), headers=ha)
+    c.put("/api/cans", json=canette("TEST-2", nb=2), headers=hb)
+    avant = c.get("/api/stats", headers=ha).json()
+    assert avant["utilisateurs"] >= 2 and avant["references"] >= 2 and avant["canettes"] >= 5
+    c.put("/api/cans", json=canette("TEST-3", nb=4), headers=ha)
+    apres = c.get("/api/stats", headers=ha).json()
+    assert apres["references"] == avant["references"] + 1
+    assert apres["canettes"] == avant["canettes"] + 4
+
+
+def test_stats_refusees_sans_proprietaire_configure(env, monkeypatch):
+    c, codes = env
+    monkeypatch.delenv("OWNER_EMAIL", raising=False)
+    h = connecter(c, codes, A)
+    assert c.get("/api/stats", headers=h).status_code == 403

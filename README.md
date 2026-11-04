@@ -8,6 +8,11 @@ Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais, 5 deman
 par adresse). Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
 Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
 
+## Statistiques
+Réglages → **Statistiques** (visible seulement pour `OWNER_EMAIL`) : nombre d'utilisateurs, total des
+canettes (exemplaires) et nombre de références, tous comptes confondus. Route `GET /api/stats`,
+réponse 403 pour tout autre compte.
+
 ## Déployer
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).
 2. Variables d'environnement (voir `.env.example`) : `SESSION_SECRET`, `RESEND_API_KEY`,
