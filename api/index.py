@@ -157,6 +157,11 @@ def envoyer_code(email: str, code: str) -> None:
         raise HTTPException(502, "envoi d'e-mail impossible") from None
 
 
+def _est_proprietaire(email: str) -> bool:
+    proprio = os.environ.get("OWNER_EMAIL", "").strip().lower()
+    return bool(proprio) and email == proprio
+
+
 def utilisateur(authorization: str | None = Header(default=None)) -> dict:
     token = (authorization or "").removeprefix("Bearer ").strip()
     if token:
@@ -211,7 +216,7 @@ def verification(v: Verification) -> dict:
         u = cx.execute("INSERT INTO users (email, cree) VALUES (%s, %s) ON CONFLICT (email) DO NOTHING RETURNING id",
                        (email, now)).fetchone()
         if u:  # premier passage : le propriétaire récupère la collection historique
-            if email == os.environ.get("OWNER_EMAIL", "").strip().lower():
+            if _est_proprietaire(email):
                 cx.execute(
                     f"INSERT INTO collection (user_id, {COLONNES}, maj) SELECT %s, {COLONNES}, maj FROM canettes ON CONFLICT DO NOTHING",
                     (u["id"],))
@@ -244,6 +249,17 @@ def sante(u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
         n = cx.execute("SELECT COUNT(*) AS n FROM collection WHERE user_id = %s", (u["id"],)).fetchone()["n"]
     return {"status": "ok", "version": VERSION, "canettes": n}
+
+
+@router.get("/stats")
+def statistiques(u: dict = Depends(utilisateur)) -> dict:
+    """Chiffres globaux de l'application, réservés à OWNER_EMAIL (403 pour les autres)."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    with base() as cx:
+        n_users = cx.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+        t = cx.execute("SELECT COUNT(*) AS refs, COALESCE(SUM(nb), 0) AS total FROM collection").fetchone()
+    return {"utilisateurs": n_users, "references": t["refs"], "canettes": int(t["total"])}
 
 
 @router.get("/cans")
