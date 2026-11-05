@@ -61,3 +61,39 @@ La version 1.0 sera envisagée lorsque les étapes précédentes seront stabilis
 - Préserver l'isolation des collections entre utilisateurs.
 - Les numéros de version et l'ordre des étapes pourront évoluer selon les retours et les contraintes techniques.
 - Les tâches sont suivies dans les [GitHub Issues](https://github.com/enabeteleazar/StockMonsters/issues).
+
+
+## Tableau de suivi (workflow Kanban)
+
+En attendant la création d'un GitHub Project, utiliser ces statuts comme colonnes du tableau :
+
+| Statut | Signification |
+|---|---|
+| Backlog | Idée validée, pas encore planifiée |
+| À faire | Sélectionnée pour le prochain cycle |
+| En cours | Développement commencé |
+| En test | Implémentation terminée, validation en cours |
+| Terminé | Critères d'acceptation vérifiés et ticket fermé |
+
+**Règle de flux :** limiter le nombre de tickets « En cours » à 1 ou 2 pour garder le projet focalisé. Un ticket ne passe à « Terminé » qu'après validation de ses critères d'acceptation.
+
+## Ordre de priorité conseillé
+
+1. **P0 — Sécurité immédiate :** #1 (secrets), puis #2 (abus d'inscription).
+2. **P1 — Fiabilité et droits des utilisateurs :** #3, #4, #15 et #16.
+3. **P2 — Expérience collection :** #5, #6, #7 et #11.
+4. **P3 — Catalogue partagé :** #8, puis #9 et #10.
+5. **P4 — Engagement et partage :** #12, #13 et #14.
+
+## Jalons de livraison proposés
+
+| Jalon | Tickets | Objectif |
+|---|---|---|
+| v0.2.0 — Consolidation | #1, #2, #3, #4, #15, #16 | Sécurité, comptes et fiabilité |
+| v0.3.0 — Collection enrichie | #5, #6, #7, #11 | Fiches, photos, historique et scan |
+| v0.4.0 — Catalogue mondial | #8, #9, #10 | Référentiel commun et contribution |
+| v0.5.0 — Progression | #12, #13 | Statistiques, badges et niveaux |
+| v0.6.0 — Communauté | #14 | Partage public maîtrisé |
+| v1.0.0 — Version officielle | Stabilisation des jalons précédents | Qualité, sécurité et expérience cohérentes |
+
+Ces jalons sont des objectifs de regroupement. Ils ne sont pas des milestones GitHub créés automatiquement.
