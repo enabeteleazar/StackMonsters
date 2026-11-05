@@ -3,6 +3,11 @@
 PWA de collection de canettes : scan du code-barres, fiche, compteur, photo.
 Front React + TypeScript (Vite), API FastAPI (`api/index.py`), Postgres (Neon), Vercel.
 
+## Suivi du projet
+- [Roadmap produit](ROADMAP.md)
+- [Tableau de suivi des tickets](PROJECT-BOARD.md)
+- [Issues GitHub](https://github.com/enabeteleazar/StockMonsters/issues)
+
 ## Comptes
 Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais, 5 demandes par heure et
 par adresse). Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
