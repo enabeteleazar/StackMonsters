@@ -8,6 +8,15 @@ export class NonAutorise extends Error {
   }
 }
 
+export class ErreurAPI extends Error {
+  constructor(
+    readonly status: number,
+    readonly detail: string,
+  ) {
+    super(`${status} ${detail}`)
+  }
+}
+
 // localStorage peut lever une exception (navigation privée de Safari, par exemple).
 export const jeton = {
   lire: (): string => {
@@ -47,7 +56,14 @@ async function requete<T>(chemin: string, init?: RequestInit): Promise<T> {
   if (r.status === 401) throw new NonAutorise()
   if (!r.ok) {
     const corps = await r.text().catch(() => '')
-    throw new Error(`${r.status} ${corps.slice(0, 120)}`)
+    let detail = corps.slice(0, 120)
+    try {
+      const json: { detail?: unknown } = JSON.parse(corps)
+      if (typeof json.detail === 'string') detail = json.detail
+    } catch {
+      // Certaines erreurs de proxy ne renvoient pas de JSON.
+    }
+    throw new ErreurAPI(r.status, detail)
   }
   return r.status === 204 ? (undefined as T) : ((await r.json()) as T)
 }
