@@ -8,5 +8,6 @@ __pycache__/
 tsconfig.tsbuildinfo
 .vercel
 .env*
+.env.local
 !.env.example
 vercel.env

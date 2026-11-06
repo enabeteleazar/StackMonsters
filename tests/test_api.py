@@ -88,6 +88,35 @@ def test_limite_de_demandes_et_adresse_invalide(env):
     assert c.post("/api/auth/demande", json={"email": A}).status_code == 429
 
 
+def test_echec_envoi_ne_bloque_pas_une_nouvelle_demande(env, monkeypatch):
+    c, _ = env
+
+    def echec(_email, _code):
+        raise ix.HTTPException(503, "configuration Resend invalide")
+
+    monkeypatch.setattr(ix, "envoyer_code", echec)
+    assert c.post("/api/auth/demande", json={"email": A}).status_code == 503
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s", (A,)).fetchone()["n"] == 0
+
+    monkeypatch.setattr(ix, "envoyer_code", lambda email, code: None)
+    assert c.post("/api/auth/demande", json={"email": A}).status_code == 200
+
+
+def test_refus_resend_indique_une_configuration_a_corriger(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "cle-de-test")
+
+    def refuse(*_args, **_kwargs):
+        raise ix.urllib.error.HTTPError("https://api.resend.com/emails", 403, "forbidden", None, None)
+
+    monkeypatch.setattr(ix.urllib.request, "urlopen", refuse)
+    with pytest.raises(ix.HTTPException) as erreur:
+        ix.envoyer_code(A, "123456")
+
+    assert erreur.value.status_code == 503
+    assert "MAIL_FROM" in erreur.value.detail
+
+
 def test_deconnexion_invalide_la_session(env):
     c, codes = env
     h = connecter(c, codes, A)

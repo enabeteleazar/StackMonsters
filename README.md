@@ -22,8 +22,9 @@ réponse 403 pour tout autre compte.
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).
 2. Variables d'environnement (voir `.env.example`) : `SESSION_SECRET`, `RESEND_API_KEY`,
    `MAIL_FROM`, `OWNER_EMAIL`. Supprime `API_TOKEN`, devenu inutile.
-3. Compte **Resend** pour l'envoi des codes. Sans domaine vérifié, l'expéditeur de test
-   (`onboarding@resend.dev`) ne livre qu'à l'adresse du compte : à vérifier chez Resend.
+3. Compte **Resend** pour l'envoi des codes. Configure `MAIL_FROM` avec une adresse d'un
+   domaine vérifié dans Resend. L'expéditeur de test (`onboarding@resend.dev`) ne livre
+   qu'à l'adresse e-mail du compte Resend.
 4. `vercel --prod`, puis connecte-toi avec `OWNER_EMAIL` : l'ancienne collection (table
    `canettes`) est copiée dans ton compte, une seule fois, à la création de ton utilisateur.
 

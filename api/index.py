@@ -10,10 +10,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
 import time
+import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
@@ -33,6 +35,7 @@ def _version() -> str:
 
 
 VERSION = _version()
+logger = logging.getLogger(__name__)
 COLONNES = "ean, nom, edition, volume, etat, nb, notes, photo, ajout"
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -153,7 +156,19 @@ def envoyer_code(email: str, code: str) -> None:
     )
     try:
         urllib.request.urlopen(req, timeout=10).close()
-    except Exception:
+    except urllib.error.HTTPError as exc:
+        logger.warning("Resend a refusé l'envoi du code (HTTP %d)", exc.code)
+        if exc.code in (401, 403):
+            raise HTTPException(
+                503,
+                "Configuration Resend invalide : vérifie RESEND_API_KEY et MAIL_FROM. "
+                "L'expéditeur onboarding@resend.dev ne livre qu'à l'adresse du compte Resend.",
+            ) from None
+        if exc.code == 422:
+            raise HTTPException(422, "Adresse e-mail refusée par le fournisseur.") from None
+        raise HTTPException(502, "Le fournisseur d'e-mail a refusé l'envoi.") from None
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        logger.warning("Service Resend injoignable (%s)", type(exc).__name__)
         raise HTTPException(502, "envoi d'e-mail impossible") from None
 
 
@@ -194,9 +209,16 @@ def demande(d: Demande) -> dict:
         n = cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s AND cree > %s", (email, now - 3600)).fetchone()["n"]
         if n >= DEMANDES_MAX:
             raise HTTPException(429, "trop de demandes")
-        cx.execute("INSERT INTO codes (email, hash, expire, cree) VALUES (%s, %s, %s, %s)",
-                   (email, _hash_code(email, code), now + DUREE_CODE, now))
-    envoyer_code(email, code)
+        code_row = cx.execute(
+            "INSERT INTO codes (email, hash, expire, cree) VALUES (%s, %s, %s, %s) RETURNING id",
+            (email, _hash_code(email, code), now + DUREE_CODE, now),
+        ).fetchone()
+    try:
+        envoyer_code(email, code)
+    except HTTPException:
+        with base() as cx:
+            cx.execute("DELETE FROM codes WHERE id = %s", (code_row["id"],))
+        raise
     return {"ok": True}  # même réponse que l'adresse existe ou non
 
 

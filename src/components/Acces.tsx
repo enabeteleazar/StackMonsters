@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api, jeton, NonAutorise } from '../api'
+import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 
 type Props = {
   /** Appelé après connexion : le parent recharge la collection. */
@@ -25,11 +25,21 @@ export default function Acces({ surValider, refuse }: Props) {
       setEmail(e)
       setEtape('code')
     } catch (err) {
-      setMessage(
-        (err as Error).message.startsWith('429')
-          ? 'Trop de demandes. Réessaie dans une heure.'
-          : 'Envoi impossible. Vérifie l\u2019adresse et réessaie.',
-      )
+      if (err instanceof ErreurAPI && err.status === 429) {
+        setMessage('Trop de demandes. Réessaie dans une heure.')
+      } else if (
+        err instanceof ErreurAPI &&
+        err.status === 503 &&
+        (err.detail.includes('Resend') || err.detail.includes("d'e-mail non configuré"))
+      ) {
+        setMessage(
+          "L'envoi e-mail n'est pas configuré correctement. Le site doit utiliser un expéditeur vérifié ; onboarding@resend.dev ne livre qu'à l'adresse du compte Resend.",
+        )
+      } else if (err instanceof ErreurAPI && err.status === 422) {
+        setMessage("Adresse e-mail refusée. Vérifie l'adresse et réessaie.")
+      } else {
+        setMessage("Envoi impossible. Vérifie l’adresse et réessaie.")
+      }
     } finally {
       setOccupe(false)
     }
