@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -22,7 +23,7 @@ from pathlib import Path
 from typing import Iterator
 
 import psycopg
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS codes (id BIGSERIAL PRIMARY KEY, email TEXT NOT NULL,
 CREATE INDEX IF NOT EXISTS codes_email ON codes (email);
 CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expire BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS connexions_uniques (ip_hash TEXT PRIMARY KEY, premiere_connexion BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS collection (user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     {CHAMPS}, PRIMARY KEY (user_id, ean));
 """
@@ -135,6 +137,27 @@ def _hash_code(email: str, code: str) -> str:
 
 def _hash_session(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _adresse_ip(request: Request) -> str | None:
+    candidates = [
+        request.headers.get("x-real-ip", ""),
+        request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip(),
+        request.client.host if request.client else "",
+    ]
+    for candidate in candidates:
+        try:
+            adresse = ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        if isinstance(adresse, ipaddress.IPv6Address) and adresse.ipv4_mapped:
+            adresse = adresse.ipv4_mapped
+        return str(adresse)
+    return None
+
+
+def _empreinte_ip(adresse: str) -> str:
+    return hmac.new(_secret(), f"unique-ip:{adresse}".encode(), hashlib.sha256).hexdigest()
 
 
 def envoyer_code(email: str, code: str) -> None:
@@ -223,7 +246,7 @@ def demande(d: Demande) -> dict:
 
 
 @auth.post("/verification")
-def verification(v: Verification) -> dict:
+def verification(v: Verification, request: Request) -> dict:
     email, now = v.email.strip().lower(), int(time.time())
     with base() as cx:
         c = cx.execute("SELECT id, hash, essais FROM codes WHERE email = %s AND expire > %s ORDER BY id DESC LIMIT 1",
@@ -244,6 +267,13 @@ def verification(v: Verification) -> dict:
                     (u["id"],))
         else:
             u = cx.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
+        adresse = _adresse_ip(request)
+        if adresse:
+            cx.execute(
+                "INSERT INTO connexions_uniques (ip_hash, premiere_connexion) VALUES (%s, %s) "
+                "ON CONFLICT (ip_hash) DO NOTHING",
+                (_empreinte_ip(adresse), now),
+            )
         token = secrets.token_urlsafe(32)
         cx.execute("INSERT INTO sessions (hash, user_id, expire) VALUES (%s, %s, %s)",
                    (_hash_session(token), u["id"], now + DUREE_SESSION))
@@ -281,7 +311,8 @@ def statistiques(u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
         n_users = cx.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
         t = cx.execute("SELECT COUNT(*) AS refs FROM collection").fetchone()
-    return {"utilisateurs": n_users, "references": t["refs"]}
+        n_connexions = cx.execute("SELECT COUNT(*) AS n FROM connexions_uniques").fetchone()["n"]
+    return {"utilisateurs": n_users, "references": t["refs"], "connexions_uniques": n_connexions}
 
 
 @router.get("/cans")

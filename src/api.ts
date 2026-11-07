@@ -84,6 +84,6 @@ export const api = {
   moi: () => requete<{ email: string }>('/auth/moi'),
   deconnexion: () => requete<void>('/auth/deconnexion', { method: 'POST' }),
   stats: () =>
-    requete<{ utilisateurs: number; references: number }>('/stats'),
+    requete<{ utilisateurs: number; references: number; connexions_uniques: number }>('/stats'),
   sante: () => requete<{ status: string; version: string; references: number }>('/health'),
 }

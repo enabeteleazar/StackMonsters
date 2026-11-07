@@ -22,9 +22,21 @@ La photo de canette dans `public/images/` provient de Wikimedia Commons et est a
 Photos sous licence [Creative Commons Attribution-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-sa/4.0/).
 
 ## Statistiques
-Réglages → **Statistiques** (visible seulement pour `OWNER_EMAIL`) : nombre d'utilisateurs, total des
-canettes (exemplaires) et nombre de références, tous comptes confondus. Route `GET /api/stats`,
-réponse 403 pour tout autre compte.
+Réglages → **Statistiques** (visible seulement pour `OWNER_EMAIL`) : nombre d'utilisateurs, nombre de
+Références et nombre d'adresses IP uniques ayant validé une connexion depuis l'activation du suivi. Les
+adresses sont conservées sous forme d'empreintes HMAC avec `SESSION_SECRET`, jamais en clair. Le compteur
+est cumulatif : plusieurs personnes partageant une IP comptent une fois et les IP dynamiques peuvent
+compter plusieurs fois.
+Route `GET /api/stats`, réponse 403 pour tout autre compte.
+
+## Suivi du trafic facultatif
+`VITE_TRACK_TOPIC` active l'envoi d'événements `visit`, `connection` et `can_added` vers ntfy.sh.
+Les événements contiennent un identifiant aléatoire persistant dans le navigateur, le type d'appareil
+et la provenance approximative (référent/source UTM). Le suivi est désactivé si la variable est vide ;
+`localStorage.setItem('sm_ignore', '1')` permet aussi de l'exclure dans un navigateur.
+Cette variable `VITE_` et le nom du topic sont intégrés au JavaScript public : le topic n'est pas un secret,
+et les messages peuvent être lus ou alimentés par toute personne qui le connaît. Ne pas y envoyer de
+donnée personnelle ou confidentielle, et ne pas utiliser ce mécanisme comme canal privé.
 
 ## Déployer
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
 import { api } from '../api'
 
-type Chiffres = { utilisateurs: number; references: number }
+type Chiffres = { utilisateurs: number; references: number; connexions_uniques: number }
 
 type Props = {
   surRetour: () => void
@@ -47,9 +47,18 @@ export default function Stats({ surRetour }: Props) {
           <b>{chiffres ? chiffres.references : '—'}</b>
           <span>Références</span>
         </div>
+        <div className="stat">
+          <b>{chiffres ? chiffres.connexions_uniques : '—'}</b>
+          <span>Connexions uniques</span>
+        </div>
       </div>
 
-      <p className="sous">Références : fiches distinctes par utilisateur.</p>
+      <p className="sous">
+        Références : fiches distinctes par utilisateur. Les connexions uniques comptent les adresses IP
+        ayant validé au moins une connexion depuis l’activation du suivi ; seule une empreinte HMAC est
+        conservée. Plusieurs personnes partageant une IP comptent une fois, tandis qu’une IP dynamique
+        peut compter plusieurs fois.
+      </p>
 
       <div className="outils">
         <button onClick={surRetour}>

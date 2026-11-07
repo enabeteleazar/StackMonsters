@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { Analytics } from '@vercel/analytics/react'
 import App from './App'
 import './styles.css'
+import { initSuivi } from './suivi'
 
 createRoot(document.getElementById('racine')!).render(
   <StrictMode>
@@ -10,6 +11,8 @@ createRoot(document.getElementById('racine')!).render(
     <Analytics />
   </StrictMode>,
 )
+
+initSuivi()
 
 // PWA : le service worker met l'appli et la dernière collection en cache.
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
