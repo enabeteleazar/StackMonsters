@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Home, LayoutGrid, PlusCircle, ScanLine, Settings2 } from 'lucide-react'
 import { api, jeton, NonAutorise } from './api'
+import AccueilPublic from './components/AccueilPublic'
 import Acces from './components/Acces'
 import HorsLigne from './components/HorsLigne'
 import Camera from './components/Camera'
@@ -14,6 +15,7 @@ import { moteurNatif } from './scanner'
 import type { Canette } from './types'
 
 type Vue = 'accueil' | 'collec' | 'reglages' | 'stats'
+type EtatAcces = 'verification' | 'accueil' | 'connexion' | 'prive'
 
 export default function App() {
   const [canettes, setCanettes] = useState<Canette[]>([])
@@ -22,8 +24,11 @@ export default function App() {
   const [ean, setEan] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [joignable, setJoignable] = useState(true)
-  const [autorise, setAutorise] = useState(true)
+  const [etatAcces, setEtatAcces] = useState<EtatAcces>(() =>
+    jeton.lire() ? 'verification' : 'accueil',
+  )
   const [refuse, setRefuse] = useState(false)
+  const [serviceIndisponible, setServiceIndisponible] = useState(false)
 
   const toast = useCallback((m: string) => {
     setMessage(m)
@@ -32,24 +37,84 @@ export default function App() {
 
   // Retour à l'écran d'accès. « refuse » distingue un jeton rejeté d'un jeton absent.
   const verrouiller = useCallback(() => {
-    setRefuse(jeton.lire() !== '')
-    setAutorise(false)
+    const sessionExistante = jeton.lire() !== ''
+    if (sessionExistante) jeton.effacer()
+    setRefuse(sessionExistante)
+    setEtatAcces('accueil')
   }, [])
 
   const recharger = useCallback(async () => {
     try {
       setCanettes(await api.liste())
       setJoignable(true)
-      setAutorise(true)
     } catch (e) {
       if (e instanceof NonAutorise) verrouiller()
       else setJoignable(false)
     }
   }, [verrouiller])
 
-  useEffect(() => {
-    recharger()
+  const apresConnexion = useCallback(() => {
+    setVue('accueil')
+    setCamera(false)
+    setEan(null)
+    setRefuse(false)
+    setServiceIndisponible(false)
+    setEtatAcces('prive')
+    void recharger()
   }, [recharger])
+
+  useEffect(() => {
+    if (etatAcces !== 'verification') return
+
+    let active = true
+    const verifierSession = async () => {
+      try {
+        await api.moi()
+        const collection = await api.liste()
+        if (!active) return
+        setCanettes(collection)
+        setJoignable(true)
+        setEtatAcces('prive')
+      } catch (e) {
+        if (!active) return
+        if (e instanceof NonAutorise) {
+          verrouiller()
+          return
+        }
+
+        if (e instanceof TypeError) {
+          try {
+            const collection = await api.liste()
+            if (!active) return
+            setCanettes(collection)
+            setJoignable(false)
+            setEtatAcces('prive')
+            return
+          } catch (erreurHorsLigne) {
+            if (!active) return
+            if (erreurHorsLigne instanceof NonAutorise) {
+              verrouiller()
+              return
+            }
+          }
+        }
+
+        setJoignable(false)
+        setServiceIndisponible(true)
+        setEtatAcces('accueil')
+      }
+    }
+
+    void verifierSession()
+    return () => {
+      active = false
+    }
+  }, [etatAcces, verrouiller])
+
+  const ouvrirConnexion = () => {
+    setServiceIndisponible(false)
+    setEtatAcces('connexion')
+  }
 
   const total = canettes.reduce((n, c) => n + c.nb, 0)
   const existante = ean ? (canettes.find((c) => c.ean === ean) ?? null) : null
@@ -92,7 +157,34 @@ export default function App() {
 
   const ajouterSansCode = () => setEan('LOCAL-' + Date.now().toString(36).toUpperCase())
 
-  if (!autorise) {
+  if (etatAcces === 'verification') {
+    return (
+      <>
+        <header>
+          <div className="logo">
+            <Logo />
+            <div className="logo-marque">
+              Stack<em>Monster</em>
+            </div>
+          </div>
+        </header>
+        <main className="attente-session" aria-live="polite">
+          Vérification de la session…
+        </main>
+      </>
+    )
+  }
+
+  if (etatAcces === 'accueil') {
+    return (
+      <AccueilPublic
+        surConnexion={ouvrirConnexion}
+        serviceIndisponible={serviceIndisponible}
+      />
+    )
+  }
+
+  if (etatAcces === 'connexion') {
     return (
       <>
         <header>
@@ -104,7 +196,11 @@ export default function App() {
           </div>
         </header>
         <main>
-          <Acces refuse={refuse} surValider={recharger} />
+          <Acces
+            refuse={refuse}
+            surValider={apresConnexion}
+            surRetour={() => setEtatAcces('accueil')}
+          />
         </main>
       </>
     )

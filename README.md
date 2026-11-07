@@ -11,6 +11,8 @@ Front React + TypeScript (Vite), API FastAPI (`api/index.py`), Postgres (Neon), 
 ## Comptes
 Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais, 5 demandes par heure et
 par adresse). Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
+La page d'accueil publique présente le service ; la collection privée n'est affichée qu'après
+validation de la session par l'API.
 Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
 
 ## Statistiques
