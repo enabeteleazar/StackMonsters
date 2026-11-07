@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 import api.index as ix
 
 A, B = "test-a@example.com", "test-b@example.com"
+IP_A, IP_B = "198.51.100.10", "203.0.113.11"
 
 
 @pytest.fixture()
@@ -13,15 +14,24 @@ def env(monkeypatch):
     with ix.base() as cx:
         cx.execute("DELETE FROM users WHERE email LIKE 'test-%@example.com'")
         cx.execute("DELETE FROM codes WHERE email LIKE 'test-%@example.com'")
+        cx.execute(
+            "DELETE FROM connexions_uniques WHERE ip_hash = ANY(%s)",
+            ([ix._empreinte_ip(IP_A), ix._empreinte_ip(IP_B)],),
+        )
     yield TestClient(ix.app), codes
     with ix.base() as cx:
         cx.execute("DELETE FROM users WHERE email LIKE 'test-%@example.com'")
         cx.execute("DELETE FROM codes WHERE email LIKE 'test-%@example.com'")
+        cx.execute(
+            "DELETE FROM connexions_uniques WHERE ip_hash = ANY(%s)",
+            ([ix._empreinte_ip(IP_A), ix._empreinte_ip(IP_B)],),
+        )
 
 
-def connecter(client, codes, email):
+def connecter(client, codes, email, ip=None):
     assert client.post("/api/auth/demande", json={"email": email}).status_code == 200
-    r = client.post("/api/auth/verification", json={"email": email, "code": codes[email]})
+    headers = {"X-Forwarded-For": ip} if ip else {}
+    r = client.post("/api/auth/verification", json={"email": email, "code": codes[email]}, headers=headers)
     assert r.status_code == 200
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
@@ -152,11 +162,40 @@ def test_stats_reservees_au_proprietaire(env, monkeypatch):
     c.put("/api/cans", json=canette(nb=3), headers=ha)
     c.put("/api/cans", json=canette("TEST-2", nb=2), headers=hb)
     avant = c.get("/api/stats", headers=ha).json()
-    assert avant["utilisateurs"] >= 2 and avant["references"] >= 2 and avant["canettes"] >= 5
+    assert avant["utilisateurs"] >= 2 and avant["references"] >= 2
     c.put("/api/cans", json=canette("TEST-3", nb=4), headers=ha)
     apres = c.get("/api/stats", headers=ha).json()
     assert apres["references"] == avant["references"] + 1
-    assert apres["canettes"] == avant["canettes"] + 4
+    assert apres["connexions_uniques"] == avant["connexions_uniques"]
+
+
+def test_stats_comptent_les_adresses_ip_uniques(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha = connecter(c, codes, A, IP_A)
+    avant = c.get("/api/stats", headers=ha).json()["connexions_uniques"]
+
+    connecter(c, codes, B, IP_A)
+    meme_ip = c.get("/api/stats", headers=ha).json()["connexions_uniques"]
+    assert meme_ip == avant
+
+    c.post("/api/auth/demande", json={"email": A})
+    r = c.post(
+        "/api/auth/verification",
+        json={"email": A, "code": codes[A]},
+        headers={"X-Forwarded-For": IP_B},
+    )
+    assert r.status_code == 200
+    nouvelles = c.get("/api/stats", headers=ha).json()["connexions_uniques"]
+    assert nouvelles == avant + 1
+
+    with ix.base() as cx:
+        empreintes = cx.execute(
+            "SELECT ip_hash FROM connexions_uniques WHERE ip_hash = ANY(%s)",
+            ([ix._empreinte_ip(IP_A), ix._empreinte_ip(IP_B)],),
+        ).fetchall()
+    assert len(empreintes) == 2
+    assert IP_A not in str(empreintes) and IP_B not in str(empreintes)
 
 
 def test_stats_refusees_sans_proprietaire_configure(env, monkeypatch):
