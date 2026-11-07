@@ -12,7 +12,7 @@ type Props = {
 }
 
 export default function Settings({ canettes, joignable, surVerrouiller, surStats }: Props) {
-  const [sante, setSante] = useState<{ status: string; version: string; canettes: number } | null>(null)
+  const [sante, setSante] = useState<{ status: string; version: string; references: number } | null>(null)
 
   // Seul le propriétaire (OWNER_EMAIL) obtient une réponse : sinon l'API répond 403 et le bouton reste caché.
   const [proprietaire, setProprietaire] = useState(false)
@@ -30,15 +30,24 @@ export default function Settings({ canettes, joignable, surVerrouiller, surStats
     URL.revokeObjectURL(a.href)
   }
 
-  const exportJson = () =>
+  const exportJson = () => {
+    const fiches = canettes.map((c) => ({
+      ean: c.ean,
+      nom: c.nom,
+      edition: c.edition,
+      volume: c.volume,
+      photo: c.photo,
+      ajout: c.ajout,
+    }))
     telecharger(
       `canstack-${new Date().toISOString().slice(0, 10)}.json`,
-      JSON.stringify(canettes, null, 2),
+      JSON.stringify(fiches, null, 2),
       'application/json',
     )
+  }
 
   const exportCsv = () => {
-    const cols: (keyof Canette)[] = ['ean', 'nom', 'edition', 'volume', 'etat', 'nb', 'notes', 'ajout']
+    const cols: (keyof Canette)[] = ['ean', 'nom', 'edition', 'volume', 'ajout']
     const csv = [cols.join(';')]
       .concat(
         canettes.map((c) =>
@@ -72,9 +81,9 @@ export default function Settings({ canettes, joignable, surVerrouiller, surStats
         <div className="reglages-ligne">
           <span className="libelle">
             <Database size={17} />
-            Canettes en base
+            Fiches en base
           </span>
-          <span className="valeur">{sante ? sante.canettes : '—'}</span>
+          <span className="valeur">{sante ? sante.references : '—'}</span>
         </div>
         <div className="reglages-ligne">
           <span className="libelle">

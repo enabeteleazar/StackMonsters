@@ -116,7 +116,6 @@ export default function App() {
     setEtatAcces('connexion')
   }
 
-  const total = canettes.reduce((n, c) => n + c.nb, 0)
   const existante = ean ? (canettes.find((c) => c.ean === ean) ?? null) : null
 
   const enregistrer = async (c: Canette) => {
@@ -128,18 +127,6 @@ export default function App() {
     } catch (e) {
       if (e instanceof NonAutorise) verrouiller()
       else toast(`Enregistrement refusé — ${(e as Error).message}`)
-    }
-  }
-
-  const incrementer = async (e: string, delta: number) => {
-    try {
-      const c = await api.incrementer(e, delta)
-      await recharger()
-      toast(`${c.nom || 'Canette'} : ${c.nb} exemplaires`)
-      setEan(null)
-    } catch (err) {
-      if (err instanceof NonAutorise) verrouiller()
-      else toast(`Service injoignable — ${(err as Error).message}`)
     }
   }
 
@@ -217,7 +204,7 @@ export default function App() {
         </div>
         <div className={`compteur ${joignable ? '' : 'hors-ligne'}`}>
           <span className="point" />
-          {joignable ? `${canettes.length} réf · ${total} canettes` : 'service injoignable'}
+          {joignable ? `${canettes.length} réf.` : 'service injoignable'}
         </div>
       </header>
 
@@ -304,7 +291,6 @@ export default function App() {
           ean={ean}
           existante={existante}
           surEnregistrer={enregistrer}
-          surIncrementer={incrementer}
           surSupprimer={supprimer}
           surFermeture={() => setEan(null)}
         />

@@ -270,7 +270,7 @@ def deconnexion(u: dict = Depends(utilisateur)) -> None:
 def sante(u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
         n = cx.execute("SELECT COUNT(*) AS n FROM collection WHERE user_id = %s", (u["id"],)).fetchone()["n"]
-    return {"status": "ok", "version": VERSION, "canettes": n}
+    return {"status": "ok", "version": VERSION, "references": n}
 
 
 @router.get("/stats")
@@ -280,8 +280,8 @@ def statistiques(u: dict = Depends(utilisateur)) -> dict:
         raise HTTPException(403, "réservé au propriétaire")
     with base() as cx:
         n_users = cx.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
-        t = cx.execute("SELECT COUNT(*) AS refs, COALESCE(SUM(nb), 0) AS total FROM collection").fetchone()
-    return {"utilisateurs": n_users, "references": t["refs"], "canettes": int(t["total"])}
+        t = cx.execute("SELECT COUNT(*) AS refs FROM collection").fetchone()
+    return {"utilisateurs": n_users, "references": t["refs"]}
 
 
 @router.get("/cans")

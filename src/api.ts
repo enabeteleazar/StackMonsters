@@ -72,11 +72,6 @@ export const api = {
   liste: () => requete<Canette[]>('/cans'),
   enregistrer: (c: Canette) =>
     requete<Canette>('/cans', { method: 'PUT', body: JSON.stringify(c) }),
-  incrementer: (ean: string, delta: number) =>
-    requete<Canette>(`/cans/${encodeURIComponent(ean)}/nb`, {
-      method: 'PATCH',
-      body: JSON.stringify({ delta }),
-    }),
   supprimer: (ean: string) =>
     requete<void>(`/cans/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
   demande: (email: string) =>
@@ -89,6 +84,6 @@ export const api = {
   moi: () => requete<{ email: string }>('/auth/moi'),
   deconnexion: () => requete<void>('/auth/deconnexion', { method: 'POST' }),
   stats: () =>
-    requete<{ utilisateurs: number; references: number; canettes: number }>('/stats'),
-  sante: () => requete<{ status: string; version: string; canettes: number }>('/health'),
+    requete<{ utilisateurs: number; references: number }>('/stats'),
+  sante: () => requete<{ status: string; version: string; references: number }>('/health'),
 }

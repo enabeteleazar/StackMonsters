@@ -82,7 +82,7 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
           <article>
             <LibraryBig size={22} />
             <h2>Organise</h2>
-            <p>Retrouve tes références, variantes et notes dans un seul espace.</p>
+            <p>Retrouve tes références et variantes dans un seul espace.</p>
           </article>
           <article>
             <BarChart3 size={22} />
