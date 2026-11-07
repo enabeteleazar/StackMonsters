@@ -17,9 +17,6 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
             Stack<em>Monster</em>
           </div>
         </div>
-        <button className="btn btn-fantome accueil-public-connexion" onClick={surConnexion}>
-          Connexion
-        </button>
       </header>
 
       <main className="accueil-public-contenu">
@@ -47,13 +44,19 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
 
         <section className="accueil-public-apercu" aria-label="Fonctionnalités de StackMonster">
           <div className="accueil-public-apercu-tete">
-            <span className="accueil-public-pastille"><ScanLine size={17} /> Collectionneur</span>
+            <span className="accueil-public-pastille"><ScanLine size={17} /> Monster Mega</span>
             <span className="accueil-public-lueur" aria-hidden="true" />
           </div>
-          <div className="accueil-public-canettes" aria-hidden="true">
-            <div className="accueil-public-canette canette-verte"><i /></div>
-            <div className="accueil-public-canette canette-orange"><i /></div>
-            <div className="accueil-public-canette canette-bleue"><i /></div>
+          <div className="accueil-public-galerie">
+            <figure>
+              <img src="/images/monster-mega.jpg" alt="Canette Monster Energy Mega sur fond noir" />
+              <figcaption>
+                <b>Monster Mega</b>
+                <a href="https://commons.wikimedia.org/wiki/File:Monster_Energy_Mega_can.jpg" target="_blank" rel="noreferrer">
+                  Photo : DYVER
+                </a>
+              </figcaption>
+            </figure>
           </div>
           <div className="accueil-public-apercu-pied">
             <div>
@@ -62,6 +65,12 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
             </div>
             <ScanLine size={21} />
           </div>
+          <p className="accueil-public-licence">
+            Photo sous licence{' '}
+            <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">
+              CC BY-SA 4.0
+            </a>
+          </p>
         </section>
 
         <section className="accueil-public-fonctions">
@@ -80,6 +89,11 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
             <h2>Progresse</h2>
             <p>Visualise ta collection et suis tes nouvelles trouvailles.</p>
           </article>
+          <article>
+            <ShieldCheck size={22} />
+            <h2>Protège</h2>
+            <p>Ta collection reste privée et accessible uniquement après connexion.</p>
+          </article>
         </section>
 
         <p className="accueil-public-prive">
@@ -90,6 +104,9 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
         <button className="accueil-public-cta-bas" onClick={surConnexion}>
           Accéder à ma collection <ArrowRight size={18} />
         </button>
+        <p className="accueil-public-independance">
+          StackMonster est un projet indépendant, non affilié à Monster Energy et non édité par la marque.
+        </p>
       </main>
     </div>
   )
