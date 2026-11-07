@@ -4,11 +4,12 @@ import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 type Props = {
   /** Appelé après connexion : le parent recharge la collection. */
   surValider: () => void
+  surRetour: () => void
   /** Vrai quand une session existante a été rejetée (expirée, révoquée). */
   refuse: boolean
 }
 
-export default function Acces({ surValider, refuse }: Props) {
+export default function Acces({ surValider, surRetour, refuse }: Props) {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [etape, setEtape] = useState<'email' | 'code'>('email')
@@ -120,6 +121,9 @@ export default function Acces({ surValider, refuse }: Props) {
             Changer d&rsquo;e-mail
           </button>
         )}
+        <button className="btn btn-retour-accueil" onClick={surRetour}>
+          Retour à l&rsquo;accueil
+        </button>
       </div>
     </section>
   )

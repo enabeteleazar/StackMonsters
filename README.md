@@ -11,7 +11,15 @@ Front React + TypeScript (Vite), API FastAPI (`api/index.py`), Postgres (Neon), 
 ## Comptes
 Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais, 5 demandes par heure et
 par adresse). Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
+La page d'accueil publique présente le service ; la collection privée n'est affichée qu'après
+validation de la session par l'API.
 Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
+
+## Photos de la page d'accueil
+La photo de canette dans `public/images/` provient de Wikimedia Commons et est affichée avec attribution :
+- [Monster Energy Mega can](https://commons.wikimedia.org/wiki/File:Monster_Energy_Mega_can.jpg), DYVER.
+
+Photos sous licence [Creative Commons Attribution-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-sa/4.0/).
 
 ## Statistiques
 Réglages → **Statistiques** (visible seulement pour `OWNER_EMAIL`) : nombre d'utilisateurs, total des
