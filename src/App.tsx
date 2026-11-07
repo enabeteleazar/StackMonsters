@@ -12,6 +12,7 @@ import Settings from './components/Settings'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
 import { moteurNatif } from './scanner'
+import { suivre } from './suivi'
 import type { Canette } from './types'
 
 type Vue = 'accueil' | 'collec' | 'reglages' | 'stats'
@@ -119,8 +120,10 @@ export default function App() {
   const existante = ean ? (canettes.find((c) => c.ean === ean) ?? null) : null
 
   const enregistrer = async (c: Canette) => {
+    const nouvelle = !canettes.some((x) => x.ean === c.ean)
     try {
       await api.enregistrer(c)
+      if (nouvelle) suivre('can_added')
       await recharger()
       toast('Fiche enregistrée')
       setEan(null)

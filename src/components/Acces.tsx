@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, ErreurAPI, jeton, NonAutorise } from '../api'
+import { suivre } from '../suivi'
 
 type Props = {
   /** Appelé après connexion : le parent recharge la collection. */
@@ -54,6 +55,7 @@ export default function Acces({ surValider, surRetour, refuse }: Props) {
     try {
       const r = await api.verification(email, c)
       jeton.ecrire(r.token)
+      suivre('connection')
       surValider()
     } catch (err) {
       setMessage(err instanceof NonAutorise ? 'Code invalide ou expiré.' : 'Service injoignable.')

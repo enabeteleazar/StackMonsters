@@ -29,6 +29,15 @@ est cumulatif : plusieurs personnes partageant une IP comptent une fois et les I
 compter plusieurs fois.
 Route `GET /api/stats`, réponse 403 pour tout autre compte.
 
+## Suivi du trafic facultatif
+`VITE_TRACK_TOPIC` active l'envoi d'événements `visit`, `connection` et `can_added` vers ntfy.sh.
+Les événements contiennent un identifiant aléatoire persistant dans le navigateur, le type d'appareil
+et la provenance approximative (référent/source UTM). Le suivi est désactivé si la variable est vide ;
+`localStorage.setItem('sm_ignore', '1')` permet aussi de l'exclure dans un navigateur.
+Cette variable `VITE_` et le nom du topic sont intégrés au JavaScript public : le topic n'est pas un secret,
+et les messages peuvent être lus ou alimentés par toute personne qui le connaît. Ne pas y envoyer de
+donnée personnelle ou confidentielle, et ne pas utiliser ce mécanisme comme canal privé.
+
 ## Déployer
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).
 2. Dans Vercel → Settings → Environment Variables, configure `STATUS_APP` avec `MAINTENANCE`
