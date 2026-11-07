@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>STACKMONSTER - Maintenance</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="bg-[#080a08] text-white font-sans min-h-screen flex flex-col justify-between p-6 overflow-x-hidden selection:bg-[#a8ff1a] selection:text-black">
+    <div class="fixed top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] bg-[#a8ff1a]/15 rounded-full blur-[120px] pointer-events-none"></div>
+    <header class="w-full max-w-md mx-auto pt-4 flex items-center justify-between z-10">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-[#a8ff1a] flex items-center justify-center text-black font-black text-xl shadow-[0_0_15px_rgba(168,255,26,0.5)]">⚡</div>
+        <span class="font-['Anton'] tracking-wider text-2xl text-white">STACK<span class="text-[#a8ff1a]">MONSTER</span></span>
+      </div>
+      <div class="flex items-center gap-2 bg-[#121612] px-3 py-1 rounded-full border border-white/10">
+        <span class="w-2 h-2 rounded-full bg-[#a8ff1a] animate-pulse"></span>
+        <span class="text-xs uppercase font-mono tracking-widest text-zinc-400">Maintenance</span>
+      </div>
+    </header>
+    <main class="w-full max-w-md mx-auto my-auto py-8 z-10">
+      <div class="mb-8">
+        <p class="text-xs font-bold tracking-widest uppercase text-zinc-500 mb-2 font-mono">MAINTENANCE SYSTÈME EN COURS</p>
+        <h1 class="font-['Anton'] text-4xl sm:text-5xl uppercase tracking-wide leading-none mb-3">
+          RETOUR IMMINENT <br/>
+          <span class="text-[#a8ff1a] drop-shadow-[0_0_20px_rgba(168,255,26,0.4)]">PLUS PUISSANT.</span>
+        </h1>
+        <p class="text-zinc-400 text-sm leading-relaxed">Nous mettons à niveau nos serveurs et algorithmes pour maximiser vos performances.</p>
+      </div>
+      <div class="bg-[#121612] border border-white/10 rounded-2xl p-4 mb-8">
+        <div class="grid grid-cols-4 gap-2 text-center">
+          <div class="bg-[#080a08] p-3 rounded-xl border border-white/5"><span id="days" class="font-['JetBrains_Mono'] text-2xl sm:text-3xl font-bold text-[#a8ff1a]">00</span><span class="block text-[10px] text-zinc-500 uppercase mt-1">Jours</span></div>
+          <div class="bg-[#080a08] p-3 rounded-xl border border-white/5"><span id="hours" class="font-['JetBrains_Mono'] text-2xl sm:text-3xl font-bold text-[#a8ff1a]">00</span><span class="block text-[10px] text-zinc-500 uppercase mt-1">Heures</span></div>
+          <div class="bg-[#080a08] p-3 rounded-xl border border-white/5"><span id="minutes" class="font-['JetBrains_Mono'] text-2xl sm:text-3xl font-bold text-[#a8ff1a]">00</span><span class="block text-[10px] text-zinc-500 uppercase mt-1">Minutes</span></div>
+          <div class="bg-[#080a08] p-3 rounded-xl border border-white/5"><span id="seconds" class="font-['JetBrains_Mono'] text-2xl sm:text-3xl font-bold text-[#a8ff1a]">00</span><span class="block text-[10px] text-zinc-500 uppercase mt-1">Secondes</span></div>
+        </div>
+        <div class="mt-4">
+          <div class="flex justify-between text-xs font-mono text-zinc-400 mb-1.5">
+            <span>Déploiement Stack v2.4</span>
+            <span id="progress-label" class="text-[#a8ff1a]">0%</span>
+          </div>
+          <div class="w-full bg-[#080a08] h-2 rounded-full overflow-hidden p-0.5 border border-white/5">
+            <div id="progress-bar" role="progressbar" aria-label="Progression de la maintenance" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" class="bg-[#a8ff1a] h-full rounded-full shadow-[0_0_10px_#a8ff1a]" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+      <div id="success-message" class="hidden mt-4 p-4 rounded-xl bg-[#a8ff1a]/10 border border-[#a8ff1a]/30 text-[#a8ff1a] text-sm text-center font-medium">
+        ✓ Vous serez averti dès le lancement !
+      </div>
+    </main>
+    <footer class="w-full max-w-md mx-auto text-center py-4 text-xs text-zinc-600 z-10">
+      &copy; 2026 STACKMONSTER. Tous droits réservés.
+    </footer>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
