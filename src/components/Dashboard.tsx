@@ -39,13 +39,12 @@ export default function Dashboard({
   )
 
   const stats = useMemo(() => {
-    const total = canettes.reduce((n, c) => n + c.nb, 0)
     const references = canettes.length
     const variantes = new Set(canettes.map((c) => c.edition || '—')).size
     const ceMois = canettes.filter((c) => estCeMois(c.ajout)).length
-    const palier = total === 0 ? 50 : Math.ceil((total + 1) / 50) * 50
-    const progres = Math.min(100, Math.round((total / palier) * 100))
-    return { total, references, variantes, ceMois, palier, progres }
+    const palier = references === 0 ? 50 : Math.ceil((references + 1) / 50) * 50
+    const progres = Math.min(100, Math.round((references / palier) * 100))
+    return { references, variantes, ceMois, palier, progres }
   }, [canettes])
 
   const recentes = useMemo(
@@ -68,10 +67,6 @@ export default function Dashboard({
 
       <div className="stats-grille">
         <div className="stat-tuile accent">
-          <b>{stats.total}</b>
-          <span>Canettes</span>
-        </div>
-        <div className="stat-tuile">
           <b>{stats.references}</b>
           <span>Références</span>
         </div>
@@ -87,8 +82,8 @@ export default function Dashboard({
 
       <div className="palier">
         <div className="palier-tete">
-          <span>Prochain palier</span>
-          <span>{stats.total} / {stats.palier}</span>
+          <span>Prochain palier de références</span>
+          <span>{stats.references} / {stats.palier}</span>
         </div>
         <div className="barre-progres">
           <i style={{ width: `${stats.progres}%` }} />

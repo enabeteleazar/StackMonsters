@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
 import { api } from '../api'
 
-type Chiffres = { utilisateurs: number; references: number; canettes: number }
+type Chiffres = { utilisateurs: number; references: number }
 
 type Props = {
   surRetour: () => void
@@ -44,19 +44,12 @@ export default function Stats({ surRetour }: Props) {
           <span>Utilisateurs</span>
         </div>
         <div className="stat">
-          <b>{chiffres ? chiffres.canettes : '—'}</b>
-          <span>Canettes</span>
-        </div>
-        <div className="stat">
           <b>{chiffres ? chiffres.references : '—'}</b>
           <span>Références</span>
         </div>
       </div>
 
-      <p className="sous">
-        Canettes : total des exemplaires de toutes les collections. Références : fiches distinctes par
-        utilisateur.
-      </p>
+      <p className="sous">Références : fiches distinctes par utilisateur.</p>
 
       <div className="outils">
         <button onClick={surRetour}>

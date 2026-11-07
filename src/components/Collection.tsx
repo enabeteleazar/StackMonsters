@@ -7,7 +7,7 @@ type Props = {
   surOuvrir: (ean: string) => void
 }
 
-type Tri = 'recent' | 'nom' | 'nb'
+type Tri = 'recent' | 'nom'
 
 export default function Collection({ canettes, surOuvrir }: Props) {
   const [q, setQ] = useState('')
@@ -18,7 +18,7 @@ export default function Collection({ canettes, surOuvrir }: Props) {
     const m = new Map<string, number>()
     canettes.forEach((c) => {
       const e = c.edition || '—'
-      m.set(e, (m.get(e) ?? 0) + c.nb)
+      m.set(e, (m.get(e) ?? 0) + 1)
     })
     return [...m.entries()].sort((a, b) => b[1] - a[1])
   }, [canettes])
@@ -30,12 +30,9 @@ export default function Collection({ canettes, surOuvrir }: Props) {
       .filter((c) => !edition || (c.edition || '—') === edition)
     return filtrees.sort((a, b) => {
       if (tri === 'nom') return a.nom.localeCompare(b.nom)
-      if (tri === 'nb') return b.nb - a.nb
       return b.ajout.localeCompare(a.ajout)
     })
   }, [canettes, q, edition, tri])
-
-  const total = canettes.reduce((n, c) => n + c.nb, 0)
 
   return (
     <section>
@@ -44,10 +41,6 @@ export default function Collection({ canettes, surOuvrir }: Props) {
         <div className="stat">
           <b>{canettes.length}</b>
           <span>Références</span>
-        </div>
-        <div className="stat">
-          <b>{total}</b>
-          <span>Canettes</span>
         </div>
         <div className="stat">
           <b>{editions[0]?.[0] ?? '—'}</b>
@@ -80,7 +73,6 @@ export default function Collection({ canettes, surOuvrir }: Props) {
         <select value={tri} name="tri" onChange={(e) => setTri(e.target.value as Tri)} aria-label="Trier">
           <option value="recent">Plus récentes</option>
           <option value="nom">Nom A→Z</option>
-          <option value="nb">Quantité</option>
         </select>
       </div>
 
@@ -94,7 +86,6 @@ export default function Collection({ canettes, surOuvrir }: Props) {
                 ) : (
                   <ImageOff className="ph-vide" size={26} />
                 )}
-                {c.nb > 1 && <span className="nb-badge">×{c.nb}</span>}
               </div>
               <div className="carte-corps">
                 <span className="nom">{c.nom || 'Sans nom'}</span>

@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { Camera as CameraIcon, CheckCircle2, ImageOff, Sparkles, X } from 'lucide-react'
 import { reduirePhoto } from '../photo'
-import { CANETTE_VIDE, ETATS, type Canette } from '../types'
+import { CANETTE_VIDE, type Canette } from '../types'
 
 type Props = {
   ean: string
   existante: Canette | null
   surEnregistrer: (c: Canette) => Promise<void>
-  surIncrementer: (ean: string, delta: number) => Promise<void>
   surSupprimer: (ean: string) => Promise<void>
   surFermeture: () => void
 }
@@ -80,25 +79,9 @@ export default function Verdict(p: Props) {
                 <span>Volume</span>
                 <b>{p.existante!.volume || '—'}</b>
               </div>
-              <div className="meta-item">
-                <span>État</span>
-                <b>{p.existante!.etat || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Exemplaires</span>
-                <b>×{p.existante!.nb}</b>
-              </div>
             </div>
-            {p.existante!.notes && <div className="notes-bloc">{p.existante!.notes}</div>}
 
             <div className="actions">
-              <button
-                className="btn btn-primaire actions-principal"
-                disabled={occupe}
-                onClick={() => proteger(() => p.surIncrementer(p.ean, 1))}
-              >
-                +1 exemplaire
-              </button>
               <button className="btn btn-fantome" onClick={() => setEdition(true)}>
                 Modifier la fiche
               </button>
@@ -171,36 +154,6 @@ function Formulaire({
               onChange={(e) => champ('volume', e.target.value)}
             />
           </div>
-        </div>
-        <div className="duo">
-          <div>
-            <label htmlFor="f-etat">État</label>
-            <select id="f-etat" value={c.etat} onChange={(e) => champ('etat', e.target.value)}>
-              {ETATS.map((e) => (
-                <option key={e}>{e}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="f-nb">Exemplaires</label>
-            <input
-              id="f-nb"
-              type="number"
-              min={1}
-              value={c.nb}
-              onChange={(e) => champ('nb', Math.max(1, Number(e.target.value) || 1))}
-            />
-          </div>
-        </div>
-        <div>
-          <label htmlFor="f-notes">Notes</label>
-          <textarea
-            id="f-notes"
-            rows={2}
-            value={c.notes}
-            placeholder="Trouvée à Berlin, série 2024…"
-            onChange={(e) => champ('notes', e.target.value)}
-          />
         </div>
         <div className="photo-zone">
           <CameraIcon size={22} />
