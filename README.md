@@ -10,11 +10,17 @@ Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id`
 
 ## Déployer
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).
-2. Variables d'environnement (voir `.env.example`) : `SESSION_SECRET`, `RESEND_API_KEY`,
+2. Dans Vercel → Settings → Environment Variables, configure `STATUS_APP` avec `MAINTENANCE`
+   pour afficher la page de maintenance ou `PRODUCTION` pour afficher l'application (valeur par
+   défaut si la variable est absente). Après chaque changement de valeur sur Vercel, redéploie
+   l'application pour appliquer le nouveau mode. En local, le même réglage se fait dans `.env.local`.
+3. Variables d'environnement (voir `.env.example`) : `SESSION_SECRET`, `RESEND_API_KEY`,
    `MAIL_FROM`, `OWNER_EMAIL`. Supprime `API_TOKEN`, devenu inutile.
-3. Compte **Resend** pour l'envoi des codes. Sans domaine vérifié, l'expéditeur de test
+   La page de maintenance utilise aussi `VITE_MAINTENANCE_START_DATE` et
+   `VITE_MAINTENANCE_TARGET_DATE` (dates ISO 8601 avec fuseau horaire) pour calculer sa progression.
+4. Compte **Resend** pour l'envoi des codes. Sans domaine vérifié, l'expéditeur de test
    (`onboarding@resend.dev`) ne livre qu'à l'adresse du compte : à vérifier chez Resend.
-4. `vercel --prod`, puis connecte-toi avec `OWNER_EMAIL` : l'ancienne collection (table
+5. `vercel --prod`, puis connecte-toi avec `OWNER_EMAIL` : l'ancienne collection (table
    `canettes`) est copiée dans ton compte, une seule fois, à la création de ton utilisateur.
 
 Import d'anciennes données : `scripts/migrer.py` écrit dans `canettes` ; fais-le **avant** la

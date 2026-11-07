@@ -1,17 +1,39 @@
+import { maintenanceProgress } from './maintenanceProgress.js';
+
 // Compte à rebours dynamique basé sur une date cible précise
 function startCountdown() {
   const daysEl = document.getElementById('days');
   const hoursEl = document.getElementById('hours');
   const minutesEl = document.getElementById('minutes');
   const secondsEl = document.getElementById('seconds');
+  const progressBar = document.getElementById('progress-bar');
+  const progressLabel = document.getElementById('progress-label');
 
-  // Date cible de fin de maintenance (Modifiable au format AAAA-MM-JJTHH:MM:SS)
-  const targetDateString = "2026-11-04T17:00:00";
-  const targetTime = new Date(targetDateString).getTime();
+  const startDateString = import.meta.env.VITE_MAINTENANCE_START_DATE;
+  const targetDateString = import.meta.env.VITE_MAINTENANCE_TARGET_DATE;
+  const startTime = Date.parse(startDateString ?? '');
+  const targetTime = Date.parse(targetDateString ?? '');
+
+  if (!Number.isFinite(targetTime)) {
+    console.error('VITE_MAINTENANCE_TARGET_DATE must be a valid ISO 8601 date.');
+    return;
+  }
+
+  if (!Number.isFinite(startTime) || startTime >= targetTime) {
+    console.error('VITE_MAINTENANCE_START_DATE must be a valid date before the target date.');
+  }
 
   function update() {
     const now = new Date().getTime();
     const distance = targetTime - now;
+    const progress = maintenanceProgress(now, startTime, targetTime);
+    const roundedProgress = Math.floor(progress);
+
+    if (progressBar) {
+      progressBar.style.width = `${progress}%`;
+      progressBar.setAttribute('aria-valuenow', String(roundedProgress));
+    }
+    if (progressLabel) progressLabel.textContent = `${roundedProgress}%`;
 
     if (distance < 0) {
       if (daysEl) daysEl.textContent = '00';
