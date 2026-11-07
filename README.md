@@ -47,6 +47,21 @@ pnpm install && ./dev.sh      # http://localhost:5273
 En local, saisis un e-mail : le code s'affiche dans le terminal (ligne `[dev]`).
 Tests : `pnpm test` ; `TEST_DATABASE_URL=… python -m pytest tests` (jamais sur la production).
 
+## Tests bout en bout
+Les tests navigateur utilisent une base Postgres locale dédiée, avec un nom contenant `test`.
+Ils refusent les hôtes distants et n'utilisent jamais `DATABASE_URL`. En local, démarre une base
+isolée puis lance :
+```bash
+docker run --rm -d --name stackmonster-test-db -p 127.0.0.1:5544:5432 \
+  -e POSTGRES_DB=stackmonster_test -e POSTGRES_PASSWORD=stackmonster_test postgres:16
+export TEST_DATABASE_URL=postgresql://postgres:stackmonster_test@127.0.0.1:5544/stackmonster_test
+pnpm exec playwright install chromium
+pnpm test:e2e
+docker stop stackmonster-test-db
+```
+La CI démarre sa propre base éphémère, exécute les tests unitaires, API, navigateur et le build.
+Configure le contrôle GitHub `tests` comme vérification obligatoire avant d'autoriser le déploiement.
+
 ## Limites assumées
 - Aucune protection contre l'inscription en masse (un compte se crée à la première vérification).
 - Session stockée dans `localStorage`, envoyée en `Bearer` (pas de cookie).

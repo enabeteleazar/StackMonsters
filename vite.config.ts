@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { env } from 'node:process'
 
 // Sur Vercel le site est servi à la racine, et l'API sous /api (voir api/index.py).
 // Aucune URL absolue ni aucun port ne doit apparaître dans le bundle :
@@ -21,7 +22,7 @@ export default defineConfig({
     port: 5273,
     // En développement, ./dev.sh lance l'API (uvicorn) sur 8055.
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8055', changeOrigin: true },
+      '/api': { target: env.E2E_API_PROXY_TARGET ?? 'http://127.0.0.1:8055', changeOrigin: true },
     },
   },
 })
