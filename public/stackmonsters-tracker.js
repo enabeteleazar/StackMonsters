@@ -3,7 +3,7 @@
           window.smTrack('can_added')  après l'ajout d'une canette.
    Pour ne pas compter vos propres visites : localStorage.setItem('sm_ignore','1') */
 (function () {
-  var URL_NTFY = 'https://ntfy.sh/sm-71038172e8a4c326'; // même valeur que NTFY_TOPIC côté serveur
+  var URL_NTFY = 'https://ntfy.sh/sm-3fa91c07d2b84e55'; // même valeur que NTFY_TOPIC côté serveur
   try { if (localStorage.getItem('sm_ignore')) { window.smTrack = function () {}; return; } } catch (e) {}
   var vid = 'anon';
   try {
