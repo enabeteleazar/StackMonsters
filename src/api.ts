@@ -1,5 +1,5 @@
 import { API_URL, CLE_JETON } from './config'
-import type { Canette } from './types'
+import type { Canette, FicheWiki, ModifFicheWiki, ReponseWiki } from './types'
 
 /** Levée quand le service répond 401 : jeton absent ou refusé. */
 export class NonAutorise extends Error {
@@ -15,6 +15,18 @@ export class ErreurAPI extends Error {
   ) {
     super(`${status} ${detail}`)
   }
+}
+
+function blobEnDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const lecteur = new FileReader()
+    lecteur.onload = () => {
+      if (typeof lecteur.result === 'string') resolve(lecteur.result)
+      else reject(new Error('Impossible de lire la photo du Wiki'))
+    }
+    lecteur.onerror = () => reject(lecteur.error ?? new Error('Impossible de lire la photo du Wiki'))
+    lecteur.readAsDataURL(blob)
+  })
 }
 
 // localStorage peut lever une exception (navigation privée de Safari, par exemple).
@@ -86,4 +98,28 @@ export const api = {
   stats: () =>
     requete<{ utilisateurs: number; references: number; connexions_uniques: number }>('/stats'),
   sante: () => requete<{ status: string; version: string; references: number }>('/health'),
+  wiki: () => requete<ReponseWiki>('/wiki'),
+  wikiModifier: (ean: string, f: ModifFicheWiki) =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}`, { method: 'PUT', body: JSON.stringify(f) }),
+  wikiSupprimer: (ean: string) =>
+    requete<void>(`/wiki/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
+  /** Une <img> ne peut pas envoyer l'en-tête Authorization : on charge l'image puis on la sert par URL locale. */
+  wikiPhoto: async (ean: string, version: string): Promise<string> => {
+    const r = await fetch(`${API_URL}/wiki/${encodeURIComponent(ean)}/photo?v=${encodeURIComponent(version)}`, {
+      headers: { Authorization: `Bearer ${jeton.lire()}` },
+    })
+    if (r.status === 401) throw new NonAutorise()
+    if (!r.ok) throw new ErreurAPI(r.status, 'photo indisponible')
+    return URL.createObjectURL(await r.blob())
+  },
+  wikiPhotoData: async (ean: string, version: string): Promise<string> => {
+    const url = await api.wikiPhoto(ean, version)
+    try {
+      const response = await fetch(url)
+      if (!response.ok) throw new ErreurAPI(response.status, 'photo indisponible')
+      return await blobEnDataUrl(await response.blob())
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  },
 }

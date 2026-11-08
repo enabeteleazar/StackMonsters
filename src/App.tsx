@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Home, LayoutGrid, PlusCircle, ScanLine, Settings2 } from 'lucide-react'
+import { BookOpen, Home, LayoutGrid, ScanLine, Settings2 } from 'lucide-react'
 import { api, jeton, NonAutorise } from './api'
 import AccueilPublic from './components/AccueilPublic'
 import Acces from './components/Acces'
@@ -11,11 +11,12 @@ import Logo from './components/Logo'
 import Settings from './components/Settings'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
+import Wiki from './components/Wiki'
 import { moteurNatif } from './scanner'
 import { suivre } from './suivi'
 import type { Canette } from './types'
 
-type Vue = 'accueil' | 'collec' | 'reglages' | 'stats'
+type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats'
 type EtatAcces = 'verification' | 'accueil' | 'connexion' | 'prive'
 
 export default function App() {
@@ -211,7 +212,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className={vue === 'collec' ? 'large' : ''}>
+      <main className={vue === 'collec' || vue === 'wiki' ? 'large' : ''}>
         <HorsLigne />
         {vue === 'accueil' && (
           <Dashboard
@@ -221,10 +222,10 @@ export default function App() {
             surOuvrir={setEan}
             surReglages={() => setVue('reglages')}
             surCodeManuel={setEan}
-            toast={toast}
           />
         )}
         {vue === 'collec' && <Collection canettes={canettes} surOuvrir={setEan} />}
+        {vue === 'wiki' && <Wiki surNonAutorise={verrouiller} />}
         {vue === 'reglages' && (
           <Settings
             canettes={canettes}
@@ -268,9 +269,9 @@ export default function App() {
           </span>
           Scan
         </button>
-        <button onClick={ajouterSansCode}>
-          <PlusCircle size={19} />
-          Ajouter
+        <button aria-current={vue === 'wiki'} onClick={() => setVue('wiki')}>
+          <BookOpen size={19} />
+          Wiki
         </button>
         <button aria-current={vue === 'reglages' || vue === 'stats'} onClick={() => setVue('reglages')}>
           <Settings2 size={19} />
@@ -293,6 +294,8 @@ export default function App() {
         <Verdict
           ean={ean}
           existante={existante}
+          canettes={canettes}
+          surNonAutorise={verrouiller}
           surEnregistrer={enregistrer}
           surSupprimer={supprimer}
           surFermeture={() => setEan(null)}

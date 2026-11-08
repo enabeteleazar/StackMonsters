@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ImageOff, PlusCircle, ScanLine, Settings2 } from 'lucide-react'
+import { estCodeBarresEAN13 } from '../codeBarres'
 import type { Canette } from '../types'
 
 type Props = {
@@ -9,7 +10,6 @@ type Props = {
   surOuvrir: (ean: string) => void
   surReglages: () => void
   surCodeManuel: (ean: string) => void
-  toast: (m: string) => void
 }
 
 function estCeMois(iso: string) {
@@ -25,7 +25,6 @@ export default function Dashboard({
   surOuvrir,
   surReglages,
   surCodeManuel,
-  toast,
 }: Props) {
   const [saisie, setSaisie] = useState('')
 
@@ -116,9 +115,9 @@ export default function Dashboard({
           onChange={(e) => setSaisie(e.target.value)}
         />
         <button
+          disabled={!estCodeBarresEAN13(saisie.trim())}
           onClick={() => {
             const v = saisie.trim()
-            if (!v) return toast('Entre un code')
             setSaisie('')
             surCodeManuel(v)
           }}

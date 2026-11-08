@@ -23,3 +23,19 @@ export const CANETTE_VIDE = (ean: string): Canette => ({
 })
 
 export const ETATS = ['Pleine', 'Vide', 'Ouverte proprement', 'Cabossée'] as const
+
+/** Fiche du Wiki (catalogue partagé) : jamais de donnée de collection personnelle. */
+export type FicheWiki = {
+  ean: string
+  nom: string
+  edition: string
+  volume: string
+  pays: string
+  description: string
+  /** Marqueur de version de la photo (null : pas de photo). Les octets se chargent à part. */
+  photo: string | null
+}
+
+export type ReponseWiki = { peut_editer: boolean; fiches: FicheWiki[] }
+
+export type ModifFicheWiki = Pick<FicheWiki, 'ean' | 'nom' | 'edition' | 'volume' | 'pays' | 'description'>

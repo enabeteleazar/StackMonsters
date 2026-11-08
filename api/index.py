@@ -7,6 +7,8 @@ Flux : POST /auth/demande {email} envoie un code à 6 chiffres ; POST /auth/veri
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import hmac
 import ipaddress
@@ -23,7 +25,7 @@ from pathlib import Path
 from typing import Iterator
 
 import psycopg
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field
 
@@ -40,6 +42,8 @@ logger = logging.getLogger(__name__)
 COLONNES = "ean, nom, edition, volume, etat, nb, notes, photo, ajout"
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
+PHOTO_RE = re.compile(r"^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$")
 
 CHAMPS = """ean TEXT NOT NULL, nom TEXT NOT NULL DEFAULT '', edition TEXT NOT NULL DEFAULT '',
     volume TEXT NOT NULL DEFAULT '', etat TEXT NOT NULL DEFAULT '', nb INTEGER NOT NULL DEFAULT 1,
@@ -59,7 +63,19 @@ CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY,
 CREATE TABLE IF NOT EXISTS connexions_uniques (ip_hash TEXT PRIMARY KEY, premiere_connexion BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS collection (user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     {CHAMPS}, PRIMARY KEY (user_id, ean));
+CREATE TABLE IF NOT EXISTS wiki (ean TEXT PRIMARY KEY, nom TEXT NOT NULL DEFAULT '',
+    edition TEXT NOT NULL DEFAULT '', volume TEXT NOT NULL DEFAULT '',
+    pays TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
+    photo TEXT, cree TEXT NOT NULL, maj TEXT NOT NULL);
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT '';
+INSERT INTO wiki (ean, nom, edition, volume, photo, cree, maj)
+    SELECT DISTINCT ON (ean) ean, nom, edition, volume, photo, ajout, maj FROM collection
+    WHERE NOT EXISTS (SELECT 1 FROM wiki)
+    ORDER BY ean, (nom = ''), (photo IS NULL), maj;
 """
+# « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
+# (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
+# la table, il est amorcé depuis les collections existantes.
 # « canettes » est la table historique (collection unique) : scripts/migrer.py y écrit encore,
 # et elle est reprise dans la collection de OWNER_EMAIL à sa toute première connexion.
 
@@ -74,6 +90,17 @@ class Canette(BaseModel):
     notes: str = ""
     photo: str | None = Field(default=None, max_length=300_000)
     ajout: str = ""
+
+
+class FicheWiki(BaseModel):
+    """Champs d'une fiche du Wiki modifiables par le propriétaire."""
+
+    ean: str | None = Field(default=None, min_length=1, max_length=64)
+    nom: str = Field(default="", max_length=200)
+    edition: str | None = Field(default=None, max_length=200)
+    volume: str = Field(default="", max_length=40)
+    pays: str = Field(default="", max_length=80)
+    description: str = Field(default="", max_length=4000)
 
 
 class Delta(BaseModel):
@@ -112,7 +139,18 @@ def _creer_schema(cx: psycopg.Connection) -> None:
 
 @contextmanager
 def base() -> Iterator[psycopg.Connection]:
-    with psycopg.connect(_url(), row_factory=dict_row, prepare_threshold=None, connect_timeout=10) as cx:
+    try:
+        connection = psycopg.connect(
+            _url(), row_factory=dict_row, prepare_threshold=None, connect_timeout=10,
+        )
+    except psycopg.OperationalError as exc:
+        logger.warning("Connexion PostgreSQL impossible (%s)", type(exc).__name__)
+        detail = "Connexion PostgreSQL impossible. Vérifie DATABASE_URL et l'accès à Neon."
+        if "password authentication failed" in str(exc).lower():
+            detail = "Identifiants PostgreSQL refusés. Actualise DATABASE_URL depuis Neon."
+        raise HTTPException(503, detail) from None
+
+    with connection as cx:
         _creer_schema(cx)
         yield cx
 
@@ -333,6 +371,23 @@ def lire(ean: str, u: dict = Depends(utilisateur)) -> dict:
 @router.put("/cans")
 def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
+        # Le Wiki ne reçoit que l'identité de la canette, et ne prend que ce qui lui manque :
+        # un utilisateur ne peut pas écraser la fiche existante.
+        cx.execute(
+            """INSERT INTO wiki (ean, nom, edition, volume, photo, cree, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (ean) DO UPDATE SET
+                  nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
+                  edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
+                  volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
+                  photo = COALESCE(wiki.photo, EXCLUDED.photo),
+                  maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
+                              OR (wiki.edition = '' AND EXCLUDED.edition <> '')
+                              OR (wiki.volume = '' AND EXCLUDED.volume <> '')
+                              OR (wiki.photo IS NULL AND EXCLUDED.photo IS NOT NULL)
+                             THEN EXCLUDED.maj ELSE wiki.maj END""",
+            (c.ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.photo, maintenant(), maintenant()),
+        )
         return cx.execute(
             f"""INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -362,6 +417,85 @@ def supprimer(ean: str, u: dict = Depends(utilisateur)) -> None:
         n = cx.execute("DELETE FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).rowcount
     if n == 0:
         raise HTTPException(404, "canette inconnue")
+
+
+# --- Wiki : catalogue partagé, en lecture pour tous les comptes connectés ---------
+
+
+@router.get("/wiki")
+def wiki_liste(u: dict = Depends(utilisateur)) -> dict:
+    """Toutes les fiches, sans les photos (servies à part, pour garder la réponse légère)."""
+    with base() as cx:
+        lignes = cx.execute(
+            "SELECT ean, nom, edition, volume, pays, description, (photo IS NOT NULL) AS a_photo, maj FROM wiki "
+            "ORDER BY (nom = ''), lower(nom), ean"
+        ).fetchall()
+    fiches = [
+        {
+            "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"], "pays": r["pays"],
+            "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
+        }
+        for r in lignes
+    ]
+    return {"peut_editer": _est_proprietaire(u["email"]), "fiches": fiches}
+
+
+@router.get("/wiki/{ean}/photo")
+def wiki_photo(ean: str) -> Response:
+    with base() as cx:
+        r = cx.execute("SELECT photo FROM wiki WHERE ean = %s", (ean,)).fetchone()
+    m = PHOTO_RE.match(r["photo"]) if r and r["photo"] else None
+    if not m:
+        raise HTTPException(404, "photo inconnue")
+    try:
+        octets = base64.b64decode(m.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(404, "photo illisible") from None
+    return Response(
+        octets, media_type=m.group(1),
+        headers={"Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.put("/wiki/{ean}")
+def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur)) -> dict:
+    """Complète ou corrige une fiche (pays, description…) : réservé à OWNER_EMAIL."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    nouvel_ean = f.ean.strip() if f.ean is not None else ean
+    if not nouvel_ean:
+        raise HTTPException(422, "code-barres obligatoire")
+    with base() as cx:
+        if nouvel_ean != ean:
+            cible = cx.execute("SELECT 1 FROM wiki WHERE ean = %s", (nouvel_ean,)).fetchone()
+            if cible is not None:
+                raise HTTPException(409, "ce code-barres existe déjà dans le Wiki")
+        r = cx.execute(
+            "UPDATE wiki SET ean = %s, nom = %s, edition = COALESCE(%s, edition), "
+            "volume = %s, pays = %s, description = %s, maj = %s "
+            "WHERE ean = %s RETURNING ean, nom, edition, volume, pays, description, (photo IS NOT NULL) AS a_photo, maj",
+            (nouvel_ean, f.nom.strip(), f.edition.strip() if f.edition is not None else None,
+             f.volume.strip(), f.pays.strip(),
+             f.description.strip(), maintenant(), ean),
+        ).fetchone()
+    if r is None:
+        raise HTTPException(404, "fiche inconnue")
+    return {
+        "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"], "pays": r["pays"],
+        "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
+    }
+
+
+@router.delete("/wiki/{ean}", status_code=204)
+def wiki_supprimer(ean: str, u: dict = Depends(utilisateur)) -> Response:
+    """Supprime une fiche du catalogue partagé : réservé à OWNER_EMAIL."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    with base() as cx:
+        n = cx.execute("DELETE FROM wiki WHERE ean = %s", (ean,)).rowcount
+    if n == 0:
+        raise HTTPException(404, "fiche inconnue")
+    return Response(status_code=204)
 
 
 app = FastAPI(title="StackMonster", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)

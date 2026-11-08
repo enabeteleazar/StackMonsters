@@ -1,0 +1,71 @@
+import { describe, expect, it } from 'vitest'
+import type { FicheWiki } from './types'
+import { filtrerFiches, suggererFiches, trouverFicheParCodeBarres } from './wiki'
+
+const f = (ean: string, nom: string, pays = ''): FicheWiki => ({
+  ean,
+  nom,
+  edition: '',
+  volume: '500 ml',
+  pays,
+  description: '',
+  photo: null,
+})
+
+const fiches = [f('1', 'Monster Mango Loco', 'États-Unis'), f('2', 'Ultra White', 'France'), f('3016', '')]
+
+describe('filtrerFiches', () => {
+  it('renvoie tout sans recherche', () => {
+    expect(filtrerFiches(fiches, '  ')).toHaveLength(3)
+  })
+
+  it('cherche dans le nom sans tenir compte de la casse', () => {
+    expect(filtrerFiches(fiches, 'mango').map((x) => x.ean)).toEqual(['1'])
+  })
+
+  it('cherche dans le pays sans tenir compte des accents', () => {
+    expect(filtrerFiches(fiches, 'etats-unis').map((x) => x.ean)).toEqual(['1'])
+  })
+
+  it('cherche par code-barres, y compris pour une fiche sans nom', () => {
+    expect(filtrerFiches(fiches, '3016').map((x) => x.ean)).toEqual(['3016'])
+  })
+
+  it('ne renvoie rien quand rien ne correspond', () => {
+    expect(filtrerFiches(fiches, 'zzz')).toEqual([])
+  })
+})
+
+describe('suggererFiches', () => {
+  it('propose les fiches qui correspondent au nom saisi', () => {
+    expect(suggererFiches(fiches, 'Mango').map((x) => x.ean)).toEqual(['1'])
+  })
+
+  it('corrige la variante Monsters vers la fiche Monster canonique', () => {
+    expect(suggererFiches([f('1', 'Monster')], 'Monsters').map((x) => x.nom)).toEqual(['Monster'])
+  })
+
+  it('conserve plusieurs fiches de même nom pour des versions différentes', () => {
+    const catalogue = [f('1', 'Monster Ultra', 'France'), f('2', 'Monster Ultra', 'États-Unis')]
+    expect(suggererFiches(catalogue, 'Monster Ultra').map((x) => x.ean)).toEqual(['1', '2'])
+  })
+
+  it('priorise le nom exact et limite le nombre de propositions', () => {
+    const catalogue = [f('1', 'Monster Energy'), f('2', 'Monster'), f('3', 'Monster Ultra'), f('4', 'Monster Mango')]
+    expect(suggererFiches(catalogue, 'Monster', 2).map((x) => x.ean)).toEqual(['2', '1'])
+  })
+
+  it('attend au moins deux caractères', () => {
+    expect(suggererFiches(fiches, 'M')).toEqual([])
+  })
+})
+
+describe('trouverFicheParCodeBarres', () => {
+  it('retrouve la fiche ayant exactement le code-barres saisi', () => {
+    expect(trouverFicheParCodeBarres(fiches, ' 3016 ')?.nom).toBe('')
+  })
+
+  it('ne renvoie pas de fiche si le code-barres est inconnu', () => {
+    expect(trouverFicheParCodeBarres(fiches, '999')).toBeUndefined()
+  })
+})
