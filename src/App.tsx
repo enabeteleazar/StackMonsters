@@ -215,10 +215,6 @@ export default function App() {
             Stack<em>Monster</em>
           </div>
         </div>
-        <div className={`compteur ${joignable ? '' : 'hors-ligne'}`}>
-          <span className="point" />
-          {joignable ? `${canettes.length} réf.` : 'service injoignable'}
-        </div>
       </header>
 
       <main className={vue === 'collec' || vue === 'wiki' ? 'large' : ''}>

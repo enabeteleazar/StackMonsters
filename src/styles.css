@@ -102,14 +102,6 @@ main.large{max-width:1080px}
 }
 .logo-marque em{font-style:normal;color:var(--acide)}
 .logo-mark{filter:drop-shadow(0 0 10px rgba(158,232,24,.45))}
-.compteur{
-  margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--alu);
-  display:flex;align-items:center;gap:6px;
-}
-.compteur .point{width:6px;height:6px;border-radius:50%;background:var(--acide);
-  box-shadow:0 0 8px 1px var(--acide)}
-.compteur.hors-ligne{color:var(--alerte)}
-.compteur.hors-ligne .point{background:var(--alerte);box-shadow:0 0 8px 1px var(--alerte)}
 
 /* ============ accueil public ============ */
 .accueil-public{min-height:100vh;padding-bottom:32px}
