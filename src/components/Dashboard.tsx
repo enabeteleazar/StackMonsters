@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ImageOff, PlusCircle, ScanLine, Settings2 } from 'lucide-react'
+import { ImageOff, PlusCircle, ScanLine } from 'lucide-react'
 import { estCodeBarresEAN13 } from '../codeBarres'
 import type { Canette } from '../types'
 
@@ -9,7 +9,6 @@ type Props = {
   surScanner: () => void
   surAjouter: () => void
   surOuvrir: (ean: string) => void
-  surReglages: () => void
   surCodeManuel: (ean: string) => void
 }
 
@@ -25,7 +24,6 @@ export default function Dashboard({
   surScanner,
   surAjouter,
   surOuvrir,
-  surReglages,
   surCodeManuel,
 }: Props) {
   const [saisie, setSaisie] = useState('')
@@ -102,10 +100,6 @@ export default function Dashboard({
         <button className="raccourci" onClick={surAjouter}>
           <PlusCircle size={22} />
           <span>Ajouter sans code-barres</span>
-        </button>
-        <button className="raccourci" onClick={surReglages}>
-          <Settings2 size={22} />
-          <span>Réglages</span>
         </button>
       </div>
 

@@ -226,7 +226,6 @@ export default function App() {
             surScanner={() => setCamera(true)}
             surAjouter={ajouterSansCode}
             surOuvrir={setEan}
-            surReglages={() => setVue('reglages')}
             surCodeManuel={setEan}
           />
         )}
