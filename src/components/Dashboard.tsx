@@ -39,11 +39,10 @@ export default function Dashboard({
 
   const stats = useMemo(() => {
     const references = canettes.length
-    const variantes = new Set(canettes.map((c) => c.edition || '—')).size
     const ceMois = canettes.filter((c) => estCeMois(c.ajout)).length
     const palier = references === 0 ? 50 : Math.ceil((references + 1) / 50) * 50
     const progres = Math.min(100, Math.round((references / palier) * 100))
-    return { references, variantes, ceMois, palier, progres }
+    return { references, ceMois, palier, progres }
   }, [canettes])
 
   const recentes = useMemo(
@@ -70,10 +69,6 @@ export default function Dashboard({
         <div className="stat-tuile accent">
           <b>{stats.references}</b>
           <span>Références</span>
-        </div>
-        <div className="stat-tuile">
-          <b>{stats.variantes}</b>
-          <span>Variantes</span>
         </div>
         <div className="stat-tuile">
           <b>+{stats.ceMois}</b>

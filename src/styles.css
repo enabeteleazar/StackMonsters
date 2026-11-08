@@ -265,9 +265,8 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
   text-shadow:0 0 30px rgba(158,232,24,.35)}
 
 .stats-grille{
-  display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:0 0 20px;
+  display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:0 0 20px;
 }
-@media (max-width:420px){.stats-grille{grid-template-columns:repeat(2,1fr)}}
 .stat-tuile{
   background:linear-gradient(155deg,var(--graphite-clair),var(--graphite));
   border:1px solid var(--ligne);border-radius:var(--r-lg);padding:14px 10px;
