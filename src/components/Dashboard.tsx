@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react'
-import { ImageOff, PlusCircle, ScanLine, Settings2 } from 'lucide-react'
+import { ImageOff, PlusCircle, ScanLine } from 'lucide-react'
+import { estCodeBarresEAN13 } from '../codeBarres'
 import type { Canette } from '../types'
 
 type Props = {
   canettes: Canette[]
+  nomUtilisateur: string
   surScanner: () => void
   surAjouter: () => void
   surOuvrir: (ean: string) => void
-  surReglages: () => void
   surCodeManuel: (ean: string) => void
-  toast: (m: string) => void
 }
 
 function estCeMois(iso: string) {
@@ -20,12 +20,11 @@ function estCeMois(iso: string) {
 
 export default function Dashboard({
   canettes,
+  nomUtilisateur,
   surScanner,
   surAjouter,
   surOuvrir,
-  surReglages,
   surCodeManuel,
-  toast,
 }: Props) {
   const [saisie, setSaisie] = useState('')
 
@@ -40,11 +39,10 @@ export default function Dashboard({
 
   const stats = useMemo(() => {
     const references = canettes.length
-    const variantes = new Set(canettes.map((c) => c.edition || '—')).size
     const ceMois = canettes.filter((c) => estCeMois(c.ajout)).length
     const palier = references === 0 ? 50 : Math.ceil((references + 1) / 50) * 50
     const progres = Math.min(100, Math.round((references / palier) * 100))
-    return { references, variantes, ceMois, palier, progres }
+    return { references, ceMois, palier, progres }
   }, [canettes])
 
   const recentes = useMemo(
@@ -59,7 +57,9 @@ export default function Dashboard({
           <i key={i} style={{ width: r.largeur, opacity: r.opacite }} />
         ))}
       </div>
-      <span className="eyebrow">StackMonster · Collection</span>
+      <span className="eyebrow">
+        StackMonster · {nomUtilisateur ? `Bonjour, ${nomUtilisateur}` : 'Collection'}
+      </span>
       <h1 className="tb-titre">
         Ta collection
         <span>en un coup d'œil</span>
@@ -69,10 +69,6 @@ export default function Dashboard({
         <div className="stat-tuile accent">
           <b>{stats.references}</b>
           <span>Références</span>
-        </div>
-        <div className="stat-tuile">
-          <b>{stats.variantes}</b>
-          <span>Variantes</span>
         </div>
         <div className="stat-tuile">
           <b>+{stats.ceMois}</b>
@@ -100,10 +96,6 @@ export default function Dashboard({
           <PlusCircle size={22} />
           <span>Ajouter sans code-barres</span>
         </button>
-        <button className="raccourci" onClick={surReglages}>
-          <Settings2 size={22} />
-          <span>Réglages</span>
-        </button>
       </div>
 
       <div className="manuel">
@@ -116,9 +108,9 @@ export default function Dashboard({
           onChange={(e) => setSaisie(e.target.value)}
         />
         <button
+          disabled={!estCodeBarresEAN13(saisie.trim())}
           onClick={() => {
             const v = saisie.trim()
-            if (!v) return toast('Entre un code')
             setSaisie('')
             surCodeManuel(v)
           }}

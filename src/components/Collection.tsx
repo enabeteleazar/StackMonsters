@@ -11,7 +11,6 @@ type Tri = 'recent' | 'nom'
 
 export default function Collection({ canettes, surOuvrir }: Props) {
   const [q, setQ] = useState('')
-  const [edition, setEdition] = useState('')
   const [tri, setTri] = useState<Tri>('recent')
 
   const editions = useMemo(() => {
@@ -27,12 +26,11 @@ export default function Collection({ canettes, surOuvrir }: Props) {
     const t = q.trim().toLowerCase()
     const filtrees = canettes
       .filter((c) => !t || c.nom.toLowerCase().includes(t) || c.ean.includes(t))
-      .filter((c) => !edition || (c.edition || '—') === edition)
     return filtrees.sort((a, b) => {
       if (tri === 'nom') return a.nom.localeCompare(b.nom)
       return b.ajout.localeCompare(a.ajout)
     })
-  }, [canettes, q, edition, tri])
+  }, [canettes, q, tri])
 
   return (
     <section>
@@ -59,17 +57,6 @@ export default function Collection({ canettes, surOuvrir }: Props) {
             aria-label="Chercher un nom"
           />
         </div>
-        <select
-          value={edition}
-          name="edition"
-          onChange={(e) => setEdition(e.target.value)}
-          aria-label="Filtrer par édition"
-        >
-          <option value="">Toutes éditions</option>
-          {editions.map(([e]) => (
-            <option key={e}>{e}</option>
-          ))}
-        </select>
         <select value={tri} name="tri" onChange={(e) => setTri(e.target.value as Tri)} aria-label="Trier">
           <option value="recent">Plus récentes</option>
           <option value="nom">Nom A→Z</option>

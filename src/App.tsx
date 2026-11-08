@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Home, LayoutGrid, PlusCircle, ScanLine, Settings2 } from 'lucide-react'
+import { BookOpen, Home, LayoutGrid, ScanLine, Settings2 } from 'lucide-react'
 import { api, jeton, NonAutorise } from './api'
 import AccueilPublic from './components/AccueilPublic'
 import Acces from './components/Acces'
@@ -11,15 +11,18 @@ import Logo from './components/Logo'
 import Settings from './components/Settings'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
+import Wiki from './components/Wiki'
 import { moteurNatif } from './scanner'
 import { suivre } from './suivi'
 import type { Canette } from './types'
 
-type Vue = 'accueil' | 'collec' | 'reglages' | 'stats'
+type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats'
 type EtatAcces = 'verification' | 'accueil' | 'connexion' | 'prive'
 
 export default function App() {
   const [canettes, setCanettes] = useState<Canette[]>([])
+  const [nomUtilisateur, setNomUtilisateur] = useState('')
+  const [emailUtilisateur, setEmailUtilisateur] = useState('')
   const [vue, setVue] = useState<Vue>('accueil')
   const [camera, setCamera] = useState(false)
   const [ean, setEan] = useState<string | null>(null)
@@ -41,6 +44,8 @@ export default function App() {
     const sessionExistante = jeton.lire() !== ''
     if (sessionExistante) jeton.effacer()
     setRefuse(sessionExistante)
+    setNomUtilisateur('')
+    setEmailUtilisateur('')
     setEtatAcces('accueil')
   }, [])
 
@@ -54,7 +59,9 @@ export default function App() {
     }
   }, [verrouiller])
 
-  const apresConnexion = useCallback(() => {
+  const apresConnexion = useCallback((email: string) => {
+    setEmailUtilisateur(email)
+    setNomUtilisateur(email.split('@', 1)[0])
     setVue('accueil')
     setCamera(false)
     setEan(null)
@@ -70,7 +77,10 @@ export default function App() {
     let active = true
     const verifierSession = async () => {
       try {
-        await api.moi()
+        const utilisateur = await api.moi()
+        if (!active) return
+        setEmailUtilisateur(utilisateur.email)
+        setNomUtilisateur(utilisateur.email.split('@', 1)[0])
         const collection = await api.liste()
         if (!active) return
         setCanettes(collection)
@@ -205,29 +215,26 @@ export default function App() {
             Stack<em>Monster</em>
           </div>
         </div>
-        <div className={`compteur ${joignable ? '' : 'hors-ligne'}`}>
-          <span className="point" />
-          {joignable ? `${canettes.length} réf.` : 'service injoignable'}
-        </div>
       </header>
 
-      <main className={vue === 'collec' ? 'large' : ''}>
+      <main className={vue === 'collec' || vue === 'wiki' ? 'large' : ''}>
         <HorsLigne />
         {vue === 'accueil' && (
           <Dashboard
             canettes={canettes}
+            nomUtilisateur={nomUtilisateur}
             surScanner={() => setCamera(true)}
             surAjouter={ajouterSansCode}
             surOuvrir={setEan}
-            surReglages={() => setVue('reglages')}
             surCodeManuel={setEan}
-            toast={toast}
           />
         )}
         {vue === 'collec' && <Collection canettes={canettes} surOuvrir={setEan} />}
+        {vue === 'wiki' && <Wiki surNonAutorise={verrouiller} />}
         {vue === 'reglages' && (
           <Settings
             canettes={canettes}
+            emailUtilisateur={emailUtilisateur}
             joignable={joignable}
             surVerrouiller={verrouiller}
             surStats={() => setVue('stats')}
@@ -268,9 +275,9 @@ export default function App() {
           </span>
           Scan
         </button>
-        <button onClick={ajouterSansCode}>
-          <PlusCircle size={19} />
-          Ajouter
+        <button aria-current={vue === 'wiki'} onClick={() => setVue('wiki')}>
+          <BookOpen size={19} />
+          Wiki
         </button>
         <button aria-current={vue === 'reglages' || vue === 'stats'} onClick={() => setVue('reglages')}>
           <Settings2 size={19} />
@@ -293,6 +300,8 @@ export default function App() {
         <Verdict
           ean={ean}
           existante={existante}
+          canettes={canettes}
+          surNonAutorise={verrouiller}
           surEnregistrer={enregistrer}
           surSupprimer={supprimer}
           surFermeture={() => setEan(null)}

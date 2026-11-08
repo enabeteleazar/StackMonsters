@@ -15,6 +15,19 @@ La page d'accueil publique présente le service ; la collection privée n'est af
 validation de la session par l'API.
 Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
 
+## Wiki (catalogue partagé)
+Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comptes confondus. Une vignette
+(photo + nom) ouvre la fiche : nom, volume, pays de sortie et texte descriptif.
+- Table `wiki` (une ligne par `ean`), séparée des collections : elle ne contient ni propriétaire, ni
+  quantité, ni état, ni notes. Elle est alimentée à l'ajout d'une canette (nom, volume, photo) et ne
+  prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Retirer une canette de sa
+  collection ne la retire pas du Wiki. À la première création de la table, elle est amorcée depuis les
+  collections existantes (une seule fois).
+- Le pays et la description ne viennent pas des utilisateurs : ils sont saisis par `OWNER_EMAIL` depuis la
+  fiche (« Modifier la fiche », `PUT /api/wiki/{ean}`, 403 pour tout autre compte).
+- Routes : `GET /api/wiki` (liste sans photos), `GET /api/wiki/{ean}/photo` (image, chargée à la demande
+  quand la vignette approche de l'écran), toutes derrière la session. Le Wiki exige la connexion réseau.
+
 ## Photos de la page d'accueil
 La photo de canette dans `public/images/` provient de Wikimedia Commons et est affichée avec attribution :
 - [Monster Energy Mega can](https://commons.wikimedia.org/wiki/File:Monster_Energy_Mega_can.jpg), DYVER.
@@ -62,6 +75,8 @@ première connexion du propriétaire.
 export DATABASE_URL=postgresql://postgres:dev@127.0.0.1:55432/postgres
 pnpm install && ./dev.sh      # http://localhost:5273
 ```
+Si tu utilises Neon, configure `DATABASE_URL` avec la chaîne de connexion actuelle de la branche choisie
+(Neon → **Connect**). `./dev.sh` vérifie la connexion avant de démarrer et signale les identifiants refusés.
 En local, saisis un e-mail : le code s'affiche dans le terminal (ligne `[dev]`).
 Tests : `pnpm test` ; `TEST_DATABASE_URL=… python -m pytest tests` (jamais sur la production).
 

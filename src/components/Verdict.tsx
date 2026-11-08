@@ -1,11 +1,16 @@
-import { useState } from 'react'
-import { Camera as CameraIcon, CheckCircle2, ImageOff, Sparkles, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Sparkles, X } from 'lucide-react'
+import { api, NonAutorise } from '../api'
+import { estCodeBarresEAN13 } from '../codeBarres'
 import { reduirePhoto } from '../photo'
-import { CANETTE_VIDE, type Canette } from '../types'
+import { CANETTE_VIDE, type Canette, type FicheWiki } from '../types'
+import { suggererFiches, trouverFicheParCodeBarres } from '../wiki'
 
 type Props = {
   ean: string
   existante: Canette | null
+  canettes: Canette[]
+  surNonAutorise: () => void
   surEnregistrer: (c: Canette) => Promise<void>
   surSupprimer: (ean: string) => Promise<void>
   surFermeture: () => void
@@ -14,6 +19,9 @@ type Props = {
 export default function Verdict(p: Props) {
   const [edition, setEdition] = useState(!p.existante)
   const [occupe, setOccupe] = useState(false)
+  const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
+  const [eanAffiche, setEanAffiche] = useState(p.ean)
+  const photoInput = useRef<HTMLInputElement>(null)
 
   const connue = !!p.existante
   const titre = connue ? p.existante!.nom || 'Déjà dans la collection' : 'Nouvelle canette'
@@ -22,6 +30,21 @@ export default function Verdict(p: Props) {
     setOccupe(true)
     try {
       await action()
+    } finally {
+      setOccupe(false)
+    }
+  }
+
+  const remplacerPhoto = async (fichier: File) => {
+    setErreurPhoto(null)
+    setOccupe(true)
+    try {
+      const photo = await reduirePhoto(fichier)
+      await p.surEnregistrer({ ...p.existante!, photo })
+    } catch (erreur) {
+      setErreurPhoto(
+        erreur instanceof Error ? `Photo non modifiée : ${erreur.message}` : 'Photo non modifiée.',
+      )
     } finally {
       setOccupe(false)
     }
@@ -51,7 +74,7 @@ export default function Verdict(p: Props) {
 
       <div className="verdict-scroll">
         <div className="bandeau-info">
-          <div className="ean">{p.ean}</div>
+          <div className="ean">{eanAffiche}</div>
           <h2>{titre}</h2>
           {!edition && (
             <p>
@@ -63,9 +86,13 @@ export default function Verdict(p: Props) {
         {edition ? (
           <Formulaire
             depart={p.existante ?? CANETTE_VIDE(p.ean)}
+            nouvelle={!connue}
+            canettes={p.canettes}
+            surNonAutorise={p.surNonAutorise}
             occupe={occupe}
             libelle={connue ? 'Enregistrer' : 'Ajouter à la collection'}
             surValider={(c) => proteger(() => p.surEnregistrer(c))}
+            surSelectionFiche={setEanAffiche}
             surAnnuler={() => (connue ? setEdition(false) : p.surFermeture())}
           />
         ) : (
@@ -82,6 +109,29 @@ export default function Verdict(p: Props) {
             </div>
 
             <div className="actions">
+              <input
+                ref={photoInput}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                aria-label="Choisir une nouvelle photo de la canette"
+                hidden
+                onChange={(e) => {
+                  const input = e.currentTarget
+                  const fichier = input.files?.[0]
+                  input.value = ''
+                  if (fichier) void remplacerPhoto(fichier)
+                }}
+              />
+              <button
+                className="btn btn-fantome"
+                disabled={occupe}
+                onClick={() => photoInput.current?.click()}
+              >
+                <ImagePlus size={18} />
+                {p.existante!.photo ? 'Remplacer la photo' : 'Ajouter une photo'}
+              </button>
+              {erreurPhoto && <p className="sous" role="alert">{erreurPhoto}</p>}
               <button className="btn btn-fantome" onClick={() => setEdition(true)}>
                 Modifier la fiche
               </button>
@@ -108,24 +158,119 @@ export default function Verdict(p: Props) {
 
 function Formulaire({
   depart,
+  nouvelle,
+  canettes,
+  surNonAutorise,
   occupe,
   libelle,
   surValider,
+  surSelectionFiche,
   surAnnuler,
 }: {
   depart: Canette
+  nouvelle: boolean
+  canettes: Canette[]
+  surNonAutorise: () => void
   occupe: boolean
   libelle: string
   surValider: (c: Canette) => void
+  surSelectionFiche: (ean: string) => void
   surAnnuler: () => void
 }) {
   const [c, setC] = useState<Canette>(depart)
+  const [fiches, setFiches] = useState<FicheWiki[] | null>(null)
+  const [erreurWiki, setErreurWiki] = useState<string | null>(null)
+  const [chargementFiche, setChargementFiche] = useState<string | null>(null)
+  const [erreurFiche, setErreurFiche] = useState<string | null>(null)
+  const [ficheChoisie, setFicheChoisie] = useState<string | null>(null)
   const champ = <K extends keyof Canette>(k: K, v: Canette[K]) =>
     setC((prec) => ({ ...prec, [k]: v }))
+
+  const chargerWiki = useCallback(async () => {
+    setErreurWiki(null)
+    try {
+      setFiches((await api.wiki()).fiches)
+    } catch (erreur) {
+      if (erreur instanceof NonAutorise) surNonAutorise()
+      else setErreurWiki('Le Wiki est indisponible. Tu peux réessayer ou continuer sans suggestion.')
+    }
+  }, [surNonAutorise])
+
+  useEffect(() => {
+    if (nouvelle) void chargerWiki()
+  }, [chargerWiki, nouvelle])
+
+  const suggestions = useMemo(
+    () => {
+      const catalogue = fiches ?? []
+      const parNom = suggererFiches(catalogue, c.nom)
+      const parCode = trouverFicheParCodeBarres(catalogue, c.ean)
+      return [...(parCode ? [parCode] : []), ...parNom.filter((fiche) => fiche.ean !== parCode?.ean)].slice(0, 4)
+    },
+    [fiches, c.nom, c.ean],
+  )
+  const ficheCodeBarres = trouverFicheParCodeBarres(fiches ?? [], c.ean)
+  const ficheCodeDisponible =
+    ficheCodeBarres && !canettes.some((canette) => canette.ean === ficheCodeBarres.ean)
+      ? ficheCodeBarres
+      : undefined
+  const codeBarresDejaUtilise = canettes.find(
+    (canette) => canette.ean === c.ean && canette.ean !== depart.ean,
+  )
+  const codeBarresLocal = nouvelle && c.ean.startsWith('LOCAL-')
+  const codeBarresValide = codeBarresLocal || estCodeBarresEAN13(c.ean)
+  const codeBarresInvalide = nouvelle && !!c.ean && !codeBarresValide
+  const choixFicheRequis =
+    nouvelle && !!ficheCodeDisponible && ficheChoisie !== ficheCodeDisponible.ean
+  const rechercheActive = c.nom.trim().length >= 2 || (c.ean.trim().length >= 2 && !c.ean.startsWith('LOCAL-'))
+  const wikiEnChargement = nouvelle && rechercheActive && fiches === null && !erreurWiki
+
+  const choisirFiche = async (fiche: FicheWiki) => {
+    if (canettes.some((canette) => canette.ean === fiche.ean)) return
+    setChargementFiche(fiche.ean)
+    setErreurFiche(null)
+    try {
+      const photo = fiche.photo ? await api.wikiPhotoData(fiche.ean, fiche.photo) : null
+      setC((prec) => ({
+        ...prec,
+        ean: fiche.ean,
+        nom: fiche.nom,
+        edition: fiche.edition,
+        volume: fiche.volume,
+        photo,
+      }))
+      setFicheChoisie(fiche.ean)
+      surSelectionFiche(fiche.ean)
+    } catch (erreur) {
+      if (erreur instanceof NonAutorise) surNonAutorise()
+      else setErreurFiche(
+        erreur instanceof Error ? `Impossible de reprendre cette fiche : ${erreur.message}` : 'Impossible de reprendre cette fiche.',
+      )
+    } finally {
+      setChargementFiche(null)
+    }
+  }
 
   return (
     <>
       <div className="champs">
+        <div>
+          <label htmlFor="f-code-barres">Code-barres</label>
+          <input
+            id="f-code-barres"
+            value={c.ean}
+            readOnly={!nouvelle}
+            inputMode="numeric"
+            maxLength={64}
+            aria-label="Code-barres de la canette"
+            onChange={(e) => {
+              const ean = e.target.value.trim()
+              champ('ean', ean)
+              setFicheChoisie(null)
+              surSelectionFiche(ean)
+            }}
+          />
+        </div>
         <div>
           <label htmlFor="f-nom">Nom</label>
           <input
@@ -135,6 +280,50 @@ function Formulaire({
             onChange={(e) => champ('nom', e.target.value)}
           />
         </div>
+        {nouvelle && rechercheActive && (
+          <div className="suggestions-wiki" aria-live="polite">
+            <div className="suggestions-wiki-titre">
+              <BookOpen size={17} />
+              Fiches existantes dans le Wiki
+            </div>
+            {erreurWiki ? (
+              <div className="suggestions-wiki-etat" role="alert">
+                {erreurWiki}
+                <button className="btn btn-fantome" type="button" onClick={() => void chargerWiki()}>
+                  Réessayer
+                </button>
+              </div>
+            ) : fiches === null ? (
+              <p className="suggestions-wiki-etat">Recherche dans le Wiki…</p>
+            ) : suggestions.length ? (
+              <div className="suggestions-wiki-liste">
+                {suggestions.map((fiche) => {
+                  const dejaAjoutee = canettes.some((canette) => canette.ean === fiche.ean)
+                  const enCours = chargementFiche === fiche.ean
+                  return (
+                    <div className="suggestion-wiki" key={fiche.ean}>
+                      <span>
+                        <b>{fiche.nom}{fiche.edition ? ` - ${fiche.edition}` : ''}</b>
+                        {fiche.volume && <small>{fiche.volume}</small>}
+                      </span>
+                      <button
+                        className="btn btn-fantome"
+                        type="button"
+                        disabled={dejaAjoutee || chargementFiche !== null}
+                        onClick={() => void choisirFiche(fiche)}
+                      >
+                        {dejaAjoutee ? 'Déjà ajoutée' : enCours ? 'Chargement…' : 'Utiliser cette fiche'}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : (
+              <p className="suggestions-wiki-etat">Aucune fiche correspondante.</p>
+            )}
+            {erreurFiche && <p className="suggestions-wiki-erreur" role="alert">{erreurFiche}</p>}
+          </div>
+        )}
         <div className="duo">
           <div>
             <label htmlFor="f-edition">Version</label>
@@ -171,8 +360,30 @@ function Formulaire({
           {c.photo && <img src={c.photo} alt="" />}
         </div>
       </div>
+      {codeBarresInvalide && (
+        <p className="suggestions-wiki-erreur" role="alert">
+          Le code-barres doit contenir exactement 13 chiffres.
+        </p>
+      )}
+      {codeBarresDejaUtilise && (
+        <p className="suggestions-wiki-erreur" role="alert">
+          Ce code-barres est déjà utilisé par « {codeBarresDejaUtilise.nom || 'une autre canette'} » dans ta collection.
+        </p>
+      )}
+      {choixFicheRequis && (
+        <p className="suggestions-wiki-erreur" role="alert">
+          Choisis la fiche existante du Wiki avant l’ajout pour éviter un doublon.
+        </p>
+      )}
       <div className="actions">
-        <button className="btn btn-primaire actions-principal" disabled={occupe} onClick={() => surValider(c)}>
+        <button
+          className="btn btn-primaire actions-principal"
+          disabled={
+            occupe || !c.ean.trim() || !codeBarresValide || !!codeBarresDejaUtilise ||
+            choixFicheRequis || wikiEnChargement
+          }
+          onClick={() => surValider(c)}
+        >
           {occupe ? 'Enregistrement…' : libelle}
         </button>
         <button className="btn btn-fantome" onClick={surAnnuler}>

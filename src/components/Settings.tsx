@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Cpu, Database, Download, FileJson, Lock, Radio, Server } from 'lucide-react'
+import { BarChart3, Cpu, Database, Download, FileJson, Lock, Radio, Server, UserRound } from 'lucide-react'
 import { api, jeton } from '../api'
 import { moteurNatif } from '../scanner'
 import type { Canette } from '../types'
 
 type Props = {
   canettes: Canette[]
+  emailUtilisateur: string
   joignable: boolean
   surVerrouiller: () => void
   surStats: () => void
 }
 
-export default function Settings({ canettes, joignable, surVerrouiller, surStats }: Props) {
+export default function Settings({ canettes, emailUtilisateur, joignable, surVerrouiller, surStats }: Props) {
   const [sante, setSante] = useState<{ status: string; version: string; references: number } | null>(null)
 
   // Seul le propriétaire (OWNER_EMAIL) obtient une réponse : sinon l'API répond 403 et le bouton reste caché.
@@ -77,6 +78,13 @@ export default function Settings({ canettes, joignable, surVerrouiller, surStats
           <span className={`valeur ${joignable ? 'ok' : 'ko'}`}>
             {joignable ? 'En ligne' : 'Injoignable'}
           </span>
+        </div>
+        <div className="reglages-ligne">
+          <span className="libelle">
+            <UserRound size={17} />
+            Compte
+          </span>
+          <span className="valeur">{emailUtilisateur || '—'}</span>
         </div>
         <div className="reglages-ligne">
           <span className="libelle">

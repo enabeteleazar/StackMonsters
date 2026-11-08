@@ -4,7 +4,7 @@ import { suivre } from '../suivi'
 
 type Props = {
   /** Appelé après connexion : le parent recharge la collection. */
-  surValider: () => void
+  surValider: (email: string) => void
   surRetour: () => void
   /** Vrai quand une session existante a été rejetée (expirée, révoquée). */
   refuse: boolean
@@ -56,7 +56,7 @@ export default function Acces({ surValider, surRetour, refuse }: Props) {
       const r = await api.verification(email, c)
       jeton.ecrire(r.token)
       suivre('connection')
-      surValider()
+      surValider(r.email)
     } catch (err) {
       setMessage(err instanceof NonAutorise ? 'Code invalide ou expiré.' : 'Service injoignable.')
       setCode('')
