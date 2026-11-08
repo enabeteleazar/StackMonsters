@@ -381,7 +381,7 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 .verdict-scroll{flex:1;display:flex;flex-direction:column;padding:0 18px 24px;max-width:640px;margin:0 auto;width:100%}
 
 .photo-hero{
-  position:relative;margin:0 -18px 0;aspect-ratio:4/3;
+  position:relative;flex:0 0 auto;align-self:stretch;width:100%;margin:0 -18px 0;aspect-ratio:4/3;
   background:
     radial-gradient(120% 100% at 50% 0%, rgba(158,232,24,.14), transparent 60%),
     linear-gradient(180deg,var(--graphite-clair),var(--graphite));

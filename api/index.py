@@ -22,7 +22,7 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Literal
 
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
@@ -40,6 +40,11 @@ def _version() -> str:
 VERSION = _version()
 logger = logging.getLogger(__name__)
 COLONNES = "ean, nom, edition, volume, etat, nb, notes, photo, ajout"
+COLONNES_COLLECTION = (
+    "c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo, c.ajout, "
+    "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
+    "COALESCE(w.flavor, '') AS flavor, COALESCE(w.status, '') AS status, COALESCE(w.region, '') AS region"
+)
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
@@ -65,9 +70,18 @@ CREATE TABLE IF NOT EXISTS collection (user_id BIGINT NOT NULL REFERENCES users(
     {CHAMPS}, PRIMARY KEY (user_id, ean));
 CREATE TABLE IF NOT EXISTS wiki (ean TEXT PRIMARY KEY, nom TEXT NOT NULL DEFAULT '',
     edition TEXT NOT NULL DEFAULT '', volume TEXT NOT NULL DEFAULT '',
+    gamme TEXT NOT NULL DEFAULT '',
+    categorie TEXT NOT NULL DEFAULT '', flavor TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT '', region TEXT NOT NULL DEFAULT '',
     pays TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
     photo TEXT, cree TEXT NOT NULL, maj TEXT NOT NULL);
 ALTER TABLE wiki ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS gamme TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS categorie TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS flavor TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT '';
+UPDATE wiki SET categorie = gamme, gamme = '' WHERE categorie = '' AND gamme <> '';
 INSERT INTO wiki (ean, nom, edition, volume, photo, cree, maj)
     SELECT DISTINCT ON (ean) ean, nom, edition, volume, photo, ajout, maj FROM collection
     WHERE NOT EXISTS (SELECT 1 FROM wiki)
@@ -85,9 +99,13 @@ class Canette(BaseModel):
     nom: str = ""
     edition: str = ""
     volume: str = ""
+    categorie: str = Field(default="", max_length=80)
+    flavor: str = Field(default="", max_length=200)
+    status: Literal["", "Active", "Stop"] = ""
+    region: str = Field(default="", max_length=80)
     etat: str = ""
     nb: int = Field(default=1, ge=1, le=9999)
-    notes: str = ""
+    notes: str = Field(default="", max_length=4000)
     photo: str | None = Field(default=None, max_length=300_000)
     ajout: str = ""
 
@@ -99,6 +117,10 @@ class FicheWiki(BaseModel):
     nom: str = Field(default="", max_length=200)
     edition: str | None = Field(default=None, max_length=200)
     volume: str = Field(default="", max_length=40)
+    categorie: str = Field(default="", max_length=80)
+    flavor: str = Field(default="", max_length=200)
+    status: Literal["", "Active", "Stop"] = ""
+    region: str = Field(default="", max_length=80)
     pays: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
 
@@ -356,13 +378,23 @@ def statistiques(u: dict = Depends(utilisateur)) -> dict:
 @router.get("/cans")
 def liste(u: dict = Depends(utilisateur)) -> list[dict]:
     with base() as cx:
-        return cx.execute(f"SELECT {COLONNES} FROM collection WHERE user_id = %s ORDER BY ajout DESC", (u["id"],)).fetchall()
+        return cx.execute(
+            f"SELECT {COLONNES_COLLECTION} "
+            "FROM collection c LEFT JOIN wiki w ON w.ean = c.ean "
+            "WHERE c.user_id = %s ORDER BY c.ajout DESC",
+            (u["id"],),
+        ).fetchall()
 
 
 @router.get("/cans/{ean}")
 def lire(ean: str, u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
-        r = cx.execute(f"SELECT {COLONNES} FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).fetchone()
+        r = cx.execute(
+            f"SELECT {COLONNES_COLLECTION} "
+            "FROM collection c LEFT JOIN wiki w ON w.ean = c.ean "
+            "WHERE c.user_id = %s AND c.ean = %s",
+            (u["id"], ean),
+        ).fetchone()
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
@@ -371,24 +403,33 @@ def lire(ean: str, u: dict = Depends(utilisateur)) -> dict:
 @router.put("/cans")
 def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
-        # Le Wiki ne reçoit que l'identité de la canette, et ne prend que ce qui lui manque :
-        # un utilisateur ne peut pas écraser la fiche existante.
+        # Le Wiki reçoit les champs descriptifs fournis, sans écraser une fiche existante.
         cx.execute(
-            """INSERT INTO wiki (ean, nom, edition, volume, photo, cree, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, photo, cree, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (ean) DO UPDATE SET
                   nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
                   edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
                   volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
+                  categorie = CASE WHEN COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = ''
+                                   THEN EXCLUDED.categorie ELSE wiki.categorie END,
+                  flavor = CASE WHEN wiki.flavor = '' THEN EXCLUDED.flavor ELSE wiki.flavor END,
+                  status = CASE WHEN wiki.status = '' THEN EXCLUDED.status ELSE wiki.status END,
+                  region = CASE WHEN wiki.region = '' THEN EXCLUDED.region ELSE wiki.region END,
                   photo = COALESCE(wiki.photo, EXCLUDED.photo),
                   maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
                               OR (wiki.edition = '' AND EXCLUDED.edition <> '')
                               OR (wiki.volume = '' AND EXCLUDED.volume <> '')
+                              OR (COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = '' AND EXCLUDED.categorie <> '')
+                              OR (wiki.flavor = '' AND EXCLUDED.flavor <> '')
+                              OR (wiki.status = '' AND EXCLUDED.status <> '')
+                              OR (wiki.region = '' AND EXCLUDED.region <> '')
                               OR (wiki.photo IS NULL AND EXCLUDED.photo IS NOT NULL)
                              THEN EXCLUDED.maj ELSE wiki.maj END""",
-            (c.ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.photo, maintenant(), maintenant()),
+            (c.ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
+             c.status, c.region.strip(), c.photo, maintenant(), maintenant()),
         )
-        return cx.execute(
+        enregistrement = cx.execute(
             f"""INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, ean) DO UPDATE SET
@@ -398,6 +439,16 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
             (u["id"], c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
              c.ajout or maintenant(), maintenant()),
         ).fetchone()
+        informations_wiki = cx.execute(
+            "SELECT categorie, gamme, flavor, status, region FROM wiki WHERE ean = %s", (c.ean,),
+        ).fetchone()
+        enregistrement.update({
+            "categorie": informations_wiki["categorie"] or informations_wiki["gamme"],
+            "flavor": informations_wiki["flavor"],
+            "status": informations_wiki["status"],
+            "region": informations_wiki["region"],
+        })
+        return enregistrement
 
 
 @router.patch("/cans/{ean}/nb")
@@ -406,6 +457,16 @@ def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur)) -> dict:
         r = cx.execute(
             f"UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s RETURNING {COLONNES}",
             (d.delta, maintenant(), u["id"], ean)).fetchone()
+        if r is not None:
+            informations_wiki = cx.execute(
+                "SELECT categorie, gamme, flavor, status, region FROM wiki WHERE ean = %s", (ean,),
+            ).fetchone()
+            r.update({
+                "categorie": informations_wiki["categorie"] or informations_wiki["gamme"],
+                "flavor": informations_wiki["flavor"],
+                "status": informations_wiki["status"],
+                "region": informations_wiki["region"],
+            })
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
@@ -427,12 +488,15 @@ def wiki_liste(u: dict = Depends(utilisateur)) -> dict:
     """Toutes les fiches, sans les photos (servies à part, pour garder la réponse légère)."""
     with base() as cx:
         lignes = cx.execute(
-            "SELECT ean, nom, edition, volume, pays, description, (photo IS NOT NULL) AS a_photo, maj FROM wiki "
+            "SELECT ean, nom, edition, volume, categorie, gamme, flavor, status, region, pays, description, "
+            "(photo IS NOT NULL) AS a_photo, maj FROM wiki "
             "ORDER BY (nom = ''), lower(nom), ean"
         ).fetchall()
     fiches = [
         {
-            "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"], "pays": r["pays"],
+            "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"],
+            "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
+            "region": r["region"], "pays": r["pays"],
             "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
         }
         for r in lignes
@@ -472,16 +536,20 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur)) -> dic
                 raise HTTPException(409, "ce code-barres existe déjà dans le Wiki")
         r = cx.execute(
             "UPDATE wiki SET ean = %s, nom = %s, edition = COALESCE(%s, edition), "
-            "volume = %s, pays = %s, description = %s, maj = %s "
-            "WHERE ean = %s RETURNING ean, nom, edition, volume, pays, description, (photo IS NOT NULL) AS a_photo, maj",
+            "volume = %s, categorie = %s, flavor = %s, status = %s, region = %s, "
+            "pays = %s, description = %s, maj = %s "
+            "WHERE ean = %s RETURNING ean, nom, edition, volume, categorie, flavor, status, region, "
+            "gamme, pays, description, (photo IS NOT NULL) AS a_photo, maj",
             (nouvel_ean, f.nom.strip(), f.edition.strip() if f.edition is not None else None,
-             f.volume.strip(), f.pays.strip(),
+             f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(), f.pays.strip(),
              f.description.strip(), maintenant(), ean),
         ).fetchone()
     if r is None:
         raise HTTPException(404, "fiche inconnue")
     return {
-        "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"], "pays": r["pays"],
+        "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"],
+        "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
+        "region": r["region"], "pays": r["pays"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
     }
 

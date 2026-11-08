@@ -30,11 +30,20 @@ export function trouverFicheParCodeBarres(fiches: FicheWiki[], codeBarres: strin
   return code ? fiches.find((fiche) => fiche.ean === code) : undefined
 }
 
-/** Filtre le catalogue sur le nom, le pays ou le code-barres. */
-export function filtrerFiches(fiches: FicheWiki[], recherche: string): FicheWiki[] {
+/** Filtre le catalogue sur ses champs descriptifs ou son code-barres. */
+export function filtrerFiches(fiches: FicheWiki[], recherche: string, gamme = ''): FicheWiki[] {
   const q = normaliser(recherche)
-  if (!q) return fiches
+  const categorieRecherchee = normaliser(gamme)
   return fiches.filter(
-    (f) => normaliser(f.nom).includes(q) || normaliser(f.pays).includes(q) || f.ean.includes(q),
+    (f) =>
+      (!categorieRecherchee || normaliser(f.categorie) === categorieRecherchee) &&
+      (!q ||
+        normaliser(f.nom).includes(q) ||
+        normaliser(f.categorie).includes(q) ||
+        normaliser(f.flavor).includes(q) ||
+        normaliser(f.status).includes(q) ||
+        normaliser(f.region).includes(q) ||
+        normaliser(f.pays).includes(q) ||
+        f.ean.includes(q)),
   )
 }

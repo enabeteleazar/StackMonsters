@@ -76,7 +76,9 @@ export default function Collection({ canettes, surOuvrir }: Props) {
               </div>
               <div className="carte-corps">
                 <span className="nom">{c.nom || 'Sans nom'}</span>
-                <span className="meta">{c.edition || '—'} · {c.volume || '—'}</span>
+                <span className="meta">
+                  {c.edition || '—'} · {c.volume || '—'}{c.categorie ? ` · ${c.categorie}` : ''}
+                </span>
               </div>
             </button>
           ))}

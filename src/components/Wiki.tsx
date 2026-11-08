@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BookOpen, Search, WifiOff } from 'lucide-react'
 import { api, NonAutorise } from '../api'
+import { CATEGORIES } from '../categories'
 import type { FicheWiki as Fiche } from '../types'
 import { filtrerFiches } from '../wiki'
 import FicheWiki from './FicheWiki'
@@ -16,6 +17,7 @@ export default function Wiki({ surNonAutorise }: Props) {
   const [peutEditer, setPeutEditer] = useState(false)
   const [erreur, setErreur] = useState(false)
   const [q, setQ] = useState('')
+  const [gamme, setGamme] = useState('')
   const [ouverte, setOuverte] = useState<string | null>(null)
 
   const charger = useCallback(async () => {
@@ -34,7 +36,7 @@ export default function Wiki({ surNonAutorise }: Props) {
     void charger()
   }, [charger])
 
-  const vues = useMemo(() => filtrerFiches(fiches ?? [], q), [fiches, q])
+  const vues = useMemo(() => filtrerFiches(fiches ?? [], q, gamme), [fiches, q, gamme])
   const fiche = ouverte ? (fiches?.find((f) => f.ean === ouverte) ?? null) : null
   const fermer = useCallback(() => setOuverte(null), [])
 
@@ -62,6 +64,17 @@ export default function Wiki({ surNonAutorise }: Props) {
                 aria-label="Chercher dans le Wiki"
               />
             </div>
+            <select
+              value={gamme}
+              name="gamme-wiki"
+              onChange={(e) => setGamme(e.target.value)}
+              aria-label="Filtrer par gamme"
+            >
+              <option value="">Toutes les gammes</option>
+              {CATEGORIES.map((categorie) => (
+                <option key={categorie} value={categorie}>{categorie}</option>
+              ))}
+            </select>
           </div>
         </>
       )}

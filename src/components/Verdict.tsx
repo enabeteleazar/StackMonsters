@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Sparkles, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
+import { CATEGORIES, REGIONS, STATUTS } from '../categories'
 import { estCodeBarresEAN13 } from '../codeBarres'
 import { reduirePhoto } from '../photo'
-import { CANETTE_VIDE, type Canette, type FicheWiki } from '../types'
+import { CANETTE_VIDE, ETATS, type Canette, type FicheWiki } from '../types'
 import { suggererFiches, trouverFicheParCodeBarres } from '../wiki'
 
 type Props = {
@@ -106,7 +107,32 @@ export default function Verdict(p: Props) {
                 <span>Volume</span>
                 <b>{p.existante!.volume || '—'}</b>
               </div>
+              <div className="meta-item">
+                <span>Catégorie</span>
+                <b>{p.existante!.categorie || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Flavor</span>
+                <b>{p.existante!.flavor || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Status</span>
+                <b>{p.existante!.status || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Region</span>
+                <b>{p.existante!.region || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>État</span>
+                <b>{p.existante!.etat || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Quantité</span>
+                <b>{p.existante!.nb}</b>
+              </div>
             </div>
+            {p.existante!.notes && <p className="sous">Notes : {p.existante!.notes}</p>}
 
             <div className="actions">
               <input
@@ -220,6 +246,7 @@ function Formulaire({
   const codeBarresLocal = nouvelle && c.ean.startsWith('LOCAL-')
   const codeBarresValide = codeBarresLocal || estCodeBarresEAN13(c.ean)
   const codeBarresInvalide = nouvelle && !!c.ean && !codeBarresValide
+  const quantiteInvalide = !Number.isInteger(c.nb) || c.nb < 1 || c.nb > 9999
   const choixFicheRequis =
     nouvelle && !!ficheCodeDisponible && ficheChoisie !== ficheCodeDisponible.ean
   const rechercheActive = c.nom.trim().length >= 2 || (c.ean.trim().length >= 2 && !c.ean.startsWith('LOCAL-'))
@@ -237,6 +264,10 @@ function Formulaire({
         nom: fiche.nom,
         edition: fiche.edition,
         volume: fiche.volume,
+        categorie: fiche.categorie,
+        flavor: fiche.flavor,
+        status: fiche.status,
+        region: fiche.region,
         photo,
       }))
       setFicheChoisie(fiche.ean)
@@ -324,16 +355,18 @@ function Formulaire({
             {erreurFiche && <p className="suggestions-wiki-erreur" role="alert">{erreurFiche}</p>}
           </div>
         )}
-        <div className="duo">
-          <div>
-            <label htmlFor="f-edition">Version</label>
-            <input
-              id="f-edition"
-              value={c.edition}
-              placeholder="Ultra White"
-              onChange={(e) => champ('edition', e.target.value)}
-            />
-          </div>
+        <div className={nouvelle ? '' : 'duo'}>
+          {!nouvelle && (
+            <div>
+              <label htmlFor="f-edition">Version</label>
+              <input
+                id="f-edition"
+                value={c.edition}
+                placeholder="Ultra White"
+                onChange={(e) => champ('edition', e.target.value)}
+              />
+            </div>
+          )}
           <div>
             <label htmlFor="f-volume">Volume</label>
             <input
@@ -343,6 +376,81 @@ function Formulaire({
               onChange={(e) => champ('volume', e.target.value)}
             />
           </div>
+        </div>
+        <div>
+          <label htmlFor="f-categorie">Catégorie</label>
+          <select
+            id="f-categorie"
+            value={c.categorie}
+            onChange={(e) => champ('categorie', e.target.value)}
+          >
+            <option value="">Non renseignée</option>
+            {CATEGORIES.map((categorie) => (
+              <option key={categorie} value={categorie}>{categorie}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="f-flavor">Flavor</label>
+          <input
+            id="f-flavor"
+            value={c.flavor}
+            maxLength={200}
+            onChange={(e) => champ('flavor', e.target.value)}
+          />
+        </div>
+        <div className="duo">
+          <div>
+            <label htmlFor="f-status">Status</label>
+            <select id="f-status" value={c.status} onChange={(e) => champ('status', e.target.value)}>
+              <option value="">Non renseigné</option>
+              {STATUTS.map((status) => (
+                <option key={status} value={status}>{status}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="f-region">Region</label>
+            <select id="f-region" value={c.region} onChange={(e) => champ('region', e.target.value)}>
+              <option value="">Non renseignée</option>
+              {REGIONS.map((region) => (
+                <option key={region} value={region}>{region}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {!nouvelle && (
+          <div className="duo">
+            <div>
+              <label htmlFor="f-etat">État</label>
+              <select id="f-etat" value={c.etat} onChange={(e) => champ('etat', e.target.value)}>
+                {ETATS.map((etat) => (
+                  <option key={etat} value={etat}>{etat}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="f-nb">Quantité</label>
+              <input
+                id="f-nb"
+                type="number"
+                min={1}
+                max={9999}
+                value={c.nb}
+                onChange={(e) => champ('nb', Number(e.target.value))}
+              />
+            </div>
+          </div>
+        )}
+        <div>
+          <label htmlFor="f-notes">Notes</label>
+          <textarea
+            id="f-notes"
+            rows={3}
+            maxLength={4000}
+            value={c.notes}
+            onChange={(e) => champ('notes', e.target.value)}
+          />
         </div>
         <div className="photo-zone">
           <CameraIcon size={22} />
@@ -365,6 +473,11 @@ function Formulaire({
           Le code-barres doit contenir exactement 13 chiffres.
         </p>
       )}
+      {quantiteInvalide && (
+        <p className="suggestions-wiki-erreur" role="alert">
+          La quantité doit être comprise entre 1 et 9999.
+        </p>
+      )}
       {codeBarresDejaUtilise && (
         <p className="suggestions-wiki-erreur" role="alert">
           Ce code-barres est déjà utilisé par « {codeBarresDejaUtilise.nom || 'une autre canette'} » dans ta collection.
@@ -380,7 +493,7 @@ function Formulaire({
           className="btn btn-primaire actions-principal"
           disabled={
             occupe || !c.ean.trim() || !codeBarresValide || !!codeBarresDejaUtilise ||
-            choixFicheRequis || wikiEnChargement
+            choixFicheRequis || wikiEnChargement || quantiteInvalide
           }
           onClick={() => surValider(c)}
         >

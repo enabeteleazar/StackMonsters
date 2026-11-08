@@ -58,6 +58,28 @@ def test_connexion_et_collection(env):
     assert c.patch("/api/cans/TEST-1/nb", json={"delta": 2}, headers=h).json()["nb"] == 3
 
 
+def test_ajout_canette_enregistre_les_champs_descriptifs_wiki(env):
+    c, codes = env
+    h = connecter(c, codes, A)
+    champs = {
+        "categorie": "Ultra", "flavor": "Mango", "status": "Active", "region": "Global",
+        "etat": "Pleine", "nb": 2, "notes": "Collection spéciale",
+    }
+
+    r = c.put("/api/cans", json=canette(**champs), headers=h)
+    assert r.status_code == 200
+    assert {cle: r.json()[cle] for cle in champs} == champs
+    assert {cle: fiche(c, h, "TEST-1")[cle] for cle in ("categorie", "flavor", "status", "region")} == {
+        "categorie": "Ultra", "flavor": "Mango", "status": "Active", "region": "Global",
+    }
+
+    c.put("/api/cans", json=canette(categorie="Juiced", flavor="Autre", status="Stop"), headers=h)
+    assert {cle: fiche(c, h, "TEST-1")[cle] for cle in ("categorie", "flavor", "status", "region")} == {
+        "categorie": "Ultra", "flavor": "Mango", "status": "Active", "region": "Global",
+    }
+    assert c.put("/api/cans", json=canette(status="Discontinued"), headers=h).status_code == 422
+
+
 def test_chaque_utilisateur_ne_voit_que_sa_collection(env):
     c, codes = env
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
@@ -255,7 +277,11 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
     assert f["nom"] == "Mango Loco" and f["volume"] == "500 ml"
     assert f["edition"] == "Juiced"
     assert f["pays"] == "" and f["description"] == ""
-    assert set(f) == {"ean", "nom", "edition", "volume", "pays", "description", "photo"}
+    assert (f["categorie"], f["flavor"], f["status"], f["region"]) == ("", "", "", "")
+    assert set(f) == {
+        "ean", "nom", "edition", "volume", "categorie", "flavor", "status", "region",
+        "pays", "description", "photo",
+    }
     assert f["photo"]  # simple marqueur de version : les octets de l'image ne sont pas dans la liste
     assert "base64" not in str(c.get("/api/wiki", headers=hb).json())
 
@@ -314,6 +340,7 @@ def test_wiki_modification_reservee_au_proprietaire(env, monkeypatch):
 
     corps = {
         "nom": "Monster Mango Loco", "edition": "Ultra", "volume": "500 ml",
+        "categorie": "Ultra", "flavor": "Mango Tropical", "status": "Active", "region": "Global",
         "pays": "États-Unis", "description": "Boisson énergisante.",
     }
     assert c.put("/api/wiki/TEST-1", json=corps, headers=hb).status_code == 403
@@ -322,9 +349,14 @@ def test_wiki_modification_reservee_au_proprietaire(env, monkeypatch):
     r = c.put("/api/wiki/TEST-1", json=corps, headers=ha)
     assert r.status_code == 200 and r.json()["pays"] == "États-Unis"
     assert r.json()["edition"] == "Ultra"
+    assert (r.json()["categorie"], r.json()["flavor"], r.json()["status"], r.json()["region"]) == (
+        "Ultra", "Mango Tropical", "Active", "Global",
+    )
+    assert c.get("/api/cans/TEST-1", headers=hb).json()["categorie"] == "Ultra"
     assert fiche(c, hb, "TEST-1")["description"] == "Boisson énergisante."
     assert c.put("/api/wiki/TEST-INCONNU", json=corps, headers=ha).status_code == 404
     assert c.put("/api/wiki/TEST-1", json={"description": "x" * 4001}, headers=ha).status_code == 422
+    assert c.put("/api/wiki/TEST-1", json={**corps, "status": "Discontinued"}, headers=ha).status_code == 422
 
 
 def test_wiki_code_barres_modifiable_uniquement_par_le_proprietaire_sans_modifier_les_collections(env, monkeypatch):

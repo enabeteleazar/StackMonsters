@@ -17,7 +17,9 @@ Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id`
 
 ## Wiki (catalogue partagé)
 Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comptes confondus. Une vignette
-(photo + nom) ouvre la fiche : nom, volume, pays de sortie et texte descriptif.
+(photo + nom) ouvre la fiche : nom, version, volume, catégorie, saveur, statut et région.
+- Catégories et régions proposées dans le formulaire propriétaire : elles proviennent des valeurs distinctes
+  du catalogue source. Le statut est `Active` ou `Stop`.
 - Table `wiki` (une ligne par `ean`), séparée des collections : elle ne contient ni propriétaire, ni
   quantité, ni état, ni notes. Elle est alimentée à l'ajout d'une canette (nom, volume, photo) et ne
   prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Retirer une canette de sa
