@@ -5,6 +5,7 @@ import type { Canette } from '../types'
 
 type Props = {
   canettes: Canette[]
+  nomUtilisateur: string
   surScanner: () => void
   surAjouter: () => void
   surOuvrir: (ean: string) => void
@@ -20,6 +21,7 @@ function estCeMois(iso: string) {
 
 export default function Dashboard({
   canettes,
+  nomUtilisateur,
   surScanner,
   surAjouter,
   surOuvrir,
@@ -58,7 +60,9 @@ export default function Dashboard({
           <i key={i} style={{ width: r.largeur, opacity: r.opacite }} />
         ))}
       </div>
-      <span className="eyebrow">StackMonster · Collection</span>
+      <span className="eyebrow">
+        StackMonster · {nomUtilisateur ? `Bonjour, ${nomUtilisateur}` : 'Collection'}
+      </span>
       <h1 className="tb-titre">
         Ta collection
         <span>en un coup d'œil</span>

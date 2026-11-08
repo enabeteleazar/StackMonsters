@@ -21,6 +21,8 @@ type EtatAcces = 'verification' | 'accueil' | 'connexion' | 'prive'
 
 export default function App() {
   const [canettes, setCanettes] = useState<Canette[]>([])
+  const [nomUtilisateur, setNomUtilisateur] = useState('')
+  const [emailUtilisateur, setEmailUtilisateur] = useState('')
   const [vue, setVue] = useState<Vue>('accueil')
   const [camera, setCamera] = useState(false)
   const [ean, setEan] = useState<string | null>(null)
@@ -42,6 +44,8 @@ export default function App() {
     const sessionExistante = jeton.lire() !== ''
     if (sessionExistante) jeton.effacer()
     setRefuse(sessionExistante)
+    setNomUtilisateur('')
+    setEmailUtilisateur('')
     setEtatAcces('accueil')
   }, [])
 
@@ -55,7 +59,9 @@ export default function App() {
     }
   }, [verrouiller])
 
-  const apresConnexion = useCallback(() => {
+  const apresConnexion = useCallback((email: string) => {
+    setEmailUtilisateur(email)
+    setNomUtilisateur(email.split('@', 1)[0])
     setVue('accueil')
     setCamera(false)
     setEan(null)
@@ -71,7 +77,10 @@ export default function App() {
     let active = true
     const verifierSession = async () => {
       try {
-        await api.moi()
+        const utilisateur = await api.moi()
+        if (!active) return
+        setEmailUtilisateur(utilisateur.email)
+        setNomUtilisateur(utilisateur.email.split('@', 1)[0])
         const collection = await api.liste()
         if (!active) return
         setCanettes(collection)
@@ -217,6 +226,7 @@ export default function App() {
         {vue === 'accueil' && (
           <Dashboard
             canettes={canettes}
+            nomUtilisateur={nomUtilisateur}
             surScanner={() => setCamera(true)}
             surAjouter={ajouterSansCode}
             surOuvrir={setEan}
@@ -229,6 +239,7 @@ export default function App() {
         {vue === 'reglages' && (
           <Settings
             canettes={canettes}
+            emailUtilisateur={emailUtilisateur}
             joignable={joignable}
             surVerrouiller={verrouiller}
             surStats={() => setVue('stats')}
