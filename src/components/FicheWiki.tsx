@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ImageOff, ImagePlus, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { CATEGORIES, REGIONS, STATUTS } from '../categories'
+import { reduirePhoto } from '../photo'
 import type { FicheWiki as Fiche, ModifFicheWiki } from '../types'
 import PhotoWiki from './PhotoWiki'
 
@@ -25,6 +26,22 @@ export default function FicheWiki({
   const [edition, setEdition] = useState(false)
   const [suppressionOccupe, setSuppressionOccupe] = useState(false)
   const [erreurSuppression, setErreurSuppression] = useState<string | null>(null)
+  const [photoOccupee, setPhotoOccupee] = useState(false)
+  const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
+  const photoInput = useRef<HTMLInputElement>(null)
+
+  const changerPhoto = async (action: () => Promise<Fiche>) => {
+    setPhotoOccupee(true)
+    setErreurPhoto(null)
+    try {
+      surEnregistree(fiche.ean, await action())
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+      else setErreurPhoto(e instanceof ErreurAPI ? `Photo non modifiée — ${e.detail}` : 'Photo non modifiée, réessaie.')
+    } finally {
+      setPhotoOccupee(false)
+    }
+  }
 
   const supprimer = async () => {
     if (!confirm(`Supprimer la fiche « ${fiche.nom || fiche.ean} » du Wiki ? Cette action ne supprime pas les canettes des collections.`)) return
@@ -111,6 +128,42 @@ export default function FicheWiki({
 
             {peutEditer && (
               <div className="actions">
+                <input
+                  ref={photoInput}
+                  type="file"
+                  accept="image/*"
+                  aria-label="Choisir la photo de la fiche"
+                  hidden
+                  onChange={(e) => {
+                    const input = e.currentTarget
+                    const fichier = input.files?.[0]
+                    input.value = ''
+                    if (fichier) {
+                      void changerPhoto(async () => api.wikiPhotoRemplacer(fiche.ean, await reduirePhoto(fichier)))
+                    }
+                  }}
+                />
+                <button
+                  className="btn btn-fantome"
+                  disabled={photoOccupee || suppressionOccupe}
+                  onClick={() => photoInput.current?.click()}
+                >
+                  <ImagePlus size={17} />
+                  {fiche.photo ? 'Remplacer la photo' : 'Ajouter une photo'}
+                </button>
+                {fiche.photo && (
+                  <button
+                    className="btn btn-fantome"
+                    disabled={photoOccupee || suppressionOccupe}
+                    onClick={() => {
+                      if (confirm('Retirer la photo de cette fiche ?')) void changerPhoto(() => api.wikiPhotoRetirer(fiche.ean))
+                    }}
+                  >
+                    <ImageOff size={17} />
+                    Retirer la photo
+                  </button>
+                )}
+                {erreurPhoto && <p className="sous" role="alert">{erreurPhoto}</p>}
                 <button className="btn btn-fantome" disabled={suppressionOccupe} onClick={() => setEdition(true)}>
                   Modifier la fiche
                 </button>

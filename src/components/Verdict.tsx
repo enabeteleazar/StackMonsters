@@ -243,6 +243,8 @@ function Formulaire({
   const codeBarresDejaUtilise = canettes.find(
     (canette) => canette.ean === c.ean && canette.ean !== depart.ean,
   )
+  // Une canette sans code-barres reste hors du Wiki, qui porte ces champs descriptifs.
+  const champsWiki = !c.ean.startsWith('LOCAL-')
   const codeBarresLocal = nouvelle && c.ean.startsWith('LOCAL-')
   const codeBarresValide = codeBarresLocal || estCodeBarresEAN13(c.ean)
   const codeBarresInvalide = nouvelle && !!c.ean && !codeBarresValide
@@ -377,48 +379,52 @@ function Formulaire({
             />
           </div>
         </div>
-        <div>
-          <label htmlFor="f-categorie">Catégorie</label>
-          <select
-            id="f-categorie"
-            value={c.categorie}
-            onChange={(e) => champ('categorie', e.target.value)}
-          >
-            <option value="">Non renseignée</option>
-            {CATEGORIES.map((categorie) => (
-              <option key={categorie} value={categorie}>{categorie}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor="f-flavor">Flavor</label>
-          <input
-            id="f-flavor"
-            value={c.flavor}
-            maxLength={200}
-            onChange={(e) => champ('flavor', e.target.value)}
-          />
-        </div>
-        <div className="duo">
-          <div>
-            <label htmlFor="f-status">Status</label>
-            <select id="f-status" value={c.status} onChange={(e) => champ('status', e.target.value)}>
-              <option value="">Non renseigné</option>
-              {STATUTS.map((status) => (
-                <option key={status} value={status}>{status}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="f-region">Region</label>
-            <select id="f-region" value={c.region} onChange={(e) => champ('region', e.target.value)}>
-              <option value="">Non renseignée</option>
-              {REGIONS.map((region) => (
-                <option key={region} value={region}>{region}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+        {champsWiki && (
+          <>
+            <div>
+              <label htmlFor="f-categorie">Catégorie</label>
+              <select
+                id="f-categorie"
+                value={c.categorie}
+                onChange={(e) => champ('categorie', e.target.value)}
+              >
+                <option value="">Non renseignée</option>
+                {CATEGORIES.map((categorie) => (
+                  <option key={categorie} value={categorie}>{categorie}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="f-flavor">Flavor</label>
+              <input
+                id="f-flavor"
+                value={c.flavor}
+                maxLength={200}
+                onChange={(e) => champ('flavor', e.target.value)}
+              />
+            </div>
+            <div className="duo">
+              <div>
+                <label htmlFor="f-status">Status</label>
+                <select id="f-status" value={c.status} onChange={(e) => champ('status', e.target.value)}>
+                  <option value="">Non renseigné</option>
+                  {STATUTS.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="f-region">Region</label>
+                <select id="f-region" value={c.region} onChange={(e) => champ('region', e.target.value)}>
+                  <option value="">Non renseignée</option>
+                  {REGIONS.map((region) => (
+                    <option key={region} value={region}>{region}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </>
+        )}
         {!nouvelle && (
           <div className="duo">
             <div>

@@ -58,7 +58,13 @@ export default function Acces({ surValider, surRetour, refuse }: Props) {
       suivre('connection')
       surValider(r.email)
     } catch (err) {
-      setMessage(err instanceof NonAutorise ? 'Code invalide ou expiré.' : 'Service injoignable.')
+      setMessage(
+        err instanceof NonAutorise
+          ? 'Code invalide ou expiré.'
+          : err instanceof ErreurAPI && err.status === 429
+            ? 'Trop de tentatives. Réessaie dans une heure.'
+            : 'Service injoignable.',
+      )
       setCode('')
     } finally {
       setOccupe(false)

@@ -46,6 +46,8 @@ COLONNES_COLLECTION = (
     "COALESCE(w.flavor, '') AS flavor, COALESCE(w.status, '') AS status, COALESCE(w.region, '') AS region"
 )
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
+FENETRE_DEMANDES = 3600
+DEMANDES_MAX_IP, VERIFICATIONS_MAX_IP = 20, 60
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
 PHOTO_RE = re.compile(r"^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$")
@@ -66,6 +68,7 @@ CREATE INDEX IF NOT EXISTS codes_email ON codes (email);
 CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expire BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS connexions_uniques (ip_hash TEXT PRIMARY KEY, premiere_connexion BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS limites_ip (cle TEXT PRIMARY KEY, debut BIGINT NOT NULL, n INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS collection (user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     {CHAMPS}, PRIMARY KEY (user_id, ean));
 CREATE TABLE IF NOT EXISTS wiki (ean TEXT PRIMARY KEY, nom TEXT NOT NULL DEFAULT '',
@@ -82,10 +85,10 @@ ALTER TABLE wiki ADD COLUMN IF NOT EXISTS flavor TEXT NOT NULL DEFAULT '';
 ALTER TABLE wiki ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT '';
 ALTER TABLE wiki ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT '';
 UPDATE wiki SET categorie = gamme, gamme = '' WHERE categorie = '' AND gamme <> '';
-INSERT INTO wiki (ean, nom, edition, volume, photo, cree, maj)
-    SELECT DISTINCT ON (ean) ean, nom, edition, volume, photo, ajout, maj FROM collection
-    WHERE NOT EXISTS (SELECT 1 FROM wiki)
-    ORDER BY ean, (nom = ''), (photo IS NULL), maj;
+INSERT INTO wiki (ean, nom, edition, volume, cree, maj)
+    SELECT DISTINCT ON (ean) ean, nom, edition, volume, ajout, maj FROM collection
+    WHERE NOT EXISTS (SELECT 1 FROM wiki) AND ean NOT LIKE 'LOCAL-%'
+    ORDER BY ean, (nom = ''), maj;
 """
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -123,6 +126,10 @@ class FicheWiki(BaseModel):
     region: str = Field(default="", max_length=80)
     pays: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
+
+
+class PhotoFiche(BaseModel):
+    photo: str = Field(max_length=300_000)
 
 
 class Delta(BaseModel):
@@ -220,6 +227,28 @@ def _empreinte_ip(adresse: str) -> str:
     return hmac.new(_secret(), f"unique-ip:{adresse}".encode(), hashlib.sha256).hexdigest()
 
 
+def _limiter_ip(cx: psycopg.Connection, request: Request, action: str, maximum: int, now: int) -> None:
+    """Compte l'appel pour cette IP (fenêtre fixe d'une heure) et répond 429 au-delà du maximum."""
+    adresse = _adresse_ip(request)
+    if not adresse:
+        return
+    if ":" in adresse:  # un abonné IPv6 dispose en général d'un /64 entier
+        adresse = str(ipaddress.ip_network(f"{adresse}/64", strict=False).network_address)
+    cle = hmac.new(_secret(), f"limite-ip:{action}:{adresse}".encode(), hashlib.sha256).hexdigest()
+    expiree = now - FENETRE_DEMANDES
+    n = cx.execute(
+        """INSERT INTO limites_ip (cle, debut, n) VALUES (%s, %s, 1)
+           ON CONFLICT (cle) DO UPDATE SET
+             n = CASE WHEN limites_ip.debut <= %s THEN 1 ELSE limites_ip.n + 1 END,
+             debut = CASE WHEN limites_ip.debut <= %s THEN EXCLUDED.debut ELSE limites_ip.debut END
+           RETURNING n""",
+        (cle, now, expiree, expiree),
+    ).fetchone()["n"]
+    cx.commit()  # le compteur doit survivre au 429 qui suit
+    if n > maximum:
+        raise HTTPException(429, "trop de tentatives")
+
+
 def envoyer_code(email: str, code: str) -> None:
     cle = os.environ.get("RESEND_API_KEY")
     if not cle:
@@ -280,16 +309,21 @@ auth = APIRouter(prefix="/auth")
 
 
 @auth.post("/demande")
-def demande(d: Demande) -> dict:
+def demande(d: Demande, request: Request) -> dict:
     email = d.email.strip().lower()
     if not EMAIL_RE.match(email):
         raise HTTPException(422, "adresse invalide")
     now = int(time.time())
     code = f"{secrets.randbelow(10**6):06d}"
     with base() as cx:
-        cx.execute("DELETE FROM codes WHERE expire < %s", (now,))
+        _limiter_ip(cx, request, "demande", DEMANDES_MAX_IP, now)
+        cx.execute("DELETE FROM limites_ip WHERE debut <= %s", (now - FENETRE_DEMANDES,))
+        # Un code expiré compte encore dans la limite : il n'est purgé qu'une fois la fenêtre passée.
+        cx.execute("DELETE FROM codes WHERE cree <= %s", (now - FENETRE_DEMANDES,))
         cx.execute("DELETE FROM sessions WHERE expire < %s", (now,))
-        n = cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s AND cree > %s", (email, now - 3600)).fetchone()["n"]
+        n = cx.execute(
+            "SELECT COUNT(*) AS n FROM codes WHERE email = %s AND cree > %s", (email, now - FENETRE_DEMANDES),
+        ).fetchone()["n"]
         if n >= DEMANDES_MAX:
             raise HTTPException(429, "trop de demandes")
         code_row = cx.execute(
@@ -309,12 +343,18 @@ def demande(d: Demande) -> dict:
 def verification(v: Verification, request: Request) -> dict:
     email, now = v.email.strip().lower(), int(time.time())
     with base() as cx:
-        c = cx.execute("SELECT id, hash, essais FROM codes WHERE email = %s AND expire > %s ORDER BY id DESC LIMIT 1",
-                       (email, now)).fetchone()
-        if not c or c["essais"] >= ESSAIS_MAX:
-            raise HTTPException(401, "code invalide ou expiré")
-        cx.execute("UPDATE codes SET essais = essais + 1 WHERE id = %s", (c["id"],))
+        # Avant de consommer un essai : une IP bloquée ne peut pas épuiser les essais d'un autre compte.
+        _limiter_ip(cx, request, "verification", VERIFICATIONS_MAX_IP, now)
+        # Vérification et incrément en une seule requête : des appels simultanés ne dépassent pas la limite.
+        c = cx.execute(
+            "UPDATE codes SET essais = essais + 1 WHERE essais < %s AND id = ("
+            "SELECT id FROM codes WHERE email = %s AND expire > %s ORDER BY id DESC LIMIT 1"
+            ") RETURNING id, hash",
+            (ESSAIS_MAX, email, now),
+        ).fetchone()
         cx.commit()  # le compteur d'essais doit survivre à l'erreur qui suit
+        if not c:
+            raise HTTPException(401, "code invalide ou expiré")
         if not hmac.compare_digest(c["hash"], _hash_code(email, v.code)):
             raise HTTPException(401, "code invalide ou expiré")
         cx.execute("DELETE FROM codes WHERE email = %s", (email,))
@@ -375,6 +415,20 @@ def statistiques(u: dict = Depends(utilisateur)) -> dict:
     return {"utilisateurs": n_users, "references": t["refs"], "connexions_uniques": n_connexions}
 
 
+def _avec_infos_wiki(cx: psycopg.Connection, canette: dict) -> dict:
+    """Ajoute les champs descriptifs du Wiki ; une canette peut ne pas y figurer (LOCAL-, fiche retirée)."""
+    w = cx.execute(
+        "SELECT categorie, gamme, flavor, status, region FROM wiki WHERE ean = %s", (canette["ean"],),
+    ).fetchone() or {}
+    return {
+        **canette,
+        "categorie": w.get("categorie") or w.get("gamme") or "",
+        "flavor": w.get("flavor", ""),
+        "status": w.get("status", ""),
+        "region": w.get("region", ""),
+    }
+
+
 @router.get("/cans")
 def liste(u: dict = Depends(utilisateur)) -> list[dict]:
     with base() as cx:
@@ -404,31 +458,31 @@ def lire(ean: str, u: dict = Depends(utilisateur)) -> dict:
 def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
         # Le Wiki reçoit les champs descriptifs fournis, sans écraser une fiche existante.
-        cx.execute(
-            """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, photo, cree, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (ean) DO UPDATE SET
-                  nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
-                  edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
-                  volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
-                  categorie = CASE WHEN COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = ''
-                                   THEN EXCLUDED.categorie ELSE wiki.categorie END,
-                  flavor = CASE WHEN wiki.flavor = '' THEN EXCLUDED.flavor ELSE wiki.flavor END,
-                  status = CASE WHEN wiki.status = '' THEN EXCLUDED.status ELSE wiki.status END,
-                  region = CASE WHEN wiki.region = '' THEN EXCLUDED.region ELSE wiki.region END,
-                  photo = COALESCE(wiki.photo, EXCLUDED.photo),
-                  maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
-                              OR (wiki.edition = '' AND EXCLUDED.edition <> '')
-                              OR (wiki.volume = '' AND EXCLUDED.volume <> '')
-                              OR (COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = '' AND EXCLUDED.categorie <> '')
-                              OR (wiki.flavor = '' AND EXCLUDED.flavor <> '')
-                              OR (wiki.status = '' AND EXCLUDED.status <> '')
-                              OR (wiki.region = '' AND EXCLUDED.region <> '')
-                              OR (wiki.photo IS NULL AND EXCLUDED.photo IS NOT NULL)
-                             THEN EXCLUDED.maj ELSE wiki.maj END""",
-            (c.ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
-             c.status, c.region.strip(), c.photo, maintenant(), maintenant()),
-        )
+        # Il ne reçoit ni les canettes sans code-barres (LOCAL-), ni les photos : elles restent privées.
+        if not c.ean.startswith("LOCAL-"):
+            cx.execute(
+                """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, cree, maj)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (ean) DO UPDATE SET
+                      nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
+                      edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
+                      volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
+                      categorie = CASE WHEN COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = ''
+                                       THEN EXCLUDED.categorie ELSE wiki.categorie END,
+                      flavor = CASE WHEN wiki.flavor = '' THEN EXCLUDED.flavor ELSE wiki.flavor END,
+                      status = CASE WHEN wiki.status = '' THEN EXCLUDED.status ELSE wiki.status END,
+                      region = CASE WHEN wiki.region = '' THEN EXCLUDED.region ELSE wiki.region END,
+                      maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
+                                  OR (wiki.edition = '' AND EXCLUDED.edition <> '')
+                                  OR (wiki.volume = '' AND EXCLUDED.volume <> '')
+                                  OR (COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = '' AND EXCLUDED.categorie <> '')
+                                  OR (wiki.flavor = '' AND EXCLUDED.flavor <> '')
+                                  OR (wiki.status = '' AND EXCLUDED.status <> '')
+                                  OR (wiki.region = '' AND EXCLUDED.region <> '')
+                                 THEN EXCLUDED.maj ELSE wiki.maj END""",
+                (c.ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
+                 c.status, c.region.strip(), maintenant(), maintenant()),
+            )
         enregistrement = cx.execute(
             f"""INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -439,16 +493,7 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
             (u["id"], c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
              c.ajout or maintenant(), maintenant()),
         ).fetchone()
-        informations_wiki = cx.execute(
-            "SELECT categorie, gamme, flavor, status, region FROM wiki WHERE ean = %s", (c.ean,),
-        ).fetchone()
-        enregistrement.update({
-            "categorie": informations_wiki["categorie"] or informations_wiki["gamme"],
-            "flavor": informations_wiki["flavor"],
-            "status": informations_wiki["status"],
-            "region": informations_wiki["region"],
-        })
-        return enregistrement
+        return _avec_infos_wiki(cx, enregistrement)
 
 
 @router.patch("/cans/{ean}/nb")
@@ -458,15 +503,7 @@ def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur)) -> dict:
             f"UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s RETURNING {COLONNES}",
             (d.delta, maintenant(), u["id"], ean)).fetchone()
         if r is not None:
-            informations_wiki = cx.execute(
-                "SELECT categorie, gamme, flavor, status, region FROM wiki WHERE ean = %s", (ean,),
-            ).fetchone()
-            r.update({
-                "categorie": informations_wiki["categorie"] or informations_wiki["gamme"],
-                "flavor": informations_wiki["flavor"],
-                "status": informations_wiki["status"],
-                "region": informations_wiki["region"],
-            })
+            r = _avec_infos_wiki(cx, r)
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
@@ -483,25 +520,30 @@ def supprimer(ean: str, u: dict = Depends(utilisateur)) -> None:
 # --- Wiki : catalogue partagé, en lecture pour tous les comptes connectés ---------
 
 
+COLONNES_FICHE = (
+    "ean, nom, edition, volume, categorie, gamme, flavor, status, region, pays, description, "
+    "(photo IS NOT NULL) AS a_photo, maj"
+)
+
+
+def _fiche(r: dict) -> dict:
+    """Forme publique d'une fiche ; « photo » n'est qu'un marqueur de version."""
+    return {
+        "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"],
+        "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
+        "region": r["region"], "pays": r["pays"],
+        "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
+    }
+
+
 @router.get("/wiki")
 def wiki_liste(u: dict = Depends(utilisateur)) -> dict:
     """Toutes les fiches, sans les photos (servies à part, pour garder la réponse légère)."""
     with base() as cx:
         lignes = cx.execute(
-            "SELECT ean, nom, edition, volume, categorie, gamme, flavor, status, region, pays, description, "
-            "(photo IS NOT NULL) AS a_photo, maj FROM wiki "
-            "ORDER BY (nom = ''), lower(nom), ean"
+            f"SELECT {COLONNES_FICHE} FROM wiki ORDER BY (nom = ''), lower(nom), ean"
         ).fetchall()
-    fiches = [
-        {
-            "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"],
-            "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
-            "region": r["region"], "pays": r["pays"],
-            "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
-        }
-        for r in lignes
-    ]
-    return {"peut_editer": _est_proprietaire(u["email"]), "fiches": fiches}
+    return {"peut_editer": _est_proprietaire(u["email"]), "fiches": [_fiche(r) for r in lignes]}
 
 
 @router.get("/wiki/{ean}/photo")
@@ -521,6 +563,43 @@ def wiki_photo(ean: str) -> Response:
     )
 
 
+@router.put("/wiki/{ean}/photo")
+def wiki_photo_remplacer(ean: str, p: PhotoFiche, u: dict = Depends(utilisateur)) -> dict:
+    """Ajoute ou remplace la photo d'une fiche : réservé à OWNER_EMAIL."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    m = PHOTO_RE.match(p.photo)
+    try:
+        if not m:
+            raise ValueError
+        base64.b64decode(m.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(422, "format de photo refusé") from None
+    with base() as cx:
+        r = cx.execute(
+            f"UPDATE wiki SET photo = %s, maj = %s WHERE ean = %s RETURNING {COLONNES_FICHE}",
+            (p.photo, maintenant(), ean),
+        ).fetchone()
+    if r is None:
+        raise HTTPException(404, "fiche inconnue")
+    return _fiche(r)
+
+
+@router.delete("/wiki/{ean}/photo")
+def wiki_photo_retirer(ean: str, u: dict = Depends(utilisateur)) -> dict:
+    """Retire la photo d'une fiche sans toucher au reste : réservé à OWNER_EMAIL."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    with base() as cx:
+        r = cx.execute(
+            f"UPDATE wiki SET photo = NULL, maj = %s WHERE ean = %s RETURNING {COLONNES_FICHE}",
+            (maintenant(), ean),
+        ).fetchone()
+    if r is None:
+        raise HTTPException(404, "fiche inconnue")
+    return _fiche(r)
+
+
 @router.put("/wiki/{ean}")
 def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur)) -> dict:
     """Complète ou corrige une fiche (pays, description…) : réservé à OWNER_EMAIL."""
@@ -538,20 +617,14 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur)) -> dic
             "UPDATE wiki SET ean = %s, nom = %s, edition = COALESCE(%s, edition), "
             "volume = %s, categorie = %s, flavor = %s, status = %s, region = %s, "
             "pays = %s, description = %s, maj = %s "
-            "WHERE ean = %s RETURNING ean, nom, edition, volume, categorie, flavor, status, region, "
-            "gamme, pays, description, (photo IS NOT NULL) AS a_photo, maj",
+            f"WHERE ean = %s RETURNING {COLONNES_FICHE}",
             (nouvel_ean, f.nom.strip(), f.edition.strip() if f.edition is not None else None,
              f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(), f.pays.strip(),
              f.description.strip(), maintenant(), ean),
         ).fetchone()
     if r is None:
         raise HTTPException(404, "fiche inconnue")
-    return {
-        "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"],
-        "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
-        "region": r["region"], "pays": r["pays"],
-        "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
-    }
+    return _fiche(r)
 
 
 @router.delete("/wiki/{ean}", status_code=204)
