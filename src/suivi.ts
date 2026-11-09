@@ -1,6 +1,6 @@
 // Suivi du trafic vers le dashboard StackMonsters (via ntfy.sh).
 // Actif seulement en production et si VITE_TRACK_TOPIC est défini (Vercel → Environment Variables).
-// Pour ne pas compter vos propres visites : localStorage.setItem('sm_ignore', '1')
+// Rien ne part sans consentement. Pour ne pas compter vos propres visites : localStorage.setItem('sm_ignore', '1')
 
 type Evenement = 'visit' | 'connection' | 'can_added'
 
@@ -13,6 +13,24 @@ const lire = (cle: string): string | null => {
   } catch {
     return null
   }
+}
+
+export type Consentement = 'oui' | 'non' | null
+export const EVENEMENT_CONSENTEMENT = 'sm-consentement'
+
+export function consentement(): Consentement {
+  const valeur = lire('sm_consentement')
+  return valeur === 'oui' || valeur === 'non' ? valeur : null
+}
+
+export function definirConsentement(valeur: 'oui' | 'non'): void {
+  try {
+    localStorage.setItem('sm_consentement', valeur)
+    if (valeur === 'non') localStorage.removeItem('sm_vid')
+  } catch {
+    /* navigation privée : le choix vaut pour cette page seulement */
+  }
+  window.dispatchEvent(new CustomEvent(EVENEMENT_CONSENTEMENT, { detail: valeur }))
 }
 
 function identifiant(): string {
@@ -56,7 +74,7 @@ function provenance(): string {
 
 /** Envoie un événement ; n'échoue jamais et ne bloque jamais l'appli. */
 export function suivre(type: Evenement): void {
-  if (!actif || lire('sm_ignore')) return
+  if (!actif || lire('sm_ignore') || consentement() !== 'oui') return
   try {
     void fetch(`https://ntfy.sh/${TOPIC}`, {
       method: 'POST',
@@ -70,6 +88,7 @@ export function suivre(type: Evenement): void {
 
 /** À appeler une fois au chargement : compte une visite par session. */
 export function initSuivi(): void {
+  if (consentement() !== 'oui') return
   try {
     if (sessionStorage.getItem('sm_s')) return
     sessionStorage.setItem('sm_s', '1')

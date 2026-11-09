@@ -1,14 +1,19 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Analytics } from '@vercel/analytics/react'
+import '@fontsource/oswald/latin-400.css'
+import '@fontsource/oswald/latin-500.css'
+import '@fontsource/oswald/latin-600.css'
+import '@fontsource/oswald/latin-700.css'
+import '@fontsource/bebas-neue/latin-400.css'
 import App from './App'
+import Consentement from './components/Consentement'
 import './styles.css'
 import { initSuivi } from './suivi'
 
 createRoot(document.getElementById('racine')!).render(
   <StrictMode>
     <App />
-    <Analytics />
+    <Consentement />
   </StrictMode>,
 )
 

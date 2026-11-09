@@ -6,6 +6,7 @@ import Acces from './components/Acces'
 import HorsLigne from './components/HorsLigne'
 import Camera from './components/Camera'
 import Collection from './components/Collection'
+import Confidentialite from './components/Confidentialite'
 import Dashboard from './components/Dashboard'
 import Logo from './components/Logo'
 import { viderPhotos } from './components/PhotoWiki'
@@ -34,6 +35,13 @@ export default function App() {
   )
   const [refuse, setRefuse] = useState(false)
   const [serviceIndisponible, setServiceIndisponible] = useState(false)
+  const [confidentialite, setConfidentialite] = useState(() => window.location.hash === '#confidentialite')
+
+  useEffect(() => {
+    const maj = () => setConfidentialite(window.location.hash === '#confidentialite')
+    window.addEventListener('hashchange', maj)
+    return () => window.removeEventListener('hashchange', maj)
+  }, [])
 
   const toast = useCallback((m: string) => {
     setMessage(m)
@@ -158,6 +166,8 @@ export default function App() {
   }
 
   const ajouterSansCode = () => setEan('LOCAL-' + Date.now().toString(36).toUpperCase())
+
+  if (confidentialite) return <Confidentialite />
 
   if (etatAcces === 'verification') {
     return (

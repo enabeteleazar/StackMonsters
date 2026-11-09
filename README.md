@@ -67,6 +67,9 @@ compter plusieurs fois.
 Route `GET /api/stats`, réponse 403 pour tout autre compte.
 
 ## Suivi du trafic facultatif
+Rien n'est envoyé (ntfy.sh et Vercel Analytics) sans un « Accepter » dans le bandeau de consentement ; le choix se
+change dans Réglages. La politique de confidentialité est à `/#confidentialite` (responsable et contact :
+`src/config.ts`). Les polices sont servies par le site, sans appel à Google.
 `VITE_TRACK_TOPIC` active l'envoi d'événements `visit`, `connection` et `can_added` vers ntfy.sh.
 Les événements contiennent un identifiant aléatoire persistant dans le navigateur, le type d'appareil
 et la provenance approximative (référent/source UTM). Le suivi est désactivé si la variable est vide ;
@@ -111,6 +114,8 @@ Si tu utilises Neon, configure `DATABASE_URL` avec la chaîne de connexion actue
 (Neon → **Connect**). `./dev.sh` vérifie la connexion avant de démarrer et signale les identifiants refusés.
 En local, saisis un e-mail : le code s'affiche dans le terminal (ligne `[dev]`).
 Tests : `pnpm test` ; `TEST_DATABASE_URL=… python -m pytest tests` (jamais sur la production).
+Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetable**, puis
+`E2E_DATABASE_URL=… E2E_PYTHON=.venv/bin/python pnpm exec playwright test`.
 
 ## Limites assumées
 - Aucune protection contre l'inscription en masse (un compte se crée à la première vérification).

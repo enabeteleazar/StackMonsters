@@ -476,6 +476,44 @@ def test_restauration_tout_ou_rien(env, monkeypatch, tmp_path):
     assert c.get("/api/cans", headers=h).json() == []
 
 
+def test_deconnexion_partout_revoque_toutes_les_sessions(env):
+    c, codes = env
+    h1, h2, autre = connecter(c, codes, A), connecter(c, codes, A), connecter(c, codes, B)
+    assert c.post("/api/auth/deconnexion-partout").status_code == 401
+    assert c.post("/api/auth/deconnexion-partout", headers=h1).status_code == 204
+    assert c.get("/api/auth/moi", headers=h1).status_code == 401
+    assert c.get("/api/auth/moi", headers=h2).status_code == 401
+    assert c.get("/api/auth/moi", headers=autre).status_code == 200
+
+
+def test_suppression_de_compte_efface_ses_donnees_seulement(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango", photo=PNG_1PX, notes="privé"), headers=ha)
+    c.put("/api/cans", json=canette(nom="De B"), headers=hb)
+    c.post("/api/auth/demande", json={"email": A})
+
+    assert c.delete("/api/auth/compte").status_code == 401
+    assert c.delete("/api/auth/compte", headers=ha).status_code == 204
+    assert c.get("/api/auth/moi", headers=ha).status_code == 401
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM users WHERE email = %s", (A,)).fetchone()["n"] == 0
+        assert cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s", (A,)).fetchone()["n"] == 0
+    assert [x["nom"] for x in c.get("/api/cans", headers=hb).json()] == ["De B"]
+    assert fiche(c, hb, "2000000000015")["nom"] == "Mango"  # le Wiki, anonyme, reste
+
+    h = connecter(c, codes, A)  # une nouvelle inscription repart de zéro
+    assert c.get("/api/cans", headers=h).json() == []
+
+
+def test_le_compte_proprietaire_ne_se_supprime_pas(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    h = connecter(c, codes, A)
+    assert c.delete("/api/auth/compte", headers=h).status_code == 403
+    assert c.get("/api/auth/moi", headers=h).status_code == 200
+
+
 # --- Wiki (catalogue partagé) ----------------------------------------------------
 
 PNG_1PX = (

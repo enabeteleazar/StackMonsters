@@ -105,7 +105,8 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
           Accéder à ma collection <ArrowRight size={18} />
         </button>
         <p className="accueil-public-independance">
-          StackMonster est un projet indépendant, non affilié à Monster Energy et non édité par la marque.
+          StackMonster est un projet indépendant, non affilié à Monster Energy et non édité par la marque.{' '}
+          <a href="#confidentialite">Confidentialité</a>
         </p>
       </main>
     </div>

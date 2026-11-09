@@ -95,6 +95,8 @@ export const api = {
     }),
   moi: () => requete<{ email: string }>('/auth/moi'),
   deconnexion: () => requete<void>('/auth/deconnexion', { method: 'POST' }),
+  deconnexionPartout: () => requete<void>('/auth/deconnexion-partout', { method: 'POST' }),
+  supprimerCompte: () => requete<void>('/auth/compte', { method: 'DELETE' }),
   stats: () =>
     requete<{ utilisateurs: number; references: number; connexions_uniques: number }>('/stats'),
   sante: () => requete<{ status: string; version: string; references: number }>('/health'),

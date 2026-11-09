@@ -1,3 +1,8 @@
+import '@fontsource/anton/latin-400.css';
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-600.css';
+import '@fontsource/inter/latin-800.css';
+import '@fontsource/jetbrains-mono/latin-700.css';
 import { maintenanceProgress } from './maintenanceProgress.js';
 
 // Compte à rebours dynamique basé sur une date cible précise

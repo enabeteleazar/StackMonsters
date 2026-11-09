@@ -474,6 +474,23 @@ def deconnexion(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends
         cx.execute("DELETE FROM sessions WHERE hash = %s", (u["hash"],))
 
 
+@router.post("/auth/deconnexion-partout", status_code=204)
+def deconnexion_partout(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
+    """Révoque toutes les sessions du compte, celle-ci comprise."""
+    with cx.transaction():
+        cx.execute("DELETE FROM sessions WHERE user_id = %s", (u["id"],))
+
+
+@router.delete("/auth/compte", status_code=204)
+def supprimer_compte(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
+    """Efface le compte, sa collection et ses sessions ; le Wiki, anonyme, est conservé."""
+    if _est_proprietaire(u["email"]):  # il récupérerait la collection historique à sa prochaine connexion
+        raise HTTPException(403, "le compte propriétaire ne peut pas être supprimé")
+    with cx.transaction():
+        cx.execute("DELETE FROM codes WHERE email = %s", (u["email"],))
+        cx.execute("DELETE FROM users WHERE id = %s", (u["id"],))
+
+
 @router.get("/health")
 def sante(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     with cx.transaction():
