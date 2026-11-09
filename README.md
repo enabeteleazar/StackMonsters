@@ -92,6 +92,8 @@ donnée personnelle ou confidentielle, et ne pas utiliser ce mécanisme comme ca
 
 Import d'anciennes données : `scripts/migrer.py` écrit dans `canettes` ; fais-le **avant** la
 première connexion du propriétaire.
+Restauration d'une « Sauvegarde JSON » dans un compte existant :
+`python scripts/migrer.py sauvegarde.json --email moi@exemple.fr`.
 
 ## Développer
 ```bash

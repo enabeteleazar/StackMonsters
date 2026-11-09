@@ -1,3 +1,5 @@
+import json
+import sys
 import threading
 
 import pytest
@@ -420,6 +422,57 @@ def test_ajuster_sans_fiche_wiki(env, monkeypatch):
     c.put("/api/cans", json=canette(), headers=h)
     c.delete("/api/wiki/2000000000015", headers=h)
     assert c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=h).json()["nb"] == 2
+
+
+def restaurer(monkeypatch, tmp_path, fiches, email):
+    from scripts import migrer
+
+    fichier = tmp_path / "sauvegarde.json"
+    fichier.write_text(json.dumps(fiches), encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["migrer.py", str(fichier), "--email", email])
+    migrer.main()
+
+
+def test_restauration_dans_un_compte_existant(env, monkeypatch, tmp_path):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette("2000000000022", nom="Hors sauvegarde"), headers=ha)
+    c.put("/api/cans", json=canette(nom="Avant", photo=PNG_1PX), headers=ha)
+    fiche_sauvee = {
+        "ean": "2000000000015", "nom": "Mango", "edition": "Ultra", "volume": "500 ml", "categorie": "Juiced",
+        "flavor": "Mango", "status": "Active", "region": "Global", "etat": "Pleine", "nb": 4, "notes": "Rare",
+        "photo": None, "ajout": "2025-01-01T00:00:00.000Z",
+    }
+    locale = {"ean": "LOCAL-RESTO", "nom": "Perso", "photo": PNG_1PX, "nb": 2, "ajout": "2025-01-02T00:00:00.000Z"}
+
+    restaurer(monkeypatch, tmp_path, [fiche_sauvee, locale], A.upper())
+    restaurer(monkeypatch, tmp_path, [fiche_sauvee, locale], A)  # relance sans doublon
+
+    cans = {x["ean"]: x for x in c.get("/api/cans", headers=ha).json()}
+    assert set(cans) == {"2000000000015", "2000000000022", "LOCAL-RESTO"}
+    r = cans["2000000000015"]
+    assert (r["nom"], r["etat"], r["nb"], r["notes"], r["ajout"]) == (
+        "Mango", "Pleine", 4, "Rare", "2025-01-01T00:00:00.000Z",
+    )
+    assert r["categorie"] == "Juiced" and r["flavor"] == "Mango"
+    assert r["photo_version"]  # une sauvegarde sans photo n'efface pas la photo existante
+    assert cans["LOCAL-RESTO"]["photo_version"]
+    assert fiche(c, hb, "LOCAL-RESTO") is None
+    assert fiche(c, hb, "2000000000015")["photo"] is None
+    assert c.get("/api/cans", headers=hb).json() == []
+
+
+def test_restauration_refuse_un_compte_inconnu(env, monkeypatch, tmp_path):
+    with pytest.raises(SystemExit, match="Aucun compte"):
+        restaurer(monkeypatch, tmp_path, [{"ean": "2000000000015"}], "test-inconnu@example.com")
+
+
+def test_restauration_tout_ou_rien(env, monkeypatch, tmp_path):
+    c, codes = env
+    h = connecter(c, codes, A)
+    with pytest.raises(Exception):
+        restaurer(monkeypatch, tmp_path, [{"ean": "2000000000015"}, {"ean": "2000000000022", "nb": "pas un nombre"}], A)
+    assert c.get("/api/cans", headers=h).json() == []
 
 
 # --- Wiki (catalogue partagé) ----------------------------------------------------

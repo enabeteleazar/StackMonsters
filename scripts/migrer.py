@@ -3,16 +3,23 @@
 
     DATABASE_URL=postgresql://... python scripts/migrer.py /var/lib/canstack/canstack.db
     DATABASE_URL=postgresql://... python scripts/migrer.py canstack-2026-11-01.json
+    DATABASE_URL=postgresql://... python scripts/migrer.py canstack-2026-11-01.json --email moi@exemple.fr
 
 - un fichier .db : la base SQLite de Homebox (fidèle, photos et dates comprises) ;
 - un fichier .json : la « Sauvegarde JSON » de l'écran Réglages.
 
+Sans --email, le script écrit dans la table historique « canettes », reprise uniquement à la toute
+première connexion de OWNER_EMAIL. Avec --email, il restaure directement dans la collection de ce
+compte, qui doit déjà exister ; le Wiki ne reçoit que les champs descriptifs qui lui manquent.
+
 Le script peut être relancé sans risque : une canette déjà présente (même EAN)
 est mise à jour, jamais dupliquée. Sans effet sur les canettes absentes du fichier.
+Tout le fichier passe, ou rien n'est écrit.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
 import sys
@@ -41,14 +48,62 @@ def lire_json(chemin: Path) -> list[dict]:
     return donnees
 
 
+def restaurer_compte(cx, email: str, lignes: list[dict]) -> int:
+    """Écrit les canettes dans la collection du compte ; les autres comptes ne sont pas touchés."""
+    compte = cx.execute("SELECT id FROM users WHERE email = %s", (email.strip().lower(),)).fetchone()
+    if compte is None:
+        sys.exit(f"Aucun compte pour {email} : connecte-toi une première fois, puis relance.")
+    ecrites = 0
+    for r in lignes:
+        if not r.get("ean"):
+            continue
+        cx.execute(
+            """INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (user_id, ean) DO UPDATE SET
+                 nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
+                 nb=EXCLUDED.nb, notes=EXCLUDED.notes, ajout=EXCLUDED.ajout, maj=EXCLUDED.maj,
+                 photo=COALESCE(EXCLUDED.photo, collection.photo)""",
+            (compte["id"], r["ean"], r.get("nom") or "", r.get("edition") or "", r.get("volume") or "",
+             r.get("etat") or "", max(1, int(r.get("nb") or 1)), r.get("notes") or "", r.get("photo"),
+             r.get("ajout") or maintenant(), maintenant()),
+        )
+        if not str(r["ean"]).startswith("LOCAL-"):
+            cx.execute(
+                """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, cree, maj)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (ean) DO UPDATE SET
+                     nom=COALESCE(NULLIF(wiki.nom, ''), EXCLUDED.nom),
+                     edition=COALESCE(NULLIF(wiki.edition, ''), EXCLUDED.edition),
+                     volume=COALESCE(NULLIF(wiki.volume, ''), EXCLUDED.volume),
+                     categorie=COALESCE(NULLIF(wiki.categorie, ''), NULLIF(wiki.gamme, ''), EXCLUDED.categorie),
+                     flavor=COALESCE(NULLIF(wiki.flavor, ''), EXCLUDED.flavor),
+                     status=COALESCE(NULLIF(wiki.status, ''), EXCLUDED.status),
+                     region=COALESCE(NULLIF(wiki.region, ''), EXCLUDED.region)""",
+                (r["ean"], r.get("nom") or "", r.get("edition") or "", r.get("volume") or "",
+                 r.get("categorie") or "", r.get("flavor") or "", r.get("status") or "", r.get("region") or "",
+                 maintenant(), maintenant()),
+            )
+        ecrites += 1
+    return ecrites
+
+
 def main() -> None:
-    if len(sys.argv) != 2:
-        sys.exit(__doc__)
-    chemin = Path(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("fichier", type=Path, help="Fichier .db ou sauvegarde .json")
+    parser.add_argument("--email", help="Compte dont la collection est restaurée")
+    args = parser.parse_args()
+    chemin = args.fichier
     if not chemin.is_file():
         sys.exit(f"Fichier introuvable : {chemin}")
 
     lignes = lire_json(chemin) if chemin.suffix.lower() == ".json" else lire_sqlite(chemin)
+
+    if args.email:
+        with base() as cx:
+            ecrites = restaurer_compte(cx, args.email, lignes)
+        print(f"{ecrites} canette(s) restaurée(s) depuis {chemin.name} dans le compte {args.email}.")
+        return
 
     ecrites = 0
     with base() as cx:
