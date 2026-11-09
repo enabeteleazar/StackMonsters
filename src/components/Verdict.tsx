@@ -254,6 +254,10 @@ function Formulaire({
   )
   // Une canette sans code-barres reste hors du Wiki, qui porte ces champs descriptifs.
   const champsWiki = !c.ean.startsWith('LOCAL-')
+  // Le Wiki garde la première valeur saisie : un champ déjà rempli ne se modifie pas depuis une collection.
+  const valeursWiki = nouvelle ? fiches?.find((fiche) => fiche.ean === ficheChoisie) : depart
+  const verrouille = (k: 'categorie' | 'flavor' | 'status' | 'region') => !!valeursWiki?.[k]
+  const champsVerrouilles = (['categorie', 'flavor', 'status', 'region'] as const).some(verrouille)
   const codeBarresLocal = nouvelle && c.ean.startsWith('LOCAL-')
   // Le code n'est contrôlé qu'à la création : une fiche existante reste toujours modifiable.
   const codeBarresValide = !nouvelle || codeBarresLocal || normaliserCodeBarres(c.ean) !== null
@@ -391,11 +395,18 @@ function Formulaire({
         </div>
         {champsWiki && (
           <>
+            {champsVerrouilles && (
+              <p className="sous">
+                Catégorie, saveur, statut et région viennent du Wiki partagé : seuls les champs encore vides
+                peuvent être complétés ici.
+              </p>
+            )}
             <div>
               <label htmlFor="f-categorie">Catégorie</label>
               <select
                 id="f-categorie"
                 value={c.categorie}
+                disabled={verrouille('categorie')}
                 onChange={(e) => champ('categorie', e.target.value)}
               >
                 <option value="">Non renseignée</option>
@@ -409,6 +420,7 @@ function Formulaire({
               <input
                 id="f-flavor"
                 value={c.flavor}
+                disabled={verrouille('flavor')}
                 maxLength={200}
                 onChange={(e) => champ('flavor', e.target.value)}
               />
@@ -416,7 +428,7 @@ function Formulaire({
             <div className="duo">
               <div>
                 <label htmlFor="f-status">Status</label>
-                <select id="f-status" value={c.status} onChange={(e) => champ('status', e.target.value)}>
+                <select id="f-status" value={c.status} disabled={verrouille('status')} onChange={(e) => champ('status', e.target.value)}>
                   <option value="">Non renseigné</option>
                   {STATUTS.map((status) => (
                     <option key={status} value={status}>{status}</option>
@@ -425,7 +437,7 @@ function Formulaire({
               </div>
               <div>
                 <label htmlFor="f-region">Region</label>
-                <select id="f-region" value={c.region} onChange={(e) => champ('region', e.target.value)}>
+                <select id="f-region" value={c.region} disabled={verrouille('region')} onChange={(e) => champ('region', e.target.value)}>
                   <option value="">Non renseignée</option>
                   {REGIONS.map((region) => (
                     <option key={region} value={region}>{region}</option>

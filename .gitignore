@@ -11,4 +11,7 @@ tsconfig.tsbuildinfo
 .env.local
 !.env.example
 vercel.env
+e2e-results/
+test-results/
+playwright-report/
 .ROADMAP.md

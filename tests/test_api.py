@@ -24,6 +24,7 @@ def env(monkeypatch):
         )
         cx.execute("DELETE FROM wiki WHERE ean LIKE '200000000%'")
         cx.execute("DELETE FROM limites_ip")  # base de test uniquement (voir conftest.py)
+        cx.execute("DELETE FROM wiki_exclus WHERE ean LIKE '200000000%' OR ean LIKE 'TEST-%'")
     yield TestClient(ix.app), codes
     with ix.base() as cx:
         cx.execute("DELETE FROM users WHERE email LIKE 'test-%@example.com'")
@@ -475,6 +476,44 @@ def test_restauration_tout_ou_rien(env, monkeypatch, tmp_path):
     assert c.get("/api/cans", headers=h).json() == []
 
 
+def test_deconnexion_partout_revoque_toutes_les_sessions(env):
+    c, codes = env
+    h1, h2, autre = connecter(c, codes, A), connecter(c, codes, A), connecter(c, codes, B)
+    assert c.post("/api/auth/deconnexion-partout").status_code == 401
+    assert c.post("/api/auth/deconnexion-partout", headers=h1).status_code == 204
+    assert c.get("/api/auth/moi", headers=h1).status_code == 401
+    assert c.get("/api/auth/moi", headers=h2).status_code == 401
+    assert c.get("/api/auth/moi", headers=autre).status_code == 200
+
+
+def test_suppression_de_compte_efface_ses_donnees_seulement(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango", photo=PNG_1PX, notes="privé"), headers=ha)
+    c.put("/api/cans", json=canette(nom="De B"), headers=hb)
+    c.post("/api/auth/demande", json={"email": A})
+
+    assert c.delete("/api/auth/compte").status_code == 401
+    assert c.delete("/api/auth/compte", headers=ha).status_code == 204
+    assert c.get("/api/auth/moi", headers=ha).status_code == 401
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM users WHERE email = %s", (A,)).fetchone()["n"] == 0
+        assert cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s", (A,)).fetchone()["n"] == 0
+    assert [x["nom"] for x in c.get("/api/cans", headers=hb).json()] == ["De B"]
+    assert fiche(c, hb, "2000000000015")["nom"] == "Mango"  # le Wiki, anonyme, reste
+
+    h = connecter(c, codes, A)  # une nouvelle inscription repart de zéro
+    assert c.get("/api/cans", headers=h).json() == []
+
+
+def test_le_compte_proprietaire_ne_se_supprime_pas(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    h = connecter(c, codes, A)
+    assert c.delete("/api/auth/compte", headers=h).status_code == 403
+    assert c.get("/api/auth/moi", headers=h).status_code == 200
+
+
 # --- Wiki (catalogue partagé) ----------------------------------------------------
 
 PNG_1PX = (
@@ -628,20 +667,53 @@ def test_wiki_modification_reservee_au_proprietaire(env, monkeypatch):
     assert c.put("/api/wiki/2000000000015", json={**corps, "status": "Discontinued"}, headers=ha).status_code == 422
 
 
-def test_wiki_code_barres_modifiable_uniquement_par_le_proprietaire_sans_modifier_les_collections(env, monkeypatch):
+def test_wiki_changement_de_code_barres_suit_les_collections_sans_doublon(env, monkeypatch):
     c, codes = env
     monkeypatch.setenv("OWNER_EMAIL", A)
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
-    c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+    c.put("/api/cans", json=canette(nom="Mango", categorie="Ultra", photo=PNG_1PX), headers=hb)
 
-    corps = {"ean": "2000000000022", "nom": "Mango", "volume": "500 ml", "pays": "France", "description": "Fiche."}
+    corps = {"ean": "2000000000022", "nom": "Mango", "categorie": "Ultra", "volume": "500 ml"}
     assert c.put("/api/wiki/2000000000015", json=corps, headers=hb).status_code == 403
     assert c.put("/api/wiki/2000000000015", json=corps, headers=ha).status_code == 200
 
     assert fiche(c, hb, "2000000000015") is None
     assert fiche(c, hb, "2000000000022")["nom"] == "Mango"
-    assert c.get("/api/cans/2000000000015", headers=hb).status_code == 200
-    assert c.get("/api/cans/2000000000022", headers=hb).status_code == 404
+    assert c.get("/api/cans/2000000000015", headers=hb).status_code == 404
+    r = c.get("/api/cans/2000000000022", headers=hb).json()
+    assert r["categorie"] == "Ultra" and r["photo_version"]
+
+    c.put("/api/cans", json=canette(nom="Ancien code"), headers=ha)  # l'ancien code ne recrée pas de fiche
+    assert fiche(c, hb, "2000000000015") is None
+
+
+def test_wiki_changement_de_code_barres_garde_les_deux_lignes_d_un_compte(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Ancienne"), headers=hb)
+    with ix.base() as cx:
+        uid = cx.execute("SELECT id FROM users WHERE email = %s", (B,)).fetchone()["id"]
+        cx.execute(
+            "INSERT INTO collection (user_id, ean, nom, ajout, maj) VALUES (%s, '2000000000022', 'Déjà là', 'x', 'x')",
+            (uid,),
+        )
+    assert c.put("/api/wiki/2000000000015", json={"ean": "2000000000022", "nom": "M"}, headers=ha).status_code == 200
+    noms = {x["ean"]: x["nom"] for x in c.get("/api/cans", headers=hb).json()}
+    assert noms == {"2000000000015": "Ancienne", "2000000000022": "Déjà là"}
+
+
+def test_wiki_fiche_supprimee_ne_reapparait_pas(env, monkeypatch, tmp_path):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+    assert c.delete("/api/wiki/2000000000015", headers=ha).status_code == 204
+
+    assert c.put("/api/cans", json=canette(nom="Mango 2"), headers=hb).status_code == 200
+    restaurer(monkeypatch, tmp_path, [{"ean": "2000000000015", "nom": "Mango 3"}], B)
+    assert fiche(c, ha, "2000000000015") is None
+    assert c.get("/api/cans/2000000000015", headers=hb).json()["nom"] == "Mango 3"
 
 
 def test_wiki_refuse_code_barres_deja_utilise(env, monkeypatch):
@@ -693,9 +765,10 @@ def test_wiki_amorce_depuis_les_collections_existantes_une_seule_fois(env):
     c.put("/api/cans", json=canette(nom="Nommée", volume="500 ml", photo=PNG_1PX, nb=4, notes="privé"), headers=hb)
     c.put("/api/cans", json=canette("LOCAL-AMORCE", nom="Perso"), headers=ha)
     # Simule une base d'avant le Wiki : la table n'existe pas encore, les collections si.
-    with ix.base() as cx:
+    with ix.connecter() as cx:
         cx.execute("DROP TABLE wiki")
-    ix._schema_pret = False
+        cx.execute("DELETE FROM schema_migrations")
+        assert ix.appliquer_migrations(cx) == [v for v, _ in ix.MIGRATIONS]
     with ix.base() as cx:
         r = cx.execute("SELECT * FROM wiki WHERE ean = '2000000000015'").fetchall()
         assert cx.execute("SELECT COUNT(*) AS n FROM wiki WHERE ean = 'LOCAL-AMORCE'").fetchone()["n"] == 0
@@ -703,9 +776,36 @@ def test_wiki_amorce_depuis_les_collections_existantes_une_seule_fois(env):
     assert "privé" not in str(r) and "nb" not in r[0]
 
     # Une fois la table remplie, un redémarrage ne ré-importe plus rien.
-    with ix.base() as cx:
+    with ix.connecter() as cx:
         cx.execute("INSERT INTO wiki (ean, cree, maj) VALUES ('2000000000022', 'x', 'x')")
         cx.execute("DELETE FROM wiki WHERE ean = '2000000000015'")
-    ix._schema_pret = False
-    with ix.base() as cx:
+        assert ix.appliquer_migrations(cx) == []
         assert cx.execute("SELECT COUNT(*) AS n FROM wiki WHERE ean = '2000000000015'").fetchone()["n"] == 0
+
+
+def test_api_refuse_une_base_non_migree_sans_la_modifier(env, monkeypatch):
+    c, codes = env
+    h = connecter(c, codes, A)
+    with ix.connecter() as cx:
+        cx.execute("DELETE FROM schema_migrations WHERE version = %s", (ix.MIGRATIONS[-1][0],))
+    monkeypatch.setattr(ix, "_schema_pret", False)
+    try:
+        r = c.get("/api/cans", headers=h)
+        assert r.status_code == 503 and "mettre à jour" in r.json()["detail"]
+    finally:
+        with ix.connecter() as cx:
+            assert ix.appliquer_migrations(cx) == [ix.MIGRATIONS[-1][0]]
+
+
+def test_une_seule_connexion_par_requete(env, monkeypatch):
+    c, codes = env
+    h = connecter(c, codes, A)
+    vraie, appels = ix.psycopg.connect, []
+    monkeypatch.setattr(ix.psycopg, "connect", lambda *a, **k: appels.append(1) or vraie(*a, **k))
+
+    assert c.get("/api/cans").status_code == 401 and appels == []
+    assert c.get("/api/cans", headers=h).status_code == 200 and len(appels) == 1
+    appels.clear()
+    assert c.put("/api/cans", json=canette(), headers=h).status_code == 200 and len(appels) == 1
+    assert c.delete("/api/cans/2000000000099", headers=h).status_code == 404
+    assert c.get("/api/cans", headers={"Authorization": "Bearer faux"}).status_code == 401

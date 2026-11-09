@@ -1,3 +1,8 @@
+import '@fontsource/anton/latin-400.css';
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-600.css';
+import '@fontsource/inter/latin-800.css';
+import '@fontsource/jetbrains-mono/latin-700.css';
 import { maintenanceProgress } from './maintenanceProgress.js';
 
 // Compte à rebours dynamique basé sur une date cible précise
@@ -57,35 +62,5 @@ function startCountdown() {
   update();
   setInterval(update, 1000);
 }
-
-// Gestion de la soumission du formulaire vers l'API Vercel / Neon
-const form = document.getElementById('notify-form');
-const successMessage = document.getElementById('success-message');
-
-form?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const emailInput = document.getElementById('email');
-  const email = emailInput.value;
-
-  try {
-    const response = await fetch('/api/subscribe', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email }),
-    });
-
-    if (response.ok) {
-      form.style.display = 'none';
-      successMessage.classList.remove('hidden');
-    } else {
-      alert("An error occurred. Please try again.");
-    }
-  } catch (error) {
-    console.error('Network error:', error);
-    alert("Unable to contact the server.");
-  }
-});
 
 startCountdown();

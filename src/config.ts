@@ -3,6 +3,10 @@
 // de port ni de nom d'hôte, sinon il casse dès qu'on change d'accès.
 export const API_URL = '/api'
 
+// Mentions de la politique de confidentialité.
+export const RESPONSABLE = 'NABET Eleazar'
+export const CONTACT = 'contact@mail.stackmonsters.fr'
+
 // Clé du navigateur où est gardé le jeton d'accès (voir src/api.ts).
 export const CLE_JETON = 'canstack-jeton'
 

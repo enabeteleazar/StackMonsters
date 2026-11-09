@@ -35,7 +35,8 @@ Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comp
   prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Les photos des comptes et
   les canettes sans code-barres (`LOCAL-…`) n'y sont jamais envoyées. Retirer une canette de sa
   collection ne la retire pas du Wiki. À la première création de la table, elle est amorcée depuis les
-  collections existantes (une seule fois).
+  collections existantes (une seule fois). Une fiche supprimée ou dont le code-barres a changé est notée
+  dans `wiki_exclus` et n'est plus recréée ; un changement de code-barres est reporté dans les collections.
 - Le pays et la description ne viennent pas des utilisateurs : ils sont saisis par `OWNER_EMAIL` depuis la
   fiche (« Modifier la fiche », `PUT /api/wiki/{ean}`, 403 pour tout autre compte).
 - Les photos du Wiki sont ajoutées, remplacées ou retirées par `OWNER_EMAIL` depuis la fiche
@@ -66,6 +67,9 @@ compter plusieurs fois.
 Route `GET /api/stats`, réponse 403 pour tout autre compte.
 
 ## Suivi du trafic facultatif
+Rien n'est envoyé (ntfy.sh et Vercel Analytics) sans un « Accepter » dans le bandeau de consentement ; le choix se
+change dans Réglages. La politique de confidentialité est à `/#confidentialite` (responsable et contact :
+`src/config.ts`). Les polices sont servies par le site, sans appel à Google.
 `VITE_TRACK_TOPIC` active l'envoi d'événements `visit`, `connection` et `can_added` vers ntfy.sh.
 Les événements contiennent un identifiant aléatoire persistant dans le navigateur, le type d'appareil
 et la provenance approximative (référent/source UTM). Le suivi est désactivé si la variable est vide ;
@@ -73,6 +77,12 @@ et la provenance approximative (référent/source UTM). Le suivi est désactivé
 Cette variable `VITE_` et le nom du topic sont intégrés au JavaScript public : le topic n'est pas un secret,
 et les messages peuvent être lus ou alimentés par toute personne qui le connaît. Ne pas y envoyer de
 donnée personnelle ou confidentielle, et ne pas utiliser ce mécanisme comme canal privé.
+
+## Migrations de la base
+L'API ne modifie jamais le schéma : les migrations sont listées dans `MIGRATIONS` (`api/index.py`), dans
+l'ordre, et appliquées une seule fois par `DATABASE_URL=… python scripts/migrer_schema.py`. **À lancer sur
+chaque base avant de déployer une version qui ajoute une migration** : sinon l'API répond 503. Ne jamais
+modifier une migration déjà déployée, en ajouter une nouvelle. `./dev.sh` l'exécute automatiquement.
 
 ## Déployer
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).
@@ -104,6 +114,8 @@ Si tu utilises Neon, configure `DATABASE_URL` avec la chaîne de connexion actue
 (Neon → **Connect**). `./dev.sh` vérifie la connexion avant de démarrer et signale les identifiants refusés.
 En local, saisis un e-mail : le code s'affiche dans le terminal (ligne `[dev]`).
 Tests : `pnpm test` ; `TEST_DATABASE_URL=… python -m pytest tests` (jamais sur la production).
+Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetable**, puis
+`E2E_DATABASE_URL=… E2E_PYTHON=.venv/bin/python pnpm exec playwright test`.
 
 ## Limites assumées
 - Aucune protection contre l'inscription en masse (un compte se crée à la première vérification).

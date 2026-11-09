@@ -53,5 +53,13 @@ jobs:
         run: pnpm test
       - name: API integration tests
         run: python -m pytest tests
+      - name: Install browser for end-to-end tests
+        run: pnpm exec playwright install --with-deps chromium
+      - name: End-to-end tests
+        env:
+          E2E_DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: |
+          DATABASE_URL="$E2E_DATABASE_URL" python scripts/migrer_schema.py
+          pnpm exec playwright test --trace off
       - name: Production build
         run: pnpm build
