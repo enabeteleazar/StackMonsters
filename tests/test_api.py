@@ -122,6 +122,37 @@ def test_limite_de_demandes_et_adresse_invalide(env):
     assert c.post("/api/auth/demande", json={"email": A}).status_code == 429
 
 
+def test_limite_de_demandes_tient_sur_une_heure(env, monkeypatch):
+    c, _ = env
+    debut = ix.time.time()
+    horloge = [debut]
+    monkeypatch.setattr(ix.time, "time", lambda: horloge[0])
+
+    for _ in range(5):
+        assert c.post("/api/auth/demande", json={"email": A}).status_code == 200
+
+    # Les codes ont expiré (10 min), mais ils comptent encore dans la limite horaire.
+    horloge[0] = debut + ix.DUREE_CODE + 1
+    assert c.post("/api/auth/demande", json={"email": A}).status_code == 429
+
+    horloge[0] = debut + ix.FENETRE_DEMANDES + 1
+    assert c.post("/api/auth/demande", json={"email": A}).status_code == 200
+    with ix.base() as cx:
+        restants = cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s", (A,)).fetchone()["n"]
+    assert restants == 1  # les anciens codes sont purgés une fois la fenêtre passée
+
+
+def test_code_expire_reste_refuse_pendant_la_fenetre_de_limite(env, monkeypatch):
+    c, codes = env
+    debut = ix.time.time()
+    horloge = [debut]
+    monkeypatch.setattr(ix.time, "time", lambda: horloge[0])
+    c.post("/api/auth/demande", json={"email": A})
+
+    horloge[0] = debut + ix.DUREE_CODE + 1
+    assert c.post("/api/auth/verification", json={"email": A, "code": codes[A]}).status_code == 401
+
+
 def test_identifiants_base_refuses_renvoient_503_sans_exposer_url(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://dbuser:placeholder@secret-host/db")
 

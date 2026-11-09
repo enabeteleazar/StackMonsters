@@ -46,6 +46,7 @@ COLONNES_COLLECTION = (
     "COALESCE(w.flavor, '') AS flavor, COALESCE(w.status, '') AS status, COALESCE(w.region, '') AS region"
 )
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
+FENETRE_DEMANDES = 3600
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
 PHOTO_RE = re.compile(r"^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$")
@@ -287,9 +288,12 @@ def demande(d: Demande) -> dict:
     now = int(time.time())
     code = f"{secrets.randbelow(10**6):06d}"
     with base() as cx:
-        cx.execute("DELETE FROM codes WHERE expire < %s", (now,))
+        # Un code expiré compte encore dans la limite : il n'est purgé qu'une fois la fenêtre passée.
+        cx.execute("DELETE FROM codes WHERE cree <= %s", (now - FENETRE_DEMANDES,))
         cx.execute("DELETE FROM sessions WHERE expire < %s", (now,))
-        n = cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s AND cree > %s", (email, now - 3600)).fetchone()["n"]
+        n = cx.execute(
+            "SELECT COUNT(*) AS n FROM codes WHERE email = %s AND cree > %s", (email, now - FENETRE_DEMANDES),
+        ).fetchone()["n"]
         if n >= DEMANDES_MAX:
             raise HTTPException(429, "trop de demandes")
         code_row = cx.execute(
