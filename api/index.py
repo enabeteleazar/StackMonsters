@@ -27,7 +27,7 @@ from typing import Iterator, Literal
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _version() -> str:
@@ -41,9 +41,15 @@ VERSION = _version()
 logger = logging.getLogger(__name__)
 COLONNES = "ean, nom, edition, volume, etat, nb, notes, photo, ajout"
 COLONNES_COLLECTION = (
-    "c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo, c.ajout, "
+    "c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.ajout, "
+    "CASE WHEN c.photo IS NULL THEN NULL ELSE c.maj END AS photo_version, "
     "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
     "COALESCE(w.flavor, '') AS flavor, COALESCE(w.status, '') AS status, COALESCE(w.region, '') AS region"
+)
+# Réponses de l'API : les octets des photos sont servis à part (/cans/{ean}/photo).
+COLONNES_REPONSE = (
+    "ean, nom, edition, volume, etat, nb, notes, ajout, "
+    "CASE WHEN photo IS NULL THEN NULL ELSE maj END AS photo_version"
 )
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
 FENETRE_DEMANDES = 3600
@@ -51,6 +57,30 @@ DEMANDES_MAX_IP, VERIFICATIONS_MAX_IP = 20, 60
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
 PHOTO_RE = re.compile(r"^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$")
+CODE_LOCAL_RE = re.compile(r"^LOCAL-[A-Z0-9]{1,40}$")
+
+
+def _photo_valide(photo: str) -> bool:
+    m = PHOTO_RE.match(photo)
+    if not m:
+        return False
+    try:
+        base64.b64decode(m.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    return True
+
+
+def _normaliser_code(code: str) -> str | None:
+    """Forme canonique d'un code-barres : UPC-A complété à 13 chiffres, EAN-8 inchangé ; None si invalide."""
+    if CODE_LOCAL_RE.match(code):
+        return code
+    if not re.fullmatch(r"[0-9]{8}|[0-9]{12,13}", code):
+        return None
+    total = sum(int(c) * (3 if i % 2 == 0 else 1) for i, c in enumerate(reversed(code[:-1])))
+    if (10 - total % 10) % 10 != int(code[-1]):
+        return None
+    return f"0{code}" if len(code) == 12 else code
 
 CHAMPS = """ean TEXT NOT NULL, nom TEXT NOT NULL DEFAULT '', edition TEXT NOT NULL DEFAULT '',
     volume TEXT NOT NULL DEFAULT '', etat TEXT NOT NULL DEFAULT '', nb INTEGER NOT NULL DEFAULT 1,
@@ -99,18 +129,25 @@ INSERT INTO wiki (ean, nom, edition, volume, cree, maj)
 
 class Canette(BaseModel):
     ean: str = Field(min_length=1, max_length=64)
-    nom: str = ""
-    edition: str = ""
-    volume: str = ""
+    nom: str = Field(default="", max_length=200)
+    edition: str = Field(default="", max_length=200)
+    volume: str = Field(default="", max_length=40)
     categorie: str = Field(default="", max_length=80)
     flavor: str = Field(default="", max_length=200)
     status: Literal["", "Active", "Stop"] = ""
     region: str = Field(default="", max_length=80)
-    etat: str = ""
+    etat: str = Field(default="", max_length=40)
     nb: int = Field(default=1, ge=1, le=9999)
     notes: str = Field(default="", max_length=4000)
     photo: str | None = Field(default=None, max_length=300_000)
     ajout: str = ""
+
+    @field_validator("photo")
+    @classmethod
+    def verifier_photo(cls, photo: str | None) -> str | None:
+        if photo is not None and not _photo_valide(photo):
+            raise ValueError("format de photo refusé")
+        return photo
 
 
 class FicheWiki(BaseModel):
@@ -454,12 +491,37 @@ def lire(ean: str, u: dict = Depends(utilisateur)) -> dict:
     return r
 
 
+@router.get("/cans/{ean}/photo")
+def photo_canette(ean: str, u: dict = Depends(utilisateur)) -> Response:
+    """Photo d'une canette de sa propre collection, chargée à la demande."""
+    with base() as cx:
+        r = cx.execute("SELECT photo FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).fetchone()
+    m = PHOTO_RE.match(r["photo"]) if r and r["photo"] else None
+    if not m:
+        raise HTTPException(404, "photo inconnue")
+    try:
+        octets = base64.b64decode(m.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(404, "photo illisible") from None
+    return Response(
+        octets, media_type=m.group(1),
+        headers={
+            "Cache-Control": "private, max-age=86400", "Vary": "Authorization", "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.put("/cans")
 def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
+        # Une fiche déjà en base reste modifiable telle quelle, même si son code est ancien ou non conforme.
+        deja_la = cx.execute("SELECT 1 FROM collection WHERE user_id = %s AND ean = %s", (u["id"], c.ean)).fetchone()
+        ean = c.ean if deja_la else _normaliser_code(c.ean)
+        if ean is None:
+            raise HTTPException(422, "code-barres invalide")
         # Le Wiki reçoit les champs descriptifs fournis, sans écraser une fiche existante.
         # Il ne reçoit ni les canettes sans code-barres (LOCAL-), ni les photos : elles restent privées.
-        if not c.ean.startswith("LOCAL-"):
+        if not ean.startswith("LOCAL-"):
             cx.execute(
                 """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, cree, maj)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -480,7 +542,7 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
                                   OR (wiki.status = '' AND EXCLUDED.status <> '')
                                   OR (wiki.region = '' AND EXCLUDED.region <> '')
                                  THEN EXCLUDED.maj ELSE wiki.maj END""",
-                (c.ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
+                (ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
                  c.status, c.region.strip(), maintenant(), maintenant()),
             )
         enregistrement = cx.execute(
@@ -488,10 +550,11 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, ean) DO UPDATE SET
                   nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
-                  nb=EXCLUDED.nb, notes=EXCLUDED.notes, photo=EXCLUDED.photo, maj=EXCLUDED.maj
-                RETURNING {COLONNES}""",
-            (u["id"], c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
-             c.ajout or maintenant(), maintenant()),
+                  nb=EXCLUDED.nb, notes=EXCLUDED.notes, maj=EXCLUDED.maj,
+                  photo = CASE WHEN %s THEN EXCLUDED.photo ELSE collection.photo END
+                RETURNING {COLONNES_REPONSE}""",
+            (u["id"], ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
+             c.ajout or maintenant(), maintenant(), "photo" in c.model_fields_set),  # champ absent : photo conservée
         ).fetchone()
         return _avec_infos_wiki(cx, enregistrement)
 
@@ -500,7 +563,7 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
 def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur)) -> dict:
     with base() as cx:
         r = cx.execute(
-            f"UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s RETURNING {COLONNES}",
+            f"UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s RETURNING {COLONNES_REPONSE}",
             (d.delta, maintenant(), u["id"], ean)).fetchone()
         if r is not None:
             r = _avec_infos_wiki(cx, r)
@@ -568,13 +631,8 @@ def wiki_photo_remplacer(ean: str, p: PhotoFiche, u: dict = Depends(utilisateur)
     """Ajoute ou remplace la photo d'une fiche : réservé à OWNER_EMAIL."""
     if not _est_proprietaire(u["email"]):
         raise HTTPException(403, "réservé au propriétaire")
-    m = PHOTO_RE.match(p.photo)
-    try:
-        if not m:
-            raise ValueError
-        base64.b64decode(m.group(2), validate=True)
-    except (binascii.Error, ValueError):
-        raise HTTPException(422, "format de photo refusé") from None
+    if not _photo_valide(p.photo):
+        raise HTTPException(422, "format de photo refusé")
     with base() as cx:
         r = cx.execute(
             f"UPDATE wiki SET photo = %s, maj = %s WHERE ean = %s RETURNING {COLONNES_FICHE}",
@@ -608,6 +666,10 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur)) -> dic
     nouvel_ean = f.ean.strip() if f.ean is not None else ean
     if not nouvel_ean:
         raise HTTPException(422, "code-barres obligatoire")
+    if nouvel_ean != ean:
+        nouvel_ean = _normaliser_code(nouvel_ean)
+        if nouvel_ean is None:
+            raise HTTPException(422, "code-barres invalide")
     with base() as cx:
         if nouvel_ean != ean:
             cible = cx.execute("SELECT 1 FROM wiki WHERE ean = %s", (nouvel_ean,)).fetchone()

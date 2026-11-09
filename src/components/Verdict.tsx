@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Sparkles, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
 import { CATEGORIES, REGIONS, STATUTS } from '../categories'
-import { estCodeBarresEAN13 } from '../codeBarres'
+import { normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
 import { CANETTE_VIDE, ETATS, type Canette, type FicheWiki } from '../types'
 import { suggererFiches, trouverFicheParCodeBarres } from '../wiki'
+import PhotoWiki from './PhotoWiki'
 
 type Props = {
   ean: string
@@ -54,8 +55,14 @@ export default function Verdict(p: Props) {
   return (
     <div className="verdict">
       <div className="photo-hero">
-        {!edition && p.existante?.photo ? (
-          <img src={p.existante.photo} alt="" />
+        {!edition && p.existante?.photo_version ? (
+          <PhotoWiki
+            source="collection"
+            ean={p.existante.ean}
+            version={p.existante.photo_version}
+            taille={34}
+            legende="Pas de photo"
+          />
         ) : (
           <div className="ph-vide">
             <ImageOff size={34} />
@@ -155,7 +162,7 @@ export default function Verdict(p: Props) {
                 onClick={() => photoInput.current?.click()}
               >
                 <ImagePlus size={18} />
-                {p.existante!.photo ? 'Remplacer la photo' : 'Ajouter une photo'}
+                {p.existante!.photo_version ? 'Remplacer la photo' : 'Ajouter une photo'}
               </button>
               {erreurPhoto && <p className="sous" role="alert">{erreurPhoto}</p>}
               <button className="btn btn-fantome" onClick={() => setEdition(true)}>
@@ -211,6 +218,8 @@ function Formulaire({
   const [ficheChoisie, setFicheChoisie] = useState<string | null>(null)
   const champ = <K extends keyof Canette>(k: K, v: Canette[K]) =>
     setC((prec) => ({ ...prec, [k]: v }))
+  // Seule une nouvelle canette reçoit la forme canonique : une fiche existante garde son code.
+  const codeCanonique = nouvelle ? (normaliserCodeBarres(c.ean) ?? c.ean) : c.ean
 
   const chargerWiki = useCallback(async () => {
     setErreurWiki(null)
@@ -230,23 +239,24 @@ function Formulaire({
     () => {
       const catalogue = fiches ?? []
       const parNom = suggererFiches(catalogue, c.nom)
-      const parCode = trouverFicheParCodeBarres(catalogue, c.ean)
+      const parCode = trouverFicheParCodeBarres(catalogue, codeCanonique)
       return [...(parCode ? [parCode] : []), ...parNom.filter((fiche) => fiche.ean !== parCode?.ean)].slice(0, 4)
     },
-    [fiches, c.nom, c.ean],
+    [fiches, c.nom, codeCanonique],
   )
-  const ficheCodeBarres = trouverFicheParCodeBarres(fiches ?? [], c.ean)
+  const ficheCodeBarres = trouverFicheParCodeBarres(fiches ?? [], codeCanonique)
   const ficheCodeDisponible =
     ficheCodeBarres && !canettes.some((canette) => canette.ean === ficheCodeBarres.ean)
       ? ficheCodeBarres
       : undefined
   const codeBarresDejaUtilise = canettes.find(
-    (canette) => canette.ean === c.ean && canette.ean !== depart.ean,
+    (canette) => canette.ean === codeCanonique && canette.ean !== depart.ean,
   )
   // Une canette sans code-barres reste hors du Wiki, qui porte ces champs descriptifs.
   const champsWiki = !c.ean.startsWith('LOCAL-')
   const codeBarresLocal = nouvelle && c.ean.startsWith('LOCAL-')
-  const codeBarresValide = codeBarresLocal || estCodeBarresEAN13(c.ean)
+  // Le code n'est contrôlé qu'à la création : une fiche existante reste toujours modifiable.
+  const codeBarresValide = !nouvelle || codeBarresLocal || normaliserCodeBarres(c.ean) !== null
   const codeBarresInvalide = nouvelle && !!c.ean && !codeBarresValide
   const quantiteInvalide = !Number.isInteger(c.nb) || c.nb < 1 || c.nb > 9999
   const choixFicheRequis =
@@ -476,7 +486,7 @@ function Formulaire({
       </div>
       {codeBarresInvalide && (
         <p className="suggestions-wiki-erreur" role="alert">
-          Le code-barres doit contenir exactement 13 chiffres.
+          Code-barres invalide : il doit compter 8, 12 ou 13 chiffres, clé de contrôle comprise.
         </p>
       )}
       {quantiteInvalide && (
@@ -501,7 +511,7 @@ function Formulaire({
             occupe || !c.ean.trim() || !codeBarresValide || !!codeBarresDejaUtilise ||
             choixFicheRequis || wikiEnChargement || quantiteInvalide
           }
-          onClick={() => surValider(c)}
+          onClick={() => surValider({ ...c, ean: codeCanonique })}
         >
           {occupe ? 'Enregistrement…' : libelle}
         </button>

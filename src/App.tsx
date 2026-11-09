@@ -8,6 +8,7 @@ import Camera from './components/Camera'
 import Collection from './components/Collection'
 import Dashboard from './components/Dashboard'
 import Logo from './components/Logo'
+import { viderPhotos } from './components/PhotoWiki'
 import Settings from './components/Settings'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
@@ -43,6 +44,7 @@ export default function App() {
   const verrouiller = useCallback(() => {
     const sessionExistante = jeton.lire() !== ''
     if (sessionExistante) jeton.effacer()
+    viderPhotos()
     setRefuse(sessionExistante)
     setNomUtilisateur('')
     setEmailUtilisateur('')
