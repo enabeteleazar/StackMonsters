@@ -30,6 +30,14 @@ Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comp
 - Routes : `GET /api/wiki` (liste sans photos), `GET /api/wiki/{ean}/photo` (image, chargée à la demande
   quand la vignette approche de l'écran), toutes derrière la session. Le Wiki exige la connexion réseau.
 
+## Catalogue Open Food Facts
+Pour actualiser localement `monster_database.json` avec les produits de la marque Monster Energy :
+`python3 scripts/import_openfoodfacts.py`. Le script récupère toutes les pages de l'API Open Food Facts,
+fusionne les produits par code-barres et conserve les entrées et champs descriptifs déjà présents.
+L'import est écrit atomiquement : une erreur réseau ou une réponse vide ne remplace pas le fichier.
+Les produits importés gardent leurs données source et l'attribution [Open Food Facts](https://world.openfoodfacts.org/)
+sous licence [ODbL](https://opendatacommons.org/licenses/odbl/1-0/).
+
 ## Photos de la page d'accueil
 La photo de canette dans `public/images/` provient de Wikimedia Commons et est affichée avec attribution :
 - [Monster Energy Mega can](https://commons.wikimedia.org/wiki/File:Monster_Energy_Mega_can.jpg), DYVER.
