@@ -68,7 +68,8 @@ def restaurer_compte(cx, email: str, lignes: list[dict]) -> int:
              r.get("etat") or "", max(1, int(r.get("nb") or 1)), r.get("notes") or "", r.get("photo"),
              r.get("ajout") or maintenant(), maintenant()),
         )
-        if not str(r["ean"]).startswith("LOCAL-"):
+        exclue = cx.execute("SELECT 1 FROM wiki_exclus WHERE ean = %s", (r["ean"],)).fetchone()
+        if not str(r["ean"]).startswith("LOCAL-") and not exclue:
             cx.execute(
                 """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, cree, maj)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)

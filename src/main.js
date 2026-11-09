@@ -58,34 +58,4 @@ function startCountdown() {
   setInterval(update, 1000);
 }
 
-// Gestion de la soumission du formulaire vers l'API Vercel / Neon
-const form = document.getElementById('notify-form');
-const successMessage = document.getElementById('success-message');
-
-form?.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const emailInput = document.getElementById('email');
-  const email = emailInput.value;
-
-  try {
-    const response = await fetch('/api/subscribe', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email }),
-    });
-
-    if (response.ok) {
-      form.style.display = 'none';
-      successMessage.classList.remove('hidden');
-    } else {
-      alert("An error occurred. Please try again.");
-    }
-  } catch (error) {
-    console.error('Network error:', error);
-    alert("Unable to contact the server.");
-  }
-});
-
 startCountdown();

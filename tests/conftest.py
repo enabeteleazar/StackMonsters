@@ -15,3 +15,11 @@ os.environ["DATABASE_URL"] = URL_TEST
 os.environ["SESSION_SECRET"] = "secret-de-test"
 os.environ.pop("RESEND_API_KEY", None)
 os.environ.pop("OWNER_EMAIL", None)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def schema():
+    import api.index as ix
+
+    with ix.connecter() as cx:
+        ix.appliquer_migrations(cx)

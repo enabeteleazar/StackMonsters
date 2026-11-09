@@ -35,7 +35,8 @@ Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comp
   prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Les photos des comptes et
   les canettes sans code-barres (`LOCAL-…`) n'y sont jamais envoyées. Retirer une canette de sa
   collection ne la retire pas du Wiki. À la première création de la table, elle est amorcée depuis les
-  collections existantes (une seule fois).
+  collections existantes (une seule fois). Une fiche supprimée ou dont le code-barres a changé est notée
+  dans `wiki_exclus` et n'est plus recréée ; un changement de code-barres est reporté dans les collections.
 - Le pays et la description ne viennent pas des utilisateurs : ils sont saisis par `OWNER_EMAIL` depuis la
   fiche (« Modifier la fiche », `PUT /api/wiki/{ean}`, 403 pour tout autre compte).
 - Les photos du Wiki sont ajoutées, remplacées ou retirées par `OWNER_EMAIL` depuis la fiche
@@ -73,6 +74,12 @@ et la provenance approximative (référent/source UTM). Le suivi est désactivé
 Cette variable `VITE_` et le nom du topic sont intégrés au JavaScript public : le topic n'est pas un secret,
 et les messages peuvent être lus ou alimentés par toute personne qui le connaît. Ne pas y envoyer de
 donnée personnelle ou confidentielle, et ne pas utiliser ce mécanisme comme canal privé.
+
+## Migrations de la base
+L'API ne modifie jamais le schéma : les migrations sont listées dans `MIGRATIONS` (`api/index.py`), dans
+l'ordre, et appliquées une seule fois par `DATABASE_URL=… python scripts/migrer_schema.py`. **À lancer sur
+chaque base avant de déployer une version qui ajoute une migration** : sinon l'API répond 503. Ne jamais
+modifier une migration déjà déployée, en ajouter une nouvelle. `./dev.sh` l'exécute automatiquement.
 
 ## Déployer
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).

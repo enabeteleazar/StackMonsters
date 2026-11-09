@@ -68,6 +68,8 @@ then
   exit 1
 fi
 
+.venv/bin/python scripts/migrer_schema.py
+
 .venv/bin/python -m uvicorn api.index:app --host 127.0.0.1 --port 8055 --reload &
 API=$!
 trap 'kill $API 2>/dev/null || true' EXIT
