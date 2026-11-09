@@ -23,6 +23,7 @@ import argparse
 import json
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -71,8 +72,8 @@ def restaurer_compte(cx, email: str, lignes: list[dict]) -> int:
         exclue = cx.execute("SELECT 1 FROM wiki_exclus WHERE ean = %s", (r["ean"],)).fetchone()
         if not str(r["ean"]).startswith("LOCAL-") and not exclue:
             cx.execute(
-                """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, cree, maj)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (ean) DO UPDATE SET
                      nom=COALESCE(NULLIF(wiki.nom, ''), EXCLUDED.nom),
                      edition=COALESCE(NULLIF(wiki.edition, ''), EXCLUDED.edition),
@@ -80,10 +81,12 @@ def restaurer_compte(cx, email: str, lignes: list[dict]) -> int:
                      categorie=COALESCE(NULLIF(wiki.categorie, ''), NULLIF(wiki.gamme, ''), EXCLUDED.categorie),
                      flavor=COALESCE(NULLIF(wiki.flavor, ''), EXCLUDED.flavor),
                      status=COALESCE(NULLIF(wiki.status, ''), EXCLUDED.status),
+                     nouveaute_depuis=CASE WHEN wiki.status = '' THEN EXCLUDED.nouveaute_depuis
+                                           ELSE wiki.nouveaute_depuis END,
                      region=COALESCE(NULLIF(wiki.region, ''), EXCLUDED.region)""",
                 (r["ean"], r.get("nom") or "", r.get("edition") or "", r.get("volume") or "",
                  r.get("categorie") or "", r.get("flavor") or "", r.get("status") or "", r.get("region") or "",
-                 maintenant(), maintenant()),
+                 int(time.time()) if r.get("status") == "Nouveauté" else None, maintenant(), maintenant()),
             )
         ecrites += 1
     return ecrites

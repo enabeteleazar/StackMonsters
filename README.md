@@ -33,7 +33,8 @@ Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id`
 Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comptes confondus. Une vignette
 (photo + nom) ouvre la fiche : nom, version, volume, catégorie, saveur, statut et région.
 - Catégories et régions proposées dans le formulaire propriétaire : elles proviennent des valeurs distinctes
-  du catalogue source. Le statut est `Active` ou `Stop`.
+  du catalogue source. Le statut est `Active`, `Stop` ou `Nouveauté` ; une Nouveauté s'affiche `Active` 30 jours
+  après avoir été choisie (calcul à la lecture, colonne `nouveaute_depuis`).
 - Table `wiki` (une ligne par `ean`), séparée des collections : elle ne contient ni propriétaire, ni
   quantité, ni état, ni notes. Elle est alimentée à l'ajout d'une canette (champs descriptifs) et ne
   prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Les photos des comptes et
@@ -86,7 +87,8 @@ donnée personnelle ou confidentielle, et ne pas utiliser ce mécanisme comme ca
 L'API ne modifie jamais le schéma : les migrations sont listées dans `MIGRATIONS` (`api/index.py`), dans
 l'ordre, et appliquées une seule fois par `DATABASE_URL=… python scripts/migrer_schema.py`. **À lancer sur
 chaque base avant de déployer une version qui ajoute une migration** : sinon l'API répond 503. Ne jamais
-modifier une migration déjà déployée, en ajouter une nouvelle. `./dev.sh` l'exécute automatiquement.
+modifier une migration déjà déployée, en ajouter une nouvelle, et ne jamais réattribuer un numéro, même
+retiré avant livraison (une base de développement a pu l'enregistrer). `./dev.sh` l'exécute automatiquement.
 
 ## Déployer
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).

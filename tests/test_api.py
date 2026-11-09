@@ -551,6 +551,60 @@ def test_le_compte_proprietaire_ne_se_supprime_pas(env, monkeypatch):
     assert c.get("/api/auth/moi", headers=h).status_code == 200
 
 
+def _vieillir_nouveaute(ean, jours):
+    with ix.base() as cx:
+        cx.execute(
+            "UPDATE wiki SET nouveaute_depuis = %s WHERE ean = %s", (int(ix.time.time()) - jours * 86400, ean),
+        )
+
+
+def test_nouveaute_redevient_active_apres_30_jours(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(), headers=hb)
+    corps = {"nom": "Mango", "status": "Nouveauté"}
+    assert c.put("/api/wiki/2000000000015", json=corps, headers=ha).json()["status"] == "Nouveauté"
+    assert c.get("/api/cans/2000000000015", headers=hb).json()["status"] == "Nouveauté"
+
+    _vieillir_nouveaute("2000000000015", 29)
+    assert fiche(c, hb, "2000000000015")["status"] == "Nouveauté"
+    _vieillir_nouveaute("2000000000015", 31)
+    assert fiche(c, hb, "2000000000015")["status"] == "Active"
+    assert c.get("/api/cans", headers=hb).json()[0]["status"] == "Active"
+    assert c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=hb).json()["status"] == "Active"
+
+    # Choisie de nouveau après expiration : 30 nouveaux jours.
+    assert c.put("/api/wiki/2000000000015", json=corps, headers=ha).json()["status"] == "Nouveauté"
+
+
+def test_nouveaute_en_cours_garde_sa_date(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    h = connecter(c, codes, A)
+    c.put("/api/cans", json=canette(), headers=h)
+    c.put("/api/wiki/2000000000015", json={"nom": "Mango", "status": "Nouveauté"}, headers=h)
+    _vieillir_nouveaute("2000000000015", 25)
+    c.put("/api/wiki/2000000000015", json={"nom": "Mango corrigé", "status": "Nouveauté"}, headers=h)
+    # La date ne doit pas avoir été remise à zéro.
+    with ix.base() as cx:
+        depuis = cx.execute("SELECT nouveaute_depuis FROM wiki WHERE ean = '2000000000015'").fetchone()["nouveaute_depuis"]
+    assert int(ix.time.time()) - depuis >= 25 * 86400 - 5
+
+    c.put("/api/wiki/2000000000015", json={"nom": "Mango", "status": "Active"}, headers=h)
+    with ix.base() as cx:
+        assert cx.execute("SELECT nouveaute_depuis FROM wiki WHERE ean = '2000000000015'").fetchone()["nouveaute_depuis"] is None
+
+
+def test_nouveaute_choisie_a_la_creation(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    assert c.put("/api/cans", json=canette(status="Nouveauté"), headers=ha).json()["status"] == "Nouveauté"
+    _vieillir_nouveaute("2000000000015", 31)
+    assert fiche(c, hb, "2000000000015")["status"] == "Active"
+    assert c.put("/api/cans", json=canette(status="Bientôt"), headers=ha).status_code == 422
+
+
 # --- Wiki (catalogue partagé) ----------------------------------------------------
 
 PNG_1PX = (

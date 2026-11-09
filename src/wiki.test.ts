@@ -57,7 +57,7 @@ describe('filtrerFiches', () => {
         'Java', 'Rehab', 'Nitro', 'Water', 'Asia',
       ])
       expect(REGIONS).toEqual(['Global', 'US', 'Europe', 'Europe/Aus', 'US/Global', 'Japan'])
-      expect(STATUTS).toEqual(['Active', 'Stop'])
+      expect(STATUTS).toEqual(['Active', 'Stop', 'Nouveauté'])
     })
   })
 

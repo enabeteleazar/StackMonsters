@@ -40,11 +40,22 @@ def _version() -> str:
 VERSION = _version()
 logger = logging.getLogger(__name__)
 COLONNES = "ean, nom, edition, volume, etat, nb, notes, photo, ajout"
+DUREE_NOUVEAUTE = 30 * 86400
+
+
+def _statut(prefixe: str) -> str:
+    """Statut affiché : une « Nouveauté » de plus de 30 jours redevient « Active », sans tâche planifiée."""
+    return (
+        f"CASE WHEN {prefixe}status = 'Nouveauté' AND COALESCE({prefixe}nouveaute_depuis, 0) "
+        f"< extract(epoch FROM now()) - {DUREE_NOUVEAUTE} THEN 'Active' ELSE {prefixe}status END"
+    )
+
+
 COLONNES_COLLECTION = (
     "c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.ajout, "
     "CASE WHEN c.photo IS NULL THEN NULL ELSE c.maj END AS photo_version, "
     "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
-    "COALESCE(w.flavor, '') AS flavor, COALESCE(w.status, '') AS status, COALESCE(w.region, '') AS region"
+    "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region"
 )
 # Réponses de l'API : les octets des photos sont servis à part (/cans/{ean}/photo).
 COLONNES_REPONSE = (
@@ -127,6 +138,11 @@ INSERT INTO wiki (ean, nom, edition, volume, cree, maj)
     WHERE NOT EXISTS (SELECT 1 FROM wiki) AND ean NOT LIKE 'LOCAL-%'
     ORDER BY ean, (nom = ''), maj;
 """),
+    # Numéro déjà utilisé par une migration retirée avant livraison (couleur) : certaines bases de développement
+    # l'ont enregistré. Il reste réservé et ne fait rien ; un numéro ne doit jamais être réattribué.
+    (4, "SELECT 1;"),
+    # Date de passage au statut « Nouveauté » (affiché « Active » après 30 jours).
+    (5, "ALTER TABLE wiki ADD COLUMN IF NOT EXISTS nouveaute_depuis BIGINT;"),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -142,7 +158,7 @@ class Canette(BaseModel):
     volume: str = Field(default="", max_length=40)
     categorie: str = Field(default="", max_length=80)
     flavor: str = Field(default="", max_length=200)
-    status: Literal["", "Active", "Stop"] = ""
+    status: Literal["", "Active", "Stop", "Nouveauté"] = ""
     region: str = Field(default="", max_length=80)
     etat: str = Field(default="", max_length=40)
     nb: int = Field(default=1, ge=1, le=9999)
@@ -167,7 +183,7 @@ class FicheWiki(BaseModel):
     volume: str = Field(default="", max_length=40)
     categorie: str = Field(default="", max_length=80)
     flavor: str = Field(default="", max_length=200)
-    status: Literal["", "Active", "Stop"] = ""
+    status: Literal["", "Active", "Stop", "Nouveauté"] = ""
     region: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
 
@@ -520,7 +536,7 @@ def statistiques(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depend
 def _avec_infos_wiki(cx: psycopg.Connection, canette: dict) -> dict:
     """Ajoute les champs descriptifs du Wiki ; une canette peut ne pas y figurer (LOCAL-, fiche retirée)."""
     w = cx.execute(
-        "SELECT categorie, gamme, flavor, status, region FROM wiki WHERE ean = %s", (canette["ean"],),
+        f"SELECT categorie, gamme, flavor, {_statut('')} AS status, region FROM wiki WHERE ean = %s", (canette["ean"],),
     ).fetchone() or {}
     return {
         **canette,
@@ -590,8 +606,8 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         # Une fiche retirée par le propriétaire (wiki_exclus) n'est pas recréée.
         if not ean.startswith("LOCAL-") and not exclue:
             cx.execute(
-                """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, cree, maj)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (ean) DO UPDATE SET
                       nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
                       edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
@@ -600,6 +616,8 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                                        THEN EXCLUDED.categorie ELSE wiki.categorie END,
                       flavor = CASE WHEN wiki.flavor = '' THEN EXCLUDED.flavor ELSE wiki.flavor END,
                       status = CASE WHEN wiki.status = '' THEN EXCLUDED.status ELSE wiki.status END,
+                      nouveaute_depuis = CASE WHEN wiki.status = '' THEN EXCLUDED.nouveaute_depuis
+                                              ELSE wiki.nouveaute_depuis END,
                       region = CASE WHEN wiki.region = '' THEN EXCLUDED.region ELSE wiki.region END,
                       maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
                                   OR (wiki.edition = '' AND EXCLUDED.edition <> '')
@@ -610,7 +628,8 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                                   OR (wiki.region = '' AND EXCLUDED.region <> '')
                                  THEN EXCLUDED.maj ELSE wiki.maj END""",
                 (ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
-                 c.status, c.region.strip(), maintenant(), maintenant()),
+                 c.status, c.region.strip(),
+                 int(time.time()) if c.status == "Nouveauté" else None, maintenant(), maintenant()),
             )
         enregistrement = cx.execute(
             f"""INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
@@ -651,7 +670,7 @@ def supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection =
 
 
 COLONNES_FICHE = (
-    "ean, nom, edition, volume, categorie, gamme, flavor, status, region, description, "
+    "ean, nom, edition, volume, categorie, gamme, flavor, " + _statut("") + " AS status, region, description, "
     "(photo IS NOT NULL) AS a_photo, maj"
 )
 
@@ -737,6 +756,7 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
         nouvel_ean = _normaliser_code(nouvel_ean)
         if nouvel_ean is None:
             raise HTTPException(422, "code-barres invalide")
+    now = int(time.time())
     with cx.transaction():
         if nouvel_ean != ean:
             cible = cx.execute("SELECT 1 FROM wiki WHERE ean = %s", (nouvel_ean,)).fetchone()
@@ -745,10 +765,13 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
         r = cx.execute(
             "UPDATE wiki SET ean = %s, nom = %s, edition = COALESCE(%s, edition), "
             "volume = %s, categorie = %s, flavor = %s, status = %s, region = %s, "
+            # Une Nouveauté encore en cours garde sa date ; sinon le délai de 30 jours (re)part maintenant.
+            "nouveaute_depuis = CASE WHEN %s <> 'Nouveauté' THEN NULL "
+            "WHEN status = 'Nouveauté' AND nouveaute_depuis >= %s THEN nouveaute_depuis ELSE %s END, "
             "description = %s, maj = %s "
             f"WHERE ean = %s RETURNING {COLONNES_FICHE}",
             (nouvel_ean, f.nom.strip(), f.edition.strip() if f.edition is not None else None,
-             f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(),
+             f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(), f.status, now - DUREE_NOUVEAUTE, now,
              f.description.strip(), maintenant(), ean),
         ).fetchone()
         if r is None:

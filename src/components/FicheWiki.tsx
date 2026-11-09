@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ImageOff, ImagePlus, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
-import { CATEGORIES, REGIONS, STATUTS } from '../categories'
+import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
 import { reduirePhoto } from '../photo'
 import type { FicheWiki as Fiche, ModifFicheWiki } from '../types'
 import PhotoWiki from './PhotoWiki'
@@ -281,7 +281,7 @@ function Formulaire({
           >
             <option value="">Non renseigné</option>
             {STATUTS.map((status) => (
-              <option key={status} value={status}>{status}</option>
+              <option key={status} value={status}>{libelleStatut(status)}</option>
             ))}
           </select>
         </div>
