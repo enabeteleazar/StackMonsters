@@ -3,7 +3,7 @@ import { CATEGORIES, REGIONS, STATUTS } from './categories'
 import type { FicheWiki } from './types'
 import { filtrerFiches, suggererFiches, trouverFicheParCodeBarres } from './wiki'
 
-const f = (ean: string, nom: string, pays = ''): FicheWiki => ({
+const f = (ean: string, nom: string): FicheWiki => ({
   ean,
   nom,
   edition: '',
@@ -12,12 +12,11 @@ const f = (ean: string, nom: string, pays = ''): FicheWiki => ({
   flavor: '',
   status: '',
   region: '',
-  pays,
   description: '',
   photo: null,
 })
 
-const fiches = [f('1', 'Monster Mango Loco', 'États-Unis'), f('2', 'Ultra White', 'France'), f('3016', '')]
+const fiches = [f('1', 'Monster Mango Loco'), f('2', 'Ultra White'), f('3016', '')]
 
 describe('filtrerFiches', () => {
   it('renvoie tout sans recherche', () => {
@@ -37,10 +36,6 @@ describe('filtrerFiches', () => {
     expect(filtrerFiches(catalogue, '', 'juiced').map((x) => x.ean)).toEqual(['1', '3016'])
     expect(filtrerFiches(catalogue, 'mango', 'Juiced').map((x) => x.ean)).toEqual(['1'])
     expect(filtrerFiches(catalogue, '', 'Original')).toEqual([])
-  })
-
-  it('cherche dans le pays sans tenir compte des accents', () => {
-    expect(filtrerFiches(fiches, 'etats-unis').map((x) => x.ean)).toEqual(['1'])
   })
 
   it('cherche dans les catégories descriptives sans tenir compte de la casse', () => {
@@ -81,7 +76,7 @@ describe('suggererFiches', () => {
   })
 
   it('conserve plusieurs fiches de même nom pour des versions différentes', () => {
-    const catalogue = [f('1', 'Monster Ultra', 'France'), f('2', 'Monster Ultra', 'États-Unis')]
+    const catalogue = [f('1', 'Monster Ultra'), f('2', 'Monster Ultra')]
     expect(suggererFiches(catalogue, 'Monster Ultra').map((x) => x.ean)).toEqual(['1', '2'])
   })
 

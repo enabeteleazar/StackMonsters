@@ -322,6 +322,44 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 .consentement div{display:flex;gap:10px;margin-top:10px}
 .consentement .btn{flex:1}
 .flux-carte .photo-wiki{height:72px}
+/* Résultat de scan */
+.scan-entete{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;max-width:640px;
+  margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 18px 0}
+.scan-entete .ean{font-family:var(--mono);font-size:12.5px;letter-spacing:.13em;color:var(--alu)}
+.scan-badge{align-self:flex-start;margin-top:18px}
+.carte-scan{display:flex;gap:14px;align-items:center;margin-top:14px;padding:14px;background:var(--graphite);
+  border:1px solid var(--ligne);border-radius:var(--r-lg)}
+.carte-scan-photo{position:relative;flex:0 0 88px;height:88px;border-radius:var(--r-md);overflow:hidden;
+  background:var(--graphite-clair);display:flex;align-items:center;justify-content:center;color:var(--alu-sombre)}
+.carte-scan-photo img{width:100%;height:100%;object-fit:cover}
+.carte-scan-texte{min-width:0}
+.carte-scan h3{margin:0;font-family:var(--display);font-size:18px;font-weight:600;text-transform:uppercase;
+  overflow-wrap:anywhere}
+.carte-scan p{margin:4px 0 0;color:var(--alu);font-size:13px}
+.carte-scan.succes{border-color:var(--acide);animation:lueur-neon 1.8s ease-out both}
+@keyframes lueur-neon{
+  0%{box-shadow:0 0 0 0 rgba(158,232,24,0)}
+  35%{box-shadow:0 0 30px 6px rgba(158,232,24,.55),inset 0 0 18px rgba(198,255,77,.22)}
+  100%{box-shadow:0 0 14px 1px rgba(158,232,24,.28)}
+}
+.scan-quantite{display:inline-block;margin-top:8px;font-size:13.5px;color:var(--alu)}
+.scan-quantite b{color:var(--acide-vif);font-family:var(--display);font-size:16px}
+.scan-quantite-plus b{display:inline-block;animation:saut 0.45s ease-out}
+@keyframes saut{0%{transform:scale(1)}40%{transform:scale(1.45)}100%{transform:scale(1)}}
+.scan-etat{margin-top:22px}
+.scan-etat h3{margin:0 0 4px;font-family:var(--display);font-size:16px;font-weight:600;text-transform:uppercase}
+.choix-etat{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.choix-etat button{min-height:58px;padding:12px 10px;border-radius:var(--r-md);background:var(--graphite);
+  border:1px solid var(--ligne-vive);color:var(--blanc);font-family:var(--display);font-size:15px;
+  text-transform:uppercase;letter-spacing:.04em;cursor:pointer}
+.choix-etat button:active{background:var(--graphite-vif);border-color:var(--acide)}
+.choix-etat button[disabled],.scan-annuler[disabled]{opacity:.5}
+.scan-annuler{display:block;margin:16px auto 0;padding:10px;background:none;border:0;color:var(--alu);
+  text-decoration:underline;font-size:13.5px;cursor:pointer}
+.scan-inconnu{text-align:center;padding:36px 6px 8px}
+.scan-inconnu svg{color:var(--trouvaille)}
+.scan-inconnu h2{margin:12px 0 8px;font-family:var(--impact);font-size:36px;letter-spacing:.02em;color:var(--blanc)}
+.scan-inconnu p{margin:0 auto;max-width:320px;color:var(--alu);font-size:15px}
 .champs input:disabled,.champs select:disabled{opacity:.55}
 .flux-carte img{width:100%;height:72px;object-fit:cover;border-radius:8px;background:var(--graphite-clair);display:block}
 .flux-carte .ph-vide{width:100%;height:72px;border-radius:8px;background:var(--graphite-clair);

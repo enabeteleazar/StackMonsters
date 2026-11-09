@@ -17,6 +17,10 @@ validation de la session par l'API.
 Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
 
 ## Collection
+- Après un scan (ou un code saisi à la main) : canette déjà possédée → fiche miniature et « +1 » ;
+  présente dans le Wiki → ajout immédiat, choix rapide de l'état, ajout annulable ; inconnue → invitation à
+  créer la fiche (nom et photo). Le nom rejoint le Wiki sans écraser une valeur existante ; la photo reste
+  dans la collection.
 - Codes acceptés à la création : EAN-13, EAN-8, UPC-A et UPC-E, clé de contrôle vérifiée (client et serveur).
   Un UPC-A est enregistré sur 13 chiffres (`0` en tête) pour éviter les doublons, un UPC-E est développé par
   le scanner. Une fiche déjà en base reste modifiable même si son code est ancien.
@@ -37,7 +41,7 @@ Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comp
   collection ne la retire pas du Wiki. À la première création de la table, elle est amorcée depuis les
   collections existantes (une seule fois). Une fiche supprimée ou dont le code-barres a changé est notée
   dans `wiki_exclus` et n'est plus recréée ; un changement de code-barres est reporté dans les collections.
-- Le pays et la description ne viennent pas des utilisateurs : ils sont saisis par `OWNER_EMAIL` depuis la
+- La description ne vient pas des utilisateurs : elle est saisie par `OWNER_EMAIL` depuis la
   fiche (« Modifier la fiche », `PUT /api/wiki/{ean}`, 403 pour tout autre compte).
 - Les photos du Wiki sont ajoutées, remplacées ou retirées par `OWNER_EMAIL` depuis la fiche
   (`PUT` et `DELETE /api/wiki/{ean}/photo`, 403 pour tout autre compte).

@@ -87,6 +87,8 @@ export const api = {
   liste: () => requete<Canette[]>('/cans'),
   enregistrer: (c: Canette) =>
     requete<Canette>('/cans', { method: 'PUT', body: JSON.stringify(c) }),
+  ajuster: (ean: string, delta: number) =>
+    requete<Canette>(`/cans/${encodeURIComponent(ean)}/nb`, { method: 'PATCH', body: JSON.stringify({ delta }) }),
   supprimer: (ean: string) =>
     requete<void>(`/cans/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
   demande: (email: string) =>

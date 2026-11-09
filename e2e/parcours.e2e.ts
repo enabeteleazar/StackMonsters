@@ -34,12 +34,20 @@ async function connecter(page: Page, adresse: string) {
 
 const nav = (page: Page, nom: string) => page.locator('nav.nav-bas').getByRole('button', { name: nom })
 
-async function ajouterParCode(page: Page, code: string, nom: string) {
+async function saisirCode(page: Page, code: string) {
+  await nav(page, 'Accueil').click()
   await page.getByLabel('Code saisi à la main').fill(code)
   await page.getByRole('button', { name: 'OK', exact: true }).click()
-  await page.fill('#f-nom', nom)
-  await page.getByRole('button', { name: 'Ajouter à la collection' }).click()
-  await expect(page.getByText('Fiche enregistrée')).toBeVisible()
+}
+
+/** Code inconnu : écran « pionnier », création rapide, puis choix de l'état. */
+async function ajouterParCode(page: Page, code: string, nom: string) {
+  await saisirCode(page, code)
+  await page.getByRole('button', { name: 'Ajouter au Wiki' }).click()
+  await page.fill('#s-nom', nom)
+  await page.getByRole('button', { name: 'Ajouter', exact: true }).click()
+  await page.getByRole('button', { name: 'Pleine', exact: true }).click()
+  await expect(page.getByText('Ajoutée à ta collection · Pleine')).toBeVisible()
 }
 
 async function nouvellePage(browser: Browser) {
@@ -147,4 +155,46 @@ test('la politique de confidentialité est accessible sans compte', async ({ pag
   await expect(page.getByText('NABET Eleazar')).toBeVisible()
   await page.getByRole('button', { name: 'Retour' }).click()
   await expect(page.getByRole('button', { name: 'Se connecter' }).first()).toBeVisible()
+})
+
+test('scan : canette inconnue, puis présente dans le Wiki, puis déjà possédée', async ({ page, browser }) => {
+  const code = ean13()
+  const nom = `Scannée ${unique()}`
+  await connecter(page, email())
+  await saisirCode(page, code)
+  await expect(page.getByText('Canette inconnue')).toBeVisible()
+  await page.getByRole('button', { name: 'Fermer' }).click()
+  await ajouterParCode(page, code, nom)
+
+  // Un autre compte scanne le même code : ajout immédiat, lueur de succès, choix de l'état.
+  const autre = await nouvellePage(browser)
+  await connecter(autre, email())
+  await saisirCode(autre, code)
+  await expect(autre.locator('.carte-scan.succes')).toBeVisible()
+  await expect(autre.getByText(nom)).toBeVisible()
+  await autre.getByRole('button', { name: 'Vide', exact: true }).click()
+  await expect(autre.getByText('Ajoutée à ta collection · Vide')).toBeVisible()
+
+  // Nouveau scan : fiche miniature et « +1 ».
+  await saisirCode(autre, code)
+  await expect(autre.getByText('Déjà dans ta collection')).toBeVisible()
+  await autre.getByRole('button', { name: 'Ajouter un doublon / +1' }).click()
+  await expect(autre.locator('.scan-quantite')).toHaveText('Quantité : 2')
+  await autre.getByRole('button', { name: 'Voir la fiche' }).click()
+  await expect(autre.locator('.meta-item').filter({ hasText: 'Quantité' })).toContainText('2')
+})
+
+test('scan : l’ajout automatique depuis le Wiki peut être annulé', async ({ page, browser }) => {
+  const code = ean13()
+  const nom = `Annulée ${unique()}`
+  await connecter(page, email())
+  await ajouterParCode(page, code, nom)
+
+  const autre = await nouvellePage(browser)
+  await connecter(autre, email())
+  await saisirCode(autre, code)
+  await autre.getByRole('button', { name: 'Annuler l’ajout' }).click()
+  await expect(autre.getByText('Ajout annulé')).toBeVisible()
+  await nav(autre, 'Collection').click()
+  await expect(autre.getByText(nom)).toHaveCount(0)
 })

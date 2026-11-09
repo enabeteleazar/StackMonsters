@@ -9,6 +9,7 @@ import Collection from './components/Collection'
 import Confidentialite from './components/Confidentialite'
 import Dashboard from './components/Dashboard'
 import Logo from './components/Logo'
+import ResultatScan from './components/ResultatScan'
 import { viderPhotos } from './components/PhotoWiki'
 import Settings from './components/Settings'
 import Stats from './components/Stats'
@@ -28,6 +29,8 @@ export default function App() {
   const [vue, setVue] = useState<Vue>('accueil')
   const [camera, setCamera] = useState(false)
   const [ean, setEan] = useState<string | null>(null)
+  // Un code venu du scanner (ou saisi à la main) ouvre le résultat de scan ; une carte de la collection, la fiche.
+  const [depuisScan, setDepuisScan] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [joignable, setJoignable] = useState(true)
   const [etatAcces, setEtatAcces] = useState<EtatAcces>(() =>
@@ -165,7 +168,18 @@ export default function App() {
     }
   }
 
-  const ajouterSansCode = () => setEan('LOCAL-' + Date.now().toString(36).toUpperCase())
+  const ajouterSansCode = () => {
+    setDepuisScan(false)
+    setEan('LOCAL-' + Date.now().toString(36).toUpperCase())
+  }
+  const ouvrirScan = (code: string) => {
+    setDepuisScan(true)
+    setEan(code)
+  }
+  const ouvrirFiche = (code: string) => {
+    setDepuisScan(false)
+    setEan(code)
+  }
 
   if (confidentialite) return <Confidentialite />
 
@@ -237,11 +251,11 @@ export default function App() {
             nomUtilisateur={nomUtilisateur}
             surScanner={() => setCamera(true)}
             surAjouter={ajouterSansCode}
-            surOuvrir={setEan}
-            surCodeManuel={setEan}
+            surOuvrir={ouvrirFiche}
+            surCodeManuel={ouvrirScan}
           />
         )}
-        {vue === 'collec' && <Collection canettes={canettes} surOuvrir={setEan} />}
+        {vue === 'collec' && <Collection canettes={canettes} surOuvrir={ouvrirFiche} />}
         {vue === 'wiki' && <Wiki surNonAutorise={verrouiller} />}
         {vue === 'reglages' && (
           <Settings
@@ -301,14 +315,34 @@ export default function App() {
         <Camera
           surCode={(code) => {
             setCamera(false)
-            setEan(code)
+            ouvrirScan(code)
           }}
           surFermeture={() => setCamera(false)}
           surErreur={toast}
         />
       )}
 
-      {ean && (
+      {ean && depuisScan && (
+        <ResultatScan
+          key={ean}
+          ean={ean}
+          existante={existante}
+          surCollectionChangee={recharger}
+          surFicheComplete={() => setDepuisScan(false)}
+          surScanner={() => {
+            setEan(null)
+            setCamera(true)
+          }}
+          surTermine={(m) => {
+            toast(m)
+            setEan(null)
+          }}
+          surFermeture={() => setEan(null)}
+          surNonAutorise={verrouiller}
+        />
+      )}
+
+      {ean && !depuisScan && (
         <Verdict
           ean={ean}
           existante={existante}

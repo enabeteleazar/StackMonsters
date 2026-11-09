@@ -46,7 +46,6 @@ export type FicheWiki = {
   flavor: string
   status: string
   region: string
-  pays: string
   description: string
   /** Marqueur de version de la photo (null : pas de photo). Les octets se chargent à part. */
   photo: string | null
@@ -56,5 +55,5 @@ export type ReponseWiki = { peut_editer: boolean; fiches: FicheWiki[] }
 
 export type ModifFicheWiki = Pick<
   FicheWiki,
-  'ean' | 'nom' | 'edition' | 'volume' | 'categorie' | 'flavor' | 'status' | 'region' | 'pays' | 'description'
+  'ean' | 'nom' | 'edition' | 'volume' | 'categorie' | 'flavor' | 'status' | 'region' | 'description'
 >

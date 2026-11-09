@@ -43,7 +43,6 @@ export function filtrerFiches(fiches: FicheWiki[], recherche: string, gamme = ''
         normaliser(f.flavor).includes(q) ||
         normaliser(f.status).includes(q) ||
         normaliser(f.region).includes(q) ||
-        normaliser(f.pays).includes(q) ||
         f.ean.includes(q)),
   )
 }

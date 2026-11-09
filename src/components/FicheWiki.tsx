@@ -205,7 +205,6 @@ function Formulaire({
     flavor: fiche.flavor,
     status: fiche.status,
     region: fiche.region,
-    pays: fiche.pays,
     description: fiche.description,
   })
   const [occupe, setOccupe] = useState(false)

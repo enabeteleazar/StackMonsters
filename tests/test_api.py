@@ -568,7 +568,7 @@ def test_wiki_exige_une_session(env):
     c, _ = env
     assert c.get("/api/wiki").status_code == 401
     assert c.get("/api/wiki/2000000000015/photo").status_code == 401
-    assert c.put("/api/wiki/2000000000015", json={"pays": "France"}).status_code == 401
+    assert c.put("/api/wiki/2000000000015", json={"description": "x"}).status_code == 401
 
 
 def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
@@ -582,11 +582,11 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
     f = fiche(c, hb, "2000000000015")  # visible par un autre compte
     assert f["nom"] == "Mango Loco" and f["volume"] == "500 ml"
     assert f["edition"] == "Juiced"
-    assert f["pays"] == "" and f["description"] == ""
+    assert f["description"] == ""
     assert (f["categorie"], f["flavor"], f["status"], f["region"]) == ("", "", "", "")
     assert set(f) == {
         "ean", "nom", "edition", "volume", "categorie", "flavor", "status", "region",
-        "pays", "description", "photo",
+        "description", "photo",
     }
     assert f["photo"] is None  # la photo d'un compte reste privée
     assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 404
@@ -686,13 +686,13 @@ def test_wiki_modification_reservee_au_proprietaire(env, monkeypatch):
     corps = {
         "nom": "Monster Mango Loco", "edition": "Ultra", "volume": "500 ml",
         "categorie": "Ultra", "flavor": "Mango Tropical", "status": "Active", "region": "Global",
-        "pays": "États-Unis", "description": "Boisson énergisante.",
+        "description": "Boisson énergisante.",
     }
     assert c.put("/api/wiki/2000000000015", json=corps, headers=hb).status_code == 403
-    assert fiche(c, hb, "2000000000015")["pays"] == ""
+    assert fiche(c, hb, "2000000000015")["description"] == ""
 
     r = c.put("/api/wiki/2000000000015", json=corps, headers=ha)
-    assert r.status_code == 200 and r.json()["pays"] == "États-Unis"
+    assert r.status_code == 200 and r.json()["description"] == "Boisson énergisante."
     assert r.json()["edition"] == "Ultra"
     assert (r.json()["categorie"], r.json()["flavor"], r.json()["status"], r.json()["region"]) == (
         "Ultra", "Mango Tropical", "Active", "Global",
@@ -760,7 +760,7 @@ def test_wiki_refuse_code_barres_deja_utilise(env, monkeypatch):
     c.put("/api/cans", json=canette(ean="2000000000015", nom="Mango"), headers=hb)
     c.put("/api/cans", json=canette(ean="2000000000022", nom="Ultra"), headers=hb)
 
-    corps = {"ean": "2000000000022", "nom": "Mango", "volume": "", "pays": "", "description": ""}
+    corps = {"ean": "2000000000022", "nom": "Mango", "volume": "", "description": ""}
     r = c.put("/api/wiki/2000000000015", json=corps, headers=ha)
     assert r.status_code == 409
     assert fiche(c, hb, "2000000000015")["nom"] == "Mango"
@@ -788,10 +788,10 @@ def test_wiki_modification_du_proprietaire_survit_a_un_nouvel_ajout(env, monkeyp
     monkeypatch.setenv("OWNER_EMAIL", A)
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
     c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
-    c.put("/api/wiki/2000000000015", json={"nom": "Mango Loco", "pays": "France", "description": "Texte."}, headers=ha)
+    c.put("/api/wiki/2000000000015", json={"nom": "Mango Loco", "description": "Texte."}, headers=ha)
     c.put("/api/cans", json=canette(nom="Autre nom"), headers=hb)
     f = fiche(c, hb, "2000000000015")
-    assert (f["nom"], f["pays"], f["description"]) == ("Mango Loco", "France", "Texte.")
+    assert (f["nom"], f["description"]) == ("Mango Loco", "Texte.")
 
 
 

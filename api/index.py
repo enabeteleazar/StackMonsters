@@ -169,7 +169,6 @@ class FicheWiki(BaseModel):
     flavor: str = Field(default="", max_length=200)
     status: Literal["", "Active", "Stop"] = ""
     region: str = Field(default="", max_length=80)
-    pays: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
 
 
@@ -652,7 +651,7 @@ def supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection =
 
 
 COLONNES_FICHE = (
-    "ean, nom, edition, volume, categorie, gamme, flavor, status, region, pays, description, "
+    "ean, nom, edition, volume, categorie, gamme, flavor, status, region, description, "
     "(photo IS NOT NULL) AS a_photo, maj"
 )
 
@@ -662,7 +661,7 @@ def _fiche(r: dict) -> dict:
     return {
         "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"],
         "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
-        "region": r["region"], "pays": r["pays"],
+        "region": r["region"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
     }
 
@@ -728,7 +727,7 @@ def wiki_photo_retirer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Con
 
 @router.put("/wiki/{ean}")
 def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
-    """Complète ou corrige une fiche (pays, description…) : réservé à OWNER_EMAIL."""
+    """Complète ou corrige une fiche (description, champs descriptifs…) : réservé à OWNER_EMAIL."""
     if not _est_proprietaire(u["email"]):
         raise HTTPException(403, "réservé au propriétaire")
     nouvel_ean = f.ean.strip() if f.ean is not None else ean
@@ -746,10 +745,10 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
         r = cx.execute(
             "UPDATE wiki SET ean = %s, nom = %s, edition = COALESCE(%s, edition), "
             "volume = %s, categorie = %s, flavor = %s, status = %s, region = %s, "
-            "pays = %s, description = %s, maj = %s "
+            "description = %s, maj = %s "
             f"WHERE ean = %s RETURNING {COLONNES_FICHE}",
             (nouvel_ean, f.nom.strip(), f.edition.strip() if f.edition is not None else None,
-             f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(), f.pays.strip(),
+             f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(),
              f.description.strip(), maintenant(), ean),
         ).fetchone()
         if r is None:
