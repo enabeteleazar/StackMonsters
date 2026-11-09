@@ -18,14 +18,39 @@ const lire = (cle: string): string | null => {
 export type Consentement = 'oui' | 'non' | null
 export const EVENEMENT_CONSENTEMENT = 'sm-consentement'
 
+// Recommandations de la CNIL : redemander après 6 mois un refus, après 13 mois un accord ;
+// l'identifiant de mesure ne vit pas plus longtemps que l'accord.
+const MOIS = 30 * 86_400_000
+export const DUREE_CHOIX = { oui: 13 * MOIS, non: 6 * MOIS } as const
+
+/** Choix encore valable à la date donnée ; null s'il est absent, illisible ou expiré. */
+export function choixValide(enregistre: string | null, maintenant: number): Consentement {
+  try {
+    const { choix, date } = JSON.parse(enregistre ?? '') as { choix?: unknown; date?: unknown }
+    if ((choix === 'oui' || choix === 'non') && typeof date === 'number' && maintenant - date < DUREE_CHOIX[choix]) {
+      return choix
+    }
+  } catch {
+    /* ancien format ou valeur illisible : on redemande */
+  }
+  return null
+}
+
 export function consentement(): Consentement {
-  const valeur = lire('sm_consentement')
-  return valeur === 'oui' || valeur === 'non' ? valeur : null
+  const choix = choixValide(lire('sm_consentement'), Date.now())
+  if (choix !== 'oui') {
+    try {
+      localStorage.removeItem('sm_vid')
+    } catch {
+      /* rien à effacer */
+    }
+  }
+  return choix
 }
 
 export function definirConsentement(valeur: 'oui' | 'non'): void {
   try {
-    localStorage.setItem('sm_consentement', valeur)
+    localStorage.setItem('sm_consentement', JSON.stringify({ choix: valeur, date: Date.now() }))
     if (valeur === 'non') localStorage.removeItem('sm_vid')
   } catch {
     /* navigation privée : le choix vaut pour cette page seulement */

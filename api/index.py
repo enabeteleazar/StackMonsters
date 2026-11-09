@@ -54,6 +54,7 @@ COLONNES_REPONSE = (
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
 FENETRE_DEMANDES = 3600
 DEMANDES_MAX_IP, VERIFICATIONS_MAX_IP = 20, 60
+DUREE_EMPREINTES_IP = 395 * 86400  # 13 mois : durée de conservation annoncée dans la politique de confidentialité
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
 PHOTO_RE = re.compile(r"^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$")
@@ -404,6 +405,7 @@ def demande(d: Demande, request: Request) -> dict:
         # Un code expiré compte encore dans la limite : il n'est purgé qu'une fois la fenêtre passée.
         cx.execute("DELETE FROM codes WHERE cree <= %s", (now - FENETRE_DEMANDES,))
         cx.execute("DELETE FROM sessions WHERE expire < %s", (now,))
+        cx.execute("DELETE FROM connexions_uniques WHERE premiere_connexion < %s", (now - DUREE_EMPREINTES_IP,))
         recentes = cx.execute(
             "SELECT COUNT(*) AS n, MIN(cree) AS premiere FROM codes WHERE email = %s AND cree > %s",
             (email, now - FENETRE_DEMANDES),

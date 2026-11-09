@@ -354,6 +354,23 @@ def test_stats_comptent_les_adresses_ip_uniques(env, monkeypatch):
     assert IP_A not in str(empreintes) and IP_B not in str(empreintes)
 
 
+def test_empreintes_ip_purgees_apres_13_mois(env):
+    c, _ = env
+    vieille, recente = ix._empreinte_ip(IP_A), ix._empreinte_ip(IP_B)
+    maintenant = int(ix.time.time())
+    with ix.base() as cx:
+        cx.execute(
+            "INSERT INTO connexions_uniques (ip_hash, premiere_connexion) VALUES (%s, %s), (%s, %s)",
+            (vieille, maintenant - ix.DUREE_EMPREINTES_IP - 60, recente, maintenant - 86400),
+        )
+    c.post("/api/auth/demande", json={"email": A})
+    with ix.base() as cx:
+        restantes = {r["ip_hash"] for r in cx.execute(
+            "SELECT ip_hash FROM connexions_uniques WHERE ip_hash = ANY(%s)", ([vieille, recente],),
+        ).fetchall()}
+    assert restantes == {recente}
+
+
 def test_stats_refusees_sans_proprietaire_configure(env, monkeypatch):
     c, codes = env
     monkeypatch.delenv("OWNER_EMAIL", raising=False)

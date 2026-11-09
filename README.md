@@ -60,9 +60,9 @@ Photos sous licence [Creative Commons Attribution-ShareAlike 4.0 International](
 
 ## Statistiques
 Réglages → **Statistiques** (visible seulement pour `OWNER_EMAIL`) : nombre d'utilisateurs, nombre de
-Références et nombre d'adresses IP uniques ayant validé une connexion depuis l'activation du suivi. Les
+Références et nombre d'adresses IP uniques ayant validé une connexion sur les 13 derniers mois. Les
 adresses sont conservées sous forme d'empreintes HMAC avec `SESSION_SECRET`, jamais en clair. Le compteur
-est cumulatif : plusieurs personnes partageant une IP comptent une fois et les IP dynamiques peuvent
+est glissant (empreintes effacées après 13 mois) : plusieurs personnes partageant une IP comptent une fois et les IP dynamiques peuvent
 compter plusieurs fois.
 Route `GET /api/stats`, réponse 403 pour tout autre compte.
 
