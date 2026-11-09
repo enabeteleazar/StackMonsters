@@ -1,5 +1,5 @@
 // Service worker StackMonster : coquille de l'appli + dernière liste en cache.
-const V = 'sm-v1'
+const V = 'sm-v2'
 const COQUILLE = ['/', '/favicon.svg', '/manifest.webmanifest', '/icon-192.png']
 
 self.addEventListener('install', (e) => {
@@ -29,11 +29,14 @@ self.addEventListener('fetch', (e) => {
   if (r.method !== 'GET' || u.origin !== location.origin) return
 
   if (u.pathname.startsWith('/api/')) {
-    // Seule la liste est gardée pour le hors ligne ; le reste exige le réseau.
+    // Seules la liste et les photos déjà vues sont gardées hors ligne ; le reste exige le réseau.
     if (u.pathname === '/api/cans') {
       e.respondWith(
         fetch(r).then((res) => garder(r, res)).catch(() => caches.match(r).then((m) => m || Response.error())),
       )
+    } else if (/^\/api\/cans\/[^/]+\/photo$/.test(u.pathname)) {
+      // L'adresse porte la version de la photo : une réponse gardée reste valable. « Se déconnecter » vide ce cache.
+      e.respondWith(caches.match(r).then((m) => m || fetch(r).then((res) => garder(r, res))))
     }
     return
   }

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { ImageOff, PlusCircle, ScanLine } from 'lucide-react'
-import { estCodeBarresEAN13 } from '../codeBarres'
+import { PlusCircle, ScanLine } from 'lucide-react'
+import { normaliserCodeBarres } from '../codeBarres'
 import type { Canette } from '../types'
+import PhotoWiki from './PhotoWiki'
 
 type Props = {
   canettes: Canette[]
@@ -27,6 +28,7 @@ export default function Dashboard({
   surCodeManuel,
 }: Props) {
   const [saisie, setSaisie] = useState('')
+  const codeManuel = normaliserCodeBarres(saisie.trim())
 
   const rayures = useMemo(
     () =>
@@ -108,11 +110,11 @@ export default function Dashboard({
           onChange={(e) => setSaisie(e.target.value)}
         />
         <button
-          disabled={!estCodeBarresEAN13(saisie.trim())}
+          disabled={!codeManuel}
           onClick={() => {
-            const v = saisie.trim()
+            if (!codeManuel) return
             setSaisie('')
-            surCodeManuel(v)
+            surCodeManuel(codeManuel)
           }}
         >
           OK
@@ -127,13 +129,7 @@ export default function Dashboard({
           <div className="flux-recent">
             {recentes.map((c) => (
               <button key={c.ean} className="flux-carte" onClick={() => surOuvrir(c.ean)}>
-                {c.photo ? (
-                  <img src={c.photo} alt="" />
-                ) : (
-                  <div className="ph-vide">
-                    <ImageOff size={18} />
-                  </div>
-                )}
+                <PhotoWiki source="collection" ean={c.ean} version={c.photo_version} taille={18} />
                 <b>{c.nom || 'Sans nom'}</b>
               </button>
             ))}

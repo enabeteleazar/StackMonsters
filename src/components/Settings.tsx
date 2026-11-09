@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BarChart3, Cpu, Database, Download, FileJson, Lock, Radio, Server, UserRound } from 'lucide-react'
-import { api, jeton } from '../api'
+import { api, jeton, NonAutorise } from '../api'
+import { ficheSauvegarde } from '../sauvegarde'
 import { moteurNatif } from '../scanner'
 import type { Canette } from '../types'
 
@@ -17,6 +18,8 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
 
   // Seul le propriétaire (OWNER_EMAIL) obtient une réponse : sinon l'API répond 403 et le bouton reste caché.
   const [proprietaire, setProprietaire] = useState(false)
+  const [sauvegardeEnCours, setSauvegardeEnCours] = useState(false)
+  const [erreurSauvegarde, setErreurSauvegarde] = useState<string | null>(null)
 
   useEffect(() => {
     api.sante().then(setSante).catch(() => setSante(null))
@@ -31,20 +34,26 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
     URL.revokeObjectURL(a.href)
   }
 
-  const exportJson = () => {
-    const fiches = canettes.map((c) => ({
-      ean: c.ean,
-      nom: c.nom,
-      edition: c.edition,
-      volume: c.volume,
-      photo: c.photo,
-      ajout: c.ajout,
-    }))
-    telecharger(
-      `canstack-${new Date().toISOString().slice(0, 10)}.json`,
-      JSON.stringify(fiches, null, 2),
-      'application/json',
-    )
+  // Une photo illisible annule tout : une sauvegarde ne doit jamais être incomplète sans le dire.
+  const exportJson = async () => {
+    setSauvegardeEnCours(true)
+    setErreurSauvegarde(null)
+    try {
+      const fiches = []
+      for (const c of canettes) {
+        fiches.push(ficheSauvegarde(c, c.photo_version ? await api.photoData(c.ean, c.photo_version) : null))
+      }
+      telecharger(
+        `canstack-${new Date().toISOString().slice(0, 10)}.json`,
+        JSON.stringify(fiches, null, 2),
+        'application/json',
+      )
+    } catch (e) {
+      if (e instanceof NonAutorise) surVerrouiller()
+      else setErreurSauvegarde('Sauvegarde annulée : une photo n’a pas pu être lue. Aucun fichier n’a été créé.')
+    } finally {
+      setSauvegardeEnCours(false)
+    }
   }
 
   const exportCsv = () => {
@@ -114,9 +123,9 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
           <h2>Données</h2>
         </div>
         <div className="outils">
-          <button onClick={exportJson}>
+          <button disabled={sauvegardeEnCours} onClick={() => void exportJson()}>
             <FileJson size={15} />
-            Sauvegarde JSON
+            {sauvegardeEnCours ? 'Sauvegarde…' : 'Sauvegarde JSON'}
           </button>
           <button onClick={exportCsv}>
             <Download size={15} />
@@ -139,6 +148,7 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
             Se déconnecter
           </button>
         </div>
+        {erreurSauvegarde && <p className="sous" role="alert">{erreurSauvegarde}</p>}
         <p className="sous" style={{ marginTop: 14 }}>
           La collection vit dans la base en ligne, pas sur ce téléphone. Ces exports sont une copie locale,
           pas une sauvegarde de remplacement.

@@ -16,6 +16,15 @@ La page d'accueil publique présente le service ; la collection privée n'est af
 validation de la session par l'API.
 Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
 
+## Collection
+- Codes acceptés à la création : EAN-13, EAN-8, UPC-A et UPC-E, clé de contrôle vérifiée (client et serveur).
+  Un UPC-A est enregistré sur 13 chiffres (`0` en tête) pour éviter les doublons, un UPC-E est développé par
+  le scanner. Une fiche déjà en base reste modifiable même si son code est ancien.
+- `GET /api/cans` ne transporte pas les photos, seulement `photo_version` ; l'image se charge à la demande
+  (`GET /api/cans/{ean}/photo`). Un `PUT /api/cans` sans champ `photo` conserve la photo existante.
+- « Sauvegarde JSON » contient toutes les données de collection et les photos ; elle s'annule si une photo
+  ne peut pas être lue.
+
 ## Wiki (catalogue partagé)
 Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comptes confondus. Une vignette
 (photo + nom) ouvre la fiche : nom, version, volume, catégorie, saveur, statut et région.
