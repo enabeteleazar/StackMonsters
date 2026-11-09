@@ -1,3 +1,4 @@
+import { normaliserLecture } from './codeBarres'
 import { LECTURES_CONFIRMATION } from './config'
 
 /**
@@ -25,7 +26,7 @@ type Options = {
 
 export const moteurNatif = () => 'BarcodeDetector' in window
 
-type Detecteur = { detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]> }
+type Detecteur = { detect: (source: CanvasImageSource) => Promise<{ rawValue: string; format?: string }[]> }
 
 async function construireDetecteur(): Promise<Detecteur> {
   if (moteurNatif()) {
@@ -104,7 +105,7 @@ export async function demarrerScanner(o: Options): Promise<Scanner> {
       const codes = await detecteur.detect(o.video)
       if (codes.length) {
         o.surEtat('Ne bouge plus…')
-        if (confirmer(codes[0].rawValue)) return
+        if (confirmer(normaliserLecture(codes[0].rawValue, codes[0].format))) return
       } else if (!conseille && Date.now() - debut > 8000) {
         conseille = true
         o.surEtat('Éloigne un peu, et aplatis le code face à toi')

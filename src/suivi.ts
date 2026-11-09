@@ -1,6 +1,6 @@
-// Suivi du trafic vers le dashboard StackMonsters (via ntfy.sh).
+// Suivi du trafic vers le tableau de bord StackMonster (via ntfy.sh).
 // Actif seulement en production et si VITE_TRACK_TOPIC est défini (Vercel → Environment Variables).
-// Pour ne pas compter vos propres visites : localStorage.setItem('sm_ignore', '1')
+// Rien ne part sans consentement. Pour ne pas compter vos propres visites : localStorage.setItem('sm_ignore', '1')
 
 type Evenement = 'visit' | 'connection' | 'can_added'
 
@@ -13,6 +13,49 @@ const lire = (cle: string): string | null => {
   } catch {
     return null
   }
+}
+
+export type Consentement = 'oui' | 'non' | null
+export const EVENEMENT_CONSENTEMENT = 'sm-consentement'
+
+// Recommandations de la CNIL : redemander après 6 mois un refus, après 13 mois un accord ;
+// l'identifiant de mesure ne vit pas plus longtemps que l'accord.
+const MOIS = 30 * 86_400_000
+export const DUREE_CHOIX = { oui: 13 * MOIS, non: 6 * MOIS } as const
+
+/** Choix encore valable à la date donnée ; null s'il est absent, illisible ou expiré. */
+export function choixValide(enregistre: string | null, maintenant: number): Consentement {
+  try {
+    const { choix, date } = JSON.parse(enregistre ?? '') as { choix?: unknown; date?: unknown }
+    if ((choix === 'oui' || choix === 'non') && typeof date === 'number' && maintenant - date < DUREE_CHOIX[choix]) {
+      return choix
+    }
+  } catch {
+    /* ancien format ou valeur illisible : on redemande */
+  }
+  return null
+}
+
+export function consentement(): Consentement {
+  const choix = choixValide(lire('sm_consentement'), Date.now())
+  if (choix !== 'oui') {
+    try {
+      localStorage.removeItem('sm_vid')
+    } catch {
+      /* rien à effacer */
+    }
+  }
+  return choix
+}
+
+export function definirConsentement(valeur: 'oui' | 'non'): void {
+  try {
+    localStorage.setItem('sm_consentement', JSON.stringify({ choix: valeur, date: Date.now() }))
+    if (valeur === 'non') localStorage.removeItem('sm_vid')
+  } catch {
+    /* navigation privée : le choix vaut pour cette page seulement */
+  }
+  window.dispatchEvent(new CustomEvent(EVENEMENT_CONSENTEMENT, { detail: valeur }))
 }
 
 function identifiant(): string {
@@ -56,7 +99,7 @@ function provenance(): string {
 
 /** Envoie un événement ; n'échoue jamais et ne bloque jamais l'appli. */
 export function suivre(type: Evenement): void {
-  if (!actif || lire('sm_ignore')) return
+  if (!actif || lire('sm_ignore') || consentement() !== 'oui') return
   try {
     void fetch(`https://ntfy.sh/${TOPIC}`, {
       method: 'POST',
@@ -70,6 +113,7 @@ export function suivre(type: Evenement): void {
 
 /** À appeler une fois au chargement : compte une visite par session. */
 export function initSuivi(): void {
+  if (consentement() !== 'oui') return
   try {
     if (sessionStorage.getItem('sm_s')) return
     sessionStorage.setItem('sm_s', '1')

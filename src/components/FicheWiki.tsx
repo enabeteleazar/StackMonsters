@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Trash2, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ImageOff, ImagePlus, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
+import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
+import { reduirePhoto } from '../photo'
 import type { FicheWiki as Fiche, ModifFicheWiki } from '../types'
 import PhotoWiki from './PhotoWiki'
 
@@ -24,9 +26,25 @@ export default function FicheWiki({
   const [edition, setEdition] = useState(false)
   const [suppressionOccupe, setSuppressionOccupe] = useState(false)
   const [erreurSuppression, setErreurSuppression] = useState<string | null>(null)
+  const [photoOccupee, setPhotoOccupee] = useState(false)
+  const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
+  const photoInput = useRef<HTMLInputElement>(null)
+
+  const changerPhoto = async (action: () => Promise<Fiche>) => {
+    setPhotoOccupee(true)
+    setErreurPhoto(null)
+    try {
+      surEnregistree(fiche.ean, await action())
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+      else setErreurPhoto(e instanceof ErreurAPI ? `Photo non modifiée — ${e.detail}` : 'Photo non modifiée, réessaie.')
+    } finally {
+      setPhotoOccupee(false)
+    }
+  }
 
   const supprimer = async () => {
-    if (!confirm(`Supprimer la fiche « ${fiche.nom || fiche.ean} » du Wiki ? Cette action ne supprime pas les canettes des collections.`)) return
+    if (!confirm(`Supprimer la fiche « ${fiche.nom || fiche.ean} » du Wiki ? Les canettes des collections sont conservées, et la fiche ne sera plus recréée automatiquement.`)) return
     setSuppressionOccupe(true)
     setErreurSuppression(null)
     try {
@@ -78,16 +96,24 @@ export default function FicheWiki({
           <>
             <div className="meta-grille">
               <div className="meta-item">
-                <span>Version</span>
-                <b>{fiche.edition || '—'}</b>
-              </div>
-              <div className="meta-item">
                 <span>Volume</span>
                 <b>{fiche.volume || '—'}</b>
               </div>
               <div className="meta-item">
-                <span>Pays de sortie</span>
-                <b>{fiche.pays || '—'}</b>
+                <span>Catégorie</span>
+                <b>{fiche.categorie || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Flavor</span>
+                <b>{fiche.flavor || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Status</span>
+                <b>{fiche.status || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Region</span>
+                <b>{fiche.region || '—'}</b>
               </div>
             </div>
 
@@ -102,6 +128,42 @@ export default function FicheWiki({
 
             {peutEditer && (
               <div className="actions">
+                <input
+                  ref={photoInput}
+                  type="file"
+                  accept="image/*"
+                  aria-label="Choisir la photo de la fiche"
+                  hidden
+                  onChange={(e) => {
+                    const input = e.currentTarget
+                    const fichier = input.files?.[0]
+                    input.value = ''
+                    if (fichier) {
+                      void changerPhoto(async () => api.wikiPhotoRemplacer(fiche.ean, await reduirePhoto(fichier)))
+                    }
+                  }}
+                />
+                <button
+                  className="btn btn-fantome"
+                  disabled={photoOccupee || suppressionOccupe}
+                  onClick={() => photoInput.current?.click()}
+                >
+                  <ImagePlus size={17} />
+                  {fiche.photo ? 'Remplacer la photo' : 'Ajouter une photo'}
+                </button>
+                {fiche.photo && (
+                  <button
+                    className="btn btn-fantome"
+                    disabled={photoOccupee || suppressionOccupe}
+                    onClick={() => {
+                      if (confirm('Retirer la photo de cette fiche ?')) void changerPhoto(() => api.wikiPhotoRetirer(fiche.ean))
+                    }}
+                  >
+                    <ImageOff size={17} />
+                    Retirer la photo
+                  </button>
+                )}
+                {erreurPhoto && <p className="sous" role="alert">{erreurPhoto}</p>}
                 <button className="btn btn-fantome" disabled={suppressionOccupe} onClick={() => setEdition(true)}>
                   Modifier la fiche
                 </button>
@@ -139,7 +201,10 @@ function Formulaire({
     nom: fiche.nom,
     edition: fiche.edition,
     volume: fiche.volume,
-    pays: fiche.pays,
+    categorie: fiche.categorie,
+    flavor: fiche.flavor,
+    status: fiche.status,
+    region: fiche.region,
     description: fiche.description,
   })
   const [occupe, setOccupe] = useState(false)
@@ -162,16 +227,6 @@ function Formulaire({
     <>
       <div className="champs">
         <div>
-          <label htmlFor="w-edition">Version</label>
-          <input
-            id="w-edition"
-            value={f.edition}
-            maxLength={200}
-            placeholder="Ultra White"
-            onChange={(e) => champ('edition', e.target.value)}
-          />
-        </div>
-        <div>
           <label htmlFor="w-ean">Code-barres</label>
           <input
             id="w-ean"
@@ -185,27 +240,63 @@ function Formulaire({
           <label htmlFor="w-nom">Nom</label>
           <input id="w-nom" value={f.nom} maxLength={200} onChange={(e) => champ('nom', e.target.value)} />
         </div>
-        <div className="duo">
-          <div>
-            <label htmlFor="w-volume">Volume</label>
-            <input
-              id="w-volume"
-              value={f.volume}
-              maxLength={40}
-              placeholder="500 ml"
-              onChange={(e) => champ('volume', e.target.value)}
-            />
-          </div>
-          <div>
-            <label htmlFor="w-pays">Pays de sortie</label>
-            <input
-              id="w-pays"
-              value={f.pays}
-              maxLength={80}
-              placeholder="États-Unis"
-              onChange={(e) => champ('pays', e.target.value)}
-            />
-          </div>
+        <div>
+          <label htmlFor="w-volume">Volume</label>
+          <input
+            id="w-volume"
+            value={f.volume}
+            maxLength={40}
+            placeholder="500 ml"
+            onChange={(e) => champ('volume', e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="w-categorie">Catégorie</label>
+          <select
+            id="w-categorie"
+            value={f.categorie}
+            onChange={(e) => champ('categorie', e.target.value)}
+          >
+            <option value="">Non renseignée</option>
+            {CATEGORIES.map((categorie) => (
+              <option key={categorie} value={categorie}>{categorie}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="w-flavor">Flavor</label>
+          <input
+            id="w-flavor"
+            value={f.flavor}
+            maxLength={200}
+            onChange={(e) => champ('flavor', e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="w-status">Status</label>
+          <select
+            id="w-status"
+            value={f.status}
+            onChange={(e) => champ('status', e.target.value)}
+          >
+            <option value="">Non renseigné</option>
+            {STATUTS.map((status) => (
+              <option key={status} value={status}>{libelleStatut(status)}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor="w-region">Region</label>
+          <select
+            id="w-region"
+            value={f.region}
+            onChange={(e) => champ('region', e.target.value)}
+          >
+            <option value="">Non renseignée</option>
+            {REGIONS.map((region) => (
+              <option key={region} value={region}>{region}</option>
+            ))}
+          </select>
         </div>
         <div>
           <label htmlFor="w-description">Description</label>

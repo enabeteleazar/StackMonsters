@@ -12,6 +12,8 @@ export class ErreurAPI extends Error {
   constructor(
     readonly status: number,
     readonly detail: string,
+    /** Secondes avant de pouvoir réessayer (en-tête Retry-After d'une réponse 429). */
+    readonly attente: number | null = null,
   ) {
     super(`${status} ${detail}`)
   }
@@ -75,7 +77,8 @@ async function requete<T>(chemin: string, init?: RequestInit): Promise<T> {
     } catch {
       // Certaines erreurs de proxy ne renvoient pas de JSON.
     }
-    throw new ErreurAPI(r.status, detail)
+    const attente = Number(r.headers.get('Retry-After'))
+    throw new ErreurAPI(r.status, detail, Number.isFinite(attente) && attente > 0 ? attente : null)
   }
   return r.status === 204 ? (undefined as T) : ((await r.json()) as T)
 }
@@ -84,6 +87,8 @@ export const api = {
   liste: () => requete<Canette[]>('/cans'),
   enregistrer: (c: Canette) =>
     requete<Canette>('/cans', { method: 'PUT', body: JSON.stringify(c) }),
+  ajuster: (ean: string, delta: number) =>
+    requete<Canette>(`/cans/${encodeURIComponent(ean)}/nb`, { method: 'PATCH', body: JSON.stringify({ delta }) }),
   supprimer: (ean: string) =>
     requete<void>(`/cans/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
   demande: (email: string) =>
@@ -95,6 +100,8 @@ export const api = {
     }),
   moi: () => requete<{ email: string }>('/auth/moi'),
   deconnexion: () => requete<void>('/auth/deconnexion', { method: 'POST' }),
+  deconnexionPartout: () => requete<void>('/auth/deconnexion-partout', { method: 'POST' }),
+  supprimerCompte: () => requete<void>('/auth/compte', { method: 'DELETE' }),
   stats: () =>
     requete<{ utilisateurs: number; references: number; connexions_uniques: number }>('/stats'),
   sante: () => requete<{ status: string; version: string; references: number }>('/health'),
@@ -103,23 +110,28 @@ export const api = {
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}`, { method: 'PUT', body: JSON.stringify(f) }),
   wikiSupprimer: (ean: string) =>
     requete<void>(`/wiki/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
-  /** Une <img> ne peut pas envoyer l'en-tête Authorization : on charge l'image puis on la sert par URL locale. */
-  wikiPhoto: async (ean: string, version: string): Promise<string> => {
-    const r = await fetch(`${API_URL}/wiki/${encodeURIComponent(ean)}/photo?v=${encodeURIComponent(version)}`, {
-      headers: { Authorization: `Bearer ${jeton.lire()}` },
-    })
-    if (r.status === 401) throw new NonAutorise()
-    if (!r.ok) throw new ErreurAPI(r.status, 'photo indisponible')
-    return URL.createObjectURL(await r.blob())
-  },
-  wikiPhotoData: async (ean: string, version: string): Promise<string> => {
-    const url = await api.wikiPhoto(ean, version)
-    try {
-      const response = await fetch(url)
-      if (!response.ok) throw new ErreurAPI(response.status, 'photo indisponible')
-      return await blobEnDataUrl(await response.blob())
-    } finally {
-      URL.revokeObjectURL(url)
-    }
-  },
+  wikiPhotoRemplacer: (ean: string, photo: string) =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/photo`, { method: 'PUT', body: JSON.stringify({ photo }) }),
+  wikiPhotoRetirer: (ean: string) =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/photo`, { method: 'DELETE' }),
+  wikiPhoto: (ean: string, version: string) => photoLocale('wiki', ean, version),
+  wikiPhotoData: (ean: string, version: string) => photoEnDataUrl('wiki', ean, version),
+  photo: (ean: string, version: string) => photoLocale('cans', ean, version),
+  photoData: (ean: string, version: string) => photoEnDataUrl('cans', ean, version),
 }
+
+async function photoBlob(espace: 'wiki' | 'cans', ean: string, version: string): Promise<Blob> {
+  const r = await fetch(`${API_URL}/${espace}/${encodeURIComponent(ean)}/photo?v=${encodeURIComponent(version)}`, {
+    headers: { Authorization: `Bearer ${jeton.lire()}` },
+  })
+  if (r.status === 401) throw new NonAutorise()
+  if (!r.ok) throw new ErreurAPI(r.status, 'photo indisponible')
+  return r.blob()
+}
+
+/** Une <img> ne peut pas envoyer l'en-tête Authorization : on charge l'image puis on la sert par URL locale. */
+const photoLocale = async (espace: 'wiki' | 'cans', ean: string, version: string): Promise<string> =>
+  URL.createObjectURL(await photoBlob(espace, ean, version))
+
+const photoEnDataUrl = async (espace: 'wiki' | 'cans', ean: string, version: string): Promise<string> =>
+  blobEnDataUrl(await photoBlob(espace, ean, version))

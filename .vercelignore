@@ -1,6 +1,3 @@
-# Ancienne installation Homebox (SQLite + Caddy), inutile sur Vercel.
-server/
-deploy/
 vercel.env
 .env*
 .venv/

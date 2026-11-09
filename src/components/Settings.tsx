@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Cpu, Database, Download, FileJson, Lock, Radio, Server, UserRound } from 'lucide-react'
-import { api, jeton } from '../api'
+import { BarChart3, Cpu, Database, Download, FileJson, Lock, Radio, Server, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { api, jeton, NonAutorise } from '../api'
+import { ficheSauvegarde } from '../sauvegarde'
+import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
 import { moteurNatif } from '../scanner'
 import type { Canette } from '../types'
 
@@ -17,6 +19,52 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
 
   // Seul le propriétaire (OWNER_EMAIL) obtient une réponse : sinon l'API répond 403 et le bouton reste caché.
   const [proprietaire, setProprietaire] = useState(false)
+  const [sauvegardeEnCours, setSauvegardeEnCours] = useState(false)
+  const [erreurSauvegarde, setErreurSauvegarde] = useState<string | null>(null)
+  const [erreurCompte, setErreurCompte] = useState<string | null>(null)
+  const [mesure, setMesure] = useState(consentement)
+
+  useEffect(() => {
+    const maj = () => setMesure(consentement())
+    window.addEventListener(EVENEMENT_CONSENTEMENT, maj)
+    return () => window.removeEventListener(EVENEMENT_CONSENTEMENT, maj)
+  }, [])
+
+  const quitter = () => {
+    jeton.effacer()
+    surVerrouiller()
+  }
+
+  const deconnecterPartout = async () => {
+    if (!confirm('Déconnecter tous tes appareils, celui-ci compris ?')) return
+    setErreurCompte(null)
+    try {
+      await api.deconnexionPartout()
+      quitter()
+    } catch (e) {
+      if (e instanceof NonAutorise) surVerrouiller()
+      else setErreurCompte('Déconnexion impossible, réessaie avec le réseau.')
+    }
+  }
+
+  const supprimerCompte = async () => {
+    const saisie = prompt(
+      `Suppression définitive du compte et de toute ta collection. Pense à faire une sauvegarde.\n\nPour confirmer, saisis ${emailUtilisateur} :`,
+    )
+    if (saisie === null) return
+    if (saisie.trim().toLowerCase() !== emailUtilisateur.toLowerCase()) {
+      setErreurCompte('Adresse différente : le compte n’a pas été supprimé.')
+      return
+    }
+    setErreurCompte(null)
+    try {
+      await api.supprimerCompte()
+      quitter()
+    } catch (e) {
+      if (e instanceof NonAutorise) surVerrouiller()
+      else setErreurCompte('Suppression impossible, réessaie avec le réseau.')
+    }
+  }
 
   useEffect(() => {
     api.sante().then(setSante).catch(() => setSante(null))
@@ -31,20 +79,26 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
     URL.revokeObjectURL(a.href)
   }
 
-  const exportJson = () => {
-    const fiches = canettes.map((c) => ({
-      ean: c.ean,
-      nom: c.nom,
-      edition: c.edition,
-      volume: c.volume,
-      photo: c.photo,
-      ajout: c.ajout,
-    }))
-    telecharger(
-      `canstack-${new Date().toISOString().slice(0, 10)}.json`,
-      JSON.stringify(fiches, null, 2),
-      'application/json',
-    )
+  // Une photo illisible annule tout : une sauvegarde ne doit jamais être incomplète sans le dire.
+  const exportJson = async () => {
+    setSauvegardeEnCours(true)
+    setErreurSauvegarde(null)
+    try {
+      const fiches = []
+      for (const c of canettes) {
+        fiches.push(ficheSauvegarde(c, c.photo_version ? await api.photoData(c.ean, c.photo_version) : null))
+      }
+      telecharger(
+        `stackmonster-${new Date().toISOString().slice(0, 10)}.json`,
+        JSON.stringify(fiches, null, 2),
+        'application/json',
+      )
+    } catch (e) {
+      if (e instanceof NonAutorise) surVerrouiller()
+      else setErreurSauvegarde('Sauvegarde annulée : une photo n’a pas pu être lue. Aucun fichier n’a été créé.')
+    } finally {
+      setSauvegardeEnCours(false)
+    }
   }
 
   const exportCsv = () => {
@@ -56,7 +110,7 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
         ),
       )
       .join('\n')
-    telecharger('canstack.csv', '﻿' + csv, 'text/csv')
+    telecharger('stackmonster.csv', '﻿' + csv, 'text/csv')
   }
 
   return (
@@ -114,9 +168,9 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
           <h2>Données</h2>
         </div>
         <div className="outils">
-          <button onClick={exportJson}>
+          <button disabled={sauvegardeEnCours} onClick={() => void exportJson()}>
             <FileJson size={15} />
-            Sauvegarde JSON
+            {sauvegardeEnCours ? 'Sauvegarde…' : 'Sauvegarde JSON'}
           </button>
           <button onClick={exportCsv}>
             <Download size={15} />
@@ -138,7 +192,29 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
             <Lock size={15} />
             Se déconnecter
           </button>
+          <button onClick={() => void deconnecterPartout()}>
+            <Lock size={15} />
+            Se déconnecter partout
+          </button>
+          <button onClick={() => { window.location.hash = 'confidentialite' }}>
+            <ShieldCheck size={15} />
+            Confidentialité
+          </button>
+          {import.meta.env.PROD && (
+            <button onClick={() => definirConsentement(mesure === 'oui' ? 'non' : 'oui')}>
+              <Radio size={15} />
+              {mesure === 'oui' ? 'Refuser la mesure d’audience' : 'Accepter la mesure d’audience'}
+            </button>
+          )}
+          {!proprietaire && (
+            <button onClick={() => void supprimerCompte()}>
+              <Trash2 size={15} />
+              Supprimer mon compte
+            </button>
+          )}
         </div>
+        {erreurSauvegarde && <p className="sous" role="alert">{erreurSauvegarde}</p>}
+        {erreurCompte && <p className="sous" role="alert">{erreurCompte}</p>}
         <p className="sous" style={{ marginTop: 14 }}>
           La collection vit dans la base en ligne, pas sur ce téléphone. Ces exports sont une copie locale,
           pas une sauvegarde de remplacement.

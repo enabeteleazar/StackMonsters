@@ -22,12 +22,12 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Literal
 
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from psycopg.rows import dict_row
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 def _version() -> str:
@@ -40,16 +40,68 @@ def _version() -> str:
 VERSION = _version()
 logger = logging.getLogger(__name__)
 COLONNES = "ean, nom, edition, volume, etat, nb, notes, photo, ajout"
+DUREE_NOUVEAUTE = 30 * 86400
+
+
+def _statut(prefixe: str) -> str:
+    """Statut affiché : une « Nouveauté » de plus de 30 jours redevient « Active », sans tâche planifiée."""
+    return (
+        f"CASE WHEN {prefixe}status = 'Nouveauté' AND COALESCE({prefixe}nouveaute_depuis, 0) "
+        f"< extract(epoch FROM now()) - {DUREE_NOUVEAUTE} THEN 'Active' ELSE {prefixe}status END"
+    )
+
+
+COLONNES_COLLECTION = (
+    "c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.ajout, "
+    "CASE WHEN c.photo IS NULL THEN NULL ELSE c.maj END AS photo_version, "
+    "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
+    "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region"
+)
+# Réponses de l'API : les octets des photos sont servis à part (/cans/{ean}/photo).
+COLONNES_REPONSE = (
+    "ean, nom, edition, volume, etat, nb, notes, ajout, "
+    "CASE WHEN photo IS NULL THEN NULL ELSE maj END AS photo_version"
+)
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
+FENETRE_DEMANDES = 3600
+DEMANDES_MAX_IP, VERIFICATIONS_MAX_IP = 20, 60
+DUREE_EMPREINTES_IP = 395 * 86400  # 13 mois : durée de conservation annoncée dans la politique de confidentialité
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
 PHOTO_RE = re.compile(r"^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$")
+CODE_LOCAL_RE = re.compile(r"^LOCAL-[A-Z0-9]{1,40}$")
+
+
+def _photo_valide(photo: str) -> bool:
+    m = PHOTO_RE.match(photo)
+    if not m:
+        return False
+    try:
+        base64.b64decode(m.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    return True
+
+
+def _normaliser_code(code: str) -> str | None:
+    """Forme canonique d'un code-barres : UPC-A complété à 13 chiffres, EAN-8 inchangé ; None si invalide."""
+    if CODE_LOCAL_RE.match(code):
+        return code
+    if not re.fullmatch(r"[0-9]{8}|[0-9]{12,13}", code):
+        return None
+    total = sum(int(c) * (3 if i % 2 == 0 else 1) for i, c in enumerate(reversed(code[:-1])))
+    if (10 - total % 10) % 10 != int(code[-1]):
+        return None
+    return f"0{code}" if len(code) == 12 else code
 
 CHAMPS = """ean TEXT NOT NULL, nom TEXT NOT NULL DEFAULT '', edition TEXT NOT NULL DEFAULT '',
     volume TEXT NOT NULL DEFAULT '', etat TEXT NOT NULL DEFAULT '', nb INTEGER NOT NULL DEFAULT 1,
     notes TEXT NOT NULL DEFAULT '', photo TEXT, ajout TEXT NOT NULL, maj TEXT NOT NULL"""
 
-SCHEMA = f"""
+# Migrations versionnées, appliquées uniquement par scripts/migrer_schema.py : à ajouter à la fin, sans jamais
+# modifier une version déjà déployée. Chacune tourne une seule fois, dans la transaction du script.
+MIGRATIONS: list[tuple[int, str]] = [
+    (1, f"""
 CREATE TABLE IF NOT EXISTS canettes (ean TEXT PRIMARY KEY, nom TEXT NOT NULL DEFAULT '',
     edition TEXT NOT NULL DEFAULT '', volume TEXT NOT NULL DEFAULT '', etat TEXT NOT NULL DEFAULT '',
     nb INTEGER NOT NULL DEFAULT 1, notes TEXT NOT NULL DEFAULT '', photo TEXT,
@@ -61,18 +113,37 @@ CREATE INDEX IF NOT EXISTS codes_email ON codes (email);
 CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expire BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS connexions_uniques (ip_hash TEXT PRIMARY KEY, premiere_connexion BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS limites_ip (cle TEXT PRIMARY KEY, debut BIGINT NOT NULL, n INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS collection (user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     {CHAMPS}, PRIMARY KEY (user_id, ean));
 CREATE TABLE IF NOT EXISTS wiki (ean TEXT PRIMARY KEY, nom TEXT NOT NULL DEFAULT '',
     edition TEXT NOT NULL DEFAULT '', volume TEXT NOT NULL DEFAULT '',
+    gamme TEXT NOT NULL DEFAULT '',
+    categorie TEXT NOT NULL DEFAULT '', flavor TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT '', region TEXT NOT NULL DEFAULT '',
     pays TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
     photo TEXT, cree TEXT NOT NULL, maj TEXT NOT NULL);
 ALTER TABLE wiki ADD COLUMN IF NOT EXISTS edition TEXT NOT NULL DEFAULT '';
-INSERT INTO wiki (ean, nom, edition, volume, photo, cree, maj)
-    SELECT DISTINCT ON (ean) ean, nom, edition, volume, photo, ajout, maj FROM collection
-    WHERE NOT EXISTS (SELECT 1 FROM wiki)
-    ORDER BY ean, (nom = ''), (photo IS NULL), maj;
-"""
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS gamme TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS categorie TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS flavor TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS region TEXT NOT NULL DEFAULT '';
+"""),
+    # Codes-barres retirés du Wiki : une fiche supprimée ou renommée ne doit pas être recréée.
+    (2, "CREATE TABLE IF NOT EXISTS wiki_exclus (ean TEXT PRIMARY KEY, exclu TEXT NOT NULL);"),
+    (3, """UPDATE wiki SET categorie = gamme, gamme = '' WHERE categorie = '' AND gamme <> '';
+INSERT INTO wiki (ean, nom, edition, volume, cree, maj)
+    SELECT DISTINCT ON (ean) ean, nom, edition, volume, ajout, maj FROM collection
+    WHERE NOT EXISTS (SELECT 1 FROM wiki) AND ean NOT LIKE 'LOCAL-%'
+    ORDER BY ean, (nom = ''), maj;
+"""),
+    # Numéro déjà utilisé par une migration retirée avant livraison (couleur) : certaines bases de développement
+    # l'ont enregistré. Il reste réservé et ne fait rien ; un numéro ne doit jamais être réattribué.
+    (4, "SELECT 1;"),
+    # Date de passage au statut « Nouveauté » (affiché « Active » après 30 jours).
+    (5, "ALTER TABLE wiki ADD COLUMN IF NOT EXISTS nouveaute_depuis BIGINT;"),
+]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
 # la table, il est amorcé depuis les collections existantes.
@@ -82,14 +153,25 @@ INSERT INTO wiki (ean, nom, edition, volume, photo, cree, maj)
 
 class Canette(BaseModel):
     ean: str = Field(min_length=1, max_length=64)
-    nom: str = ""
-    edition: str = ""
-    volume: str = ""
-    etat: str = ""
+    nom: str = Field(default="", max_length=200)
+    edition: str = Field(default="", max_length=200)
+    volume: str = Field(default="", max_length=40)
+    categorie: str = Field(default="", max_length=80)
+    flavor: str = Field(default="", max_length=200)
+    status: Literal["", "Active", "Stop", "Nouveauté"] = ""
+    region: str = Field(default="", max_length=80)
+    etat: str = Field(default="", max_length=40)
     nb: int = Field(default=1, ge=1, le=9999)
-    notes: str = ""
+    notes: str = Field(default="", max_length=4000)
     photo: str | None = Field(default=None, max_length=300_000)
     ajout: str = ""
+
+    @field_validator("photo")
+    @classmethod
+    def verifier_photo(cls, photo: str | None) -> str | None:
+        if photo is not None and not _photo_valide(photo):
+            raise ValueError("format de photo refusé")
+        return photo
 
 
 class FicheWiki(BaseModel):
@@ -99,8 +181,15 @@ class FicheWiki(BaseModel):
     nom: str = Field(default="", max_length=200)
     edition: str | None = Field(default=None, max_length=200)
     volume: str = Field(default="", max_length=40)
-    pays: str = Field(default="", max_length=80)
+    categorie: str = Field(default="", max_length=80)
+    flavor: str = Field(default="", max_length=200)
+    status: Literal["", "Active", "Stop", "Nouveauté"] = ""
+    region: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
+
+
+class PhotoFiche(BaseModel):
+    photo: str = Field(max_length=300_000)
 
 
 class Delta(BaseModel):
@@ -127,20 +216,39 @@ def _url() -> str:
     return url
 
 
-def _creer_schema(cx: psycopg.Connection) -> None:
+def appliquer_migrations(cx: psycopg.Connection) -> list[int]:
+    """Applique les migrations manquantes, dans une seule transaction que l'appelant valide."""
+    cx.execute("SELECT pg_advisory_xact_lock(7305)")
+    cx.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, appliquee TEXT NOT NULL)")
+    faites = {r["version"] for r in cx.execute("SELECT version FROM schema_migrations").fetchall()}
+    appliquees = []
+    for version, sql in MIGRATIONS:
+        if version not in faites:
+            cx.execute(sql)
+            cx.execute("INSERT INTO schema_migrations (version, appliquee) VALUES (%s, %s)", (version, maintenant()))
+            appliquees.append(version)
+    return appliquees
+
+
+def _verifier_schema(cx: psycopg.Connection) -> None:
+    """Lecture seule, une fois par instance : l'API ne modifie jamais le schéma au démarrage."""
     global _schema_pret
     if _schema_pret:
         return
-    cx.execute("SELECT pg_advisory_xact_lock(7305)")
-    cx.execute(SCHEMA)
+    existe = cx.execute("SELECT to_regclass('schema_migrations') AS t").fetchone()["t"]
+    version = 0
+    if existe:
+        version = cx.execute("SELECT COALESCE(MAX(version), 0) AS v FROM schema_migrations").fetchone()["v"]
     cx.commit()
+    if version < MIGRATIONS[-1][0]:
+        logger.error("Schéma en version %d, attendu %d : lancer scripts/migrer_schema.py", version, MIGRATIONS[-1][0])
+        raise HTTPException(503, "Base de données à mettre à jour.")
     _schema_pret = True
 
 
-@contextmanager
-def base() -> Iterator[psycopg.Connection]:
+def connecter() -> psycopg.Connection:
     try:
-        connection = psycopg.connect(
+        return psycopg.connect(
             _url(), row_factory=dict_row, prepare_threshold=None, connect_timeout=10,
         )
     except psycopg.OperationalError as exc:
@@ -150,8 +258,11 @@ def base() -> Iterator[psycopg.Connection]:
             detail = "Identifiants PostgreSQL refusés. Actualise DATABASE_URL depuis Neon."
         raise HTTPException(503, detail) from None
 
-    with connection as cx:
-        _creer_schema(cx)
+
+@contextmanager
+def base() -> Iterator[psycopg.Connection]:
+    with connecter() as cx:
+        _verifier_schema(cx)
         yield cx
 
 
@@ -198,6 +309,33 @@ def _empreinte_ip(adresse: str) -> str:
     return hmac.new(_secret(), f"unique-ip:{adresse}".encode(), hashlib.sha256).hexdigest()
 
 
+def _limiter_ip(cx: psycopg.Connection, request: Request, action: str, maximum: int, now: int) -> None:
+    """Compte l'appel pour cette IP (fenêtre fixe d'une heure) et répond 429 au-delà du maximum."""
+    adresse = _adresse_ip(request)
+    if not adresse:
+        return
+    if ":" in adresse:  # un abonné IPv6 dispose en général d'un /64 entier
+        adresse = str(ipaddress.ip_network(f"{adresse}/64", strict=False).network_address)
+    cle = hmac.new(_secret(), f"limite-ip:{action}:{adresse}".encode(), hashlib.sha256).hexdigest()
+    expiree = now - FENETRE_DEMANDES
+    n = cx.execute(
+        """INSERT INTO limites_ip (cle, debut, n) VALUES (%s, %s, 1)
+           ON CONFLICT (cle) DO UPDATE SET
+             n = CASE WHEN limites_ip.debut <= %s THEN 1 ELSE limites_ip.n + 1 END,
+             debut = CASE WHEN limites_ip.debut <= %s THEN EXCLUDED.debut ELSE limites_ip.debut END
+           RETURNING n, debut""",
+        (cle, now, expiree, expiree),
+    ).fetchone()
+    cx.commit()  # le compteur doit survivre au 429 qui suit
+    if n["n"] > maximum:
+        raise _trop_de_tentatives(n["debut"] + FENETRE_DEMANDES - now)
+
+
+def _trop_de_tentatives(attente: int) -> HTTPException:
+    """429 commun à toutes les limites, avec le délai réel avant de pouvoir réessayer."""
+    return HTTPException(429, "trop de tentatives", headers={"Retry-After": str(max(1, attente))})
+
+
 def envoyer_code(email: str, code: str) -> None:
     cle = os.environ.get("RESEND_API_KEY")
     if not cle:
@@ -238,17 +376,29 @@ def _est_proprietaire(email: str) -> bool:
     return bool(proprio) and email == proprio
 
 
-def utilisateur(authorization: str | None = Header(default=None)) -> dict:
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    if token:
-        h = _hash_session(token)
-        with base() as cx:
-            u = cx.execute(
-                "SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id "
-                "WHERE s.hash = %s AND s.expire > %s", (h, int(time.time())),
-            ).fetchone()
-        if u:
-            return {**u, "hash": h}
+def _jeton(authorization: str | None) -> str:
+    return (authorization or "").removeprefix("Bearer ").strip()
+
+
+def connexion(authorization: str | None = Header(default=None)) -> Iterator[psycopg.Connection]:
+    """Unique connexion d'une requête protégée ; sans jeton, la base n'est même pas contactée."""
+    if not _jeton(authorization):
+        raise HTTPException(401, "connexion requise")
+    with base() as cx:
+        yield cx
+
+
+def utilisateur(
+    authorization: str | None = Header(default=None), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    h = _hash_session(_jeton(authorization))
+    u = cx.execute(
+        "SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id "
+        "WHERE s.hash = %s AND s.expire > %s", (h, int(time.time())),
+    ).fetchone()
+    cx.commit()  # les routes ouvrent ensuite leur propre transaction
+    if u:
+        return {**u, "hash": h}
     raise HTTPException(401, "connexion requise")
 
 
@@ -258,18 +408,25 @@ auth = APIRouter(prefix="/auth")
 
 
 @auth.post("/demande")
-def demande(d: Demande) -> dict:
+def demande(d: Demande, request: Request) -> dict:
     email = d.email.strip().lower()
     if not EMAIL_RE.match(email):
         raise HTTPException(422, "adresse invalide")
     now = int(time.time())
     code = f"{secrets.randbelow(10**6):06d}"
     with base() as cx:
-        cx.execute("DELETE FROM codes WHERE expire < %s", (now,))
+        _limiter_ip(cx, request, "demande", DEMANDES_MAX_IP, now)
+        cx.execute("DELETE FROM limites_ip WHERE debut <= %s", (now - FENETRE_DEMANDES,))
+        # Un code expiré compte encore dans la limite : il n'est purgé qu'une fois la fenêtre passée.
+        cx.execute("DELETE FROM codes WHERE cree <= %s", (now - FENETRE_DEMANDES,))
         cx.execute("DELETE FROM sessions WHERE expire < %s", (now,))
-        n = cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s AND cree > %s", (email, now - 3600)).fetchone()["n"]
-        if n >= DEMANDES_MAX:
-            raise HTTPException(429, "trop de demandes")
+        cx.execute("DELETE FROM connexions_uniques WHERE premiere_connexion < %s", (now - DUREE_EMPREINTES_IP,))
+        recentes = cx.execute(
+            "SELECT COUNT(*) AS n, MIN(cree) AS premiere FROM codes WHERE email = %s AND cree > %s",
+            (email, now - FENETRE_DEMANDES),
+        ).fetchone()
+        if recentes["n"] >= DEMANDES_MAX:
+            raise _trop_de_tentatives(recentes["premiere"] + FENETRE_DEMANDES - now)
         code_row = cx.execute(
             "INSERT INTO codes (email, hash, expire, cree) VALUES (%s, %s, %s, %s) RETURNING id",
             (email, _hash_code(email, code), now + DUREE_CODE, now),
@@ -287,12 +444,18 @@ def demande(d: Demande) -> dict:
 def verification(v: Verification, request: Request) -> dict:
     email, now = v.email.strip().lower(), int(time.time())
     with base() as cx:
-        c = cx.execute("SELECT id, hash, essais FROM codes WHERE email = %s AND expire > %s ORDER BY id DESC LIMIT 1",
-                       (email, now)).fetchone()
-        if not c or c["essais"] >= ESSAIS_MAX:
-            raise HTTPException(401, "code invalide ou expiré")
-        cx.execute("UPDATE codes SET essais = essais + 1 WHERE id = %s", (c["id"],))
+        # Avant de consommer un essai : une IP bloquée ne peut pas épuiser les essais d'un autre compte.
+        _limiter_ip(cx, request, "verification", VERIFICATIONS_MAX_IP, now)
+        # Vérification et incrément en une seule requête : des appels simultanés ne dépassent pas la limite.
+        c = cx.execute(
+            "UPDATE codes SET essais = essais + 1 WHERE essais < %s AND id = ("
+            "SELECT id FROM codes WHERE email = %s AND expire > %s ORDER BY id DESC LIMIT 1"
+            ") RETURNING id, hash",
+            (ESSAIS_MAX, email, now),
+        ).fetchone()
         cx.commit()  # le compteur d'essais doit survivre à l'erreur qui suit
+        if not c:
+            raise HTTPException(401, "code invalide ou expiré")
         if not hmac.compare_digest(c["hash"], _hash_code(email, v.code)):
             raise HTTPException(401, "code invalide ou expiré")
         cx.execute("DELETE FROM codes WHERE email = %s", (email,))
@@ -329,91 +492,175 @@ def moi(u: dict = Depends(utilisateur)) -> dict:
 
 
 @router.post("/auth/deconnexion", status_code=204)
-def deconnexion(u: dict = Depends(utilisateur)) -> None:
-    with base() as cx:
+def deconnexion(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
+    with cx.transaction():
         cx.execute("DELETE FROM sessions WHERE hash = %s", (u["hash"],))
 
 
+@router.post("/auth/deconnexion-partout", status_code=204)
+def deconnexion_partout(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
+    """Révoque toutes les sessions du compte, celle-ci comprise."""
+    with cx.transaction():
+        cx.execute("DELETE FROM sessions WHERE user_id = %s", (u["id"],))
+
+
+@router.delete("/auth/compte", status_code=204)
+def supprimer_compte(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
+    """Efface le compte, sa collection et ses sessions ; le Wiki, anonyme, est conservé."""
+    if _est_proprietaire(u["email"]):  # il récupérerait la collection historique à sa prochaine connexion
+        raise HTTPException(403, "le compte propriétaire ne peut pas être supprimé")
+    with cx.transaction():
+        cx.execute("DELETE FROM codes WHERE email = %s", (u["email"],))
+        cx.execute("DELETE FROM users WHERE id = %s", (u["id"],))
+
+
 @router.get("/health")
-def sante(u: dict = Depends(utilisateur)) -> dict:
-    with base() as cx:
+def sante(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    with cx.transaction():
         n = cx.execute("SELECT COUNT(*) AS n FROM collection WHERE user_id = %s", (u["id"],)).fetchone()["n"]
     return {"status": "ok", "version": VERSION, "references": n}
 
 
 @router.get("/stats")
-def statistiques(u: dict = Depends(utilisateur)) -> dict:
+def statistiques(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     """Chiffres globaux de l'application, réservés à OWNER_EMAIL (403 pour les autres)."""
     if not _est_proprietaire(u["email"]):
         raise HTTPException(403, "réservé au propriétaire")
-    with base() as cx:
+    with cx.transaction():
         n_users = cx.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
         t = cx.execute("SELECT COUNT(*) AS refs FROM collection").fetchone()
         n_connexions = cx.execute("SELECT COUNT(*) AS n FROM connexions_uniques").fetchone()["n"]
     return {"utilisateurs": n_users, "references": t["refs"], "connexions_uniques": n_connexions}
 
 
+def _avec_infos_wiki(cx: psycopg.Connection, canette: dict) -> dict:
+    """Ajoute les champs descriptifs du Wiki ; une canette peut ne pas y figurer (LOCAL-, fiche retirée)."""
+    w = cx.execute(
+        f"SELECT categorie, gamme, flavor, {_statut('')} AS status, region FROM wiki WHERE ean = %s", (canette["ean"],),
+    ).fetchone() or {}
+    return {
+        **canette,
+        "categorie": w.get("categorie") or w.get("gamme") or "",
+        "flavor": w.get("flavor", ""),
+        "status": w.get("status", ""),
+        "region": w.get("region", ""),
+    }
+
+
 @router.get("/cans")
-def liste(u: dict = Depends(utilisateur)) -> list[dict]:
-    with base() as cx:
-        return cx.execute(f"SELECT {COLONNES} FROM collection WHERE user_id = %s ORDER BY ajout DESC", (u["id"],)).fetchall()
+def liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> list[dict]:
+    with cx.transaction():
+        return cx.execute(
+            f"SELECT {COLONNES_COLLECTION} "
+            "FROM collection c LEFT JOIN wiki w ON w.ean = c.ean "
+            "WHERE c.user_id = %s ORDER BY c.ajout DESC",
+            (u["id"],),
+        ).fetchall()
 
 
 @router.get("/cans/{ean}")
-def lire(ean: str, u: dict = Depends(utilisateur)) -> dict:
-    with base() as cx:
-        r = cx.execute(f"SELECT {COLONNES} FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).fetchone()
+def lire(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    with cx.transaction():
+        r = cx.execute(
+            f"SELECT {COLONNES_COLLECTION} "
+            "FROM collection c LEFT JOIN wiki w ON w.ean = c.ean "
+            "WHERE c.user_id = %s AND c.ean = %s",
+            (u["id"], ean),
+        ).fetchone()
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
 
 
+@router.get("/cans/{ean}/photo")
+def photo_canette(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> Response:
+    """Photo d'une canette de sa propre collection, chargée à la demande."""
+    with cx.transaction():
+        r = cx.execute("SELECT photo FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).fetchone()
+    m = PHOTO_RE.match(r["photo"]) if r and r["photo"] else None
+    if not m:
+        raise HTTPException(404, "photo inconnue")
+    try:
+        octets = base64.b64decode(m.group(2), validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(404, "photo illisible") from None
+    return Response(
+        octets, media_type=m.group(1),
+        headers={
+            "Cache-Control": "private, max-age=86400", "Vary": "Authorization", "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.put("/cans")
-def enregistrer(c: Canette, u: dict = Depends(utilisateur)) -> dict:
-    with base() as cx:
-        # Le Wiki ne reçoit que l'identité de la canette, et ne prend que ce qui lui manque :
-        # un utilisateur ne peut pas écraser la fiche existante.
-        cx.execute(
-            """INSERT INTO wiki (ean, nom, edition, volume, photo, cree, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (ean) DO UPDATE SET
-                  nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
-                  edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
-                  volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
-                  photo = COALESCE(wiki.photo, EXCLUDED.photo),
-                  maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
-                              OR (wiki.edition = '' AND EXCLUDED.edition <> '')
-                              OR (wiki.volume = '' AND EXCLUDED.volume <> '')
-                              OR (wiki.photo IS NULL AND EXCLUDED.photo IS NOT NULL)
-                             THEN EXCLUDED.maj ELSE wiki.maj END""",
-            (c.ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.photo, maintenant(), maintenant()),
-        )
-        return cx.execute(
+def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    with cx.transaction():
+        # Une fiche déjà en base reste modifiable telle quelle, même si son code est ancien ou non conforme.
+        deja_la = cx.execute("SELECT 1 FROM collection WHERE user_id = %s AND ean = %s", (u["id"], c.ean)).fetchone()
+        ean = c.ean if deja_la else _normaliser_code(c.ean)
+        if ean is None:
+            raise HTTPException(422, "code-barres invalide")
+        exclue = cx.execute("SELECT 1 FROM wiki_exclus WHERE ean = %s", (ean,)).fetchone()
+        # Le Wiki reçoit les champs descriptifs fournis, sans écraser une fiche existante.
+        # Il ne reçoit ni les canettes sans code-barres (LOCAL-), ni les photos : elles restent privées.
+        # Une fiche retirée par le propriétaire (wiki_exclus) n'est pas recréée.
+        if not ean.startswith("LOCAL-") and not exclue:
+            cx.execute(
+                """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (ean) DO UPDATE SET
+                      nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
+                      edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
+                      volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
+                      categorie = CASE WHEN COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = ''
+                                       THEN EXCLUDED.categorie ELSE wiki.categorie END,
+                      flavor = CASE WHEN wiki.flavor = '' THEN EXCLUDED.flavor ELSE wiki.flavor END,
+                      status = CASE WHEN wiki.status = '' THEN EXCLUDED.status ELSE wiki.status END,
+                      nouveaute_depuis = CASE WHEN wiki.status = '' THEN EXCLUDED.nouveaute_depuis
+                                              ELSE wiki.nouveaute_depuis END,
+                      region = CASE WHEN wiki.region = '' THEN EXCLUDED.region ELSE wiki.region END,
+                      maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
+                                  OR (wiki.edition = '' AND EXCLUDED.edition <> '')
+                                  OR (wiki.volume = '' AND EXCLUDED.volume <> '')
+                                  OR (COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = '' AND EXCLUDED.categorie <> '')
+                                  OR (wiki.flavor = '' AND EXCLUDED.flavor <> '')
+                                  OR (wiki.status = '' AND EXCLUDED.status <> '')
+                                  OR (wiki.region = '' AND EXCLUDED.region <> '')
+                                 THEN EXCLUDED.maj ELSE wiki.maj END""",
+                (ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
+                 c.status, c.region.strip(),
+                 int(time.time()) if c.status == "Nouveauté" else None, maintenant(), maintenant()),
+            )
+        enregistrement = cx.execute(
             f"""INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, ean) DO UPDATE SET
                   nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
-                  nb=EXCLUDED.nb, notes=EXCLUDED.notes, photo=EXCLUDED.photo, maj=EXCLUDED.maj
-                RETURNING {COLONNES}""",
-            (u["id"], c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
-             c.ajout or maintenant(), maintenant()),
+                  nb=EXCLUDED.nb, notes=EXCLUDED.notes, maj=EXCLUDED.maj,
+                  photo = CASE WHEN %s THEN EXCLUDED.photo ELSE collection.photo END
+                RETURNING {COLONNES_REPONSE}""",
+            (u["id"], ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
+             c.ajout or maintenant(), maintenant(), "photo" in c.model_fields_set),  # champ absent : photo conservée
         ).fetchone()
+        return _avec_infos_wiki(cx, enregistrement)
 
 
 @router.patch("/cans/{ean}/nb")
-def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur)) -> dict:
-    with base() as cx:
+def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    with cx.transaction():
         r = cx.execute(
-            f"UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s RETURNING {COLONNES}",
+            f"UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s RETURNING {COLONNES_REPONSE}",
             (d.delta, maintenant(), u["id"], ean)).fetchone()
+        if r is not None:
+            r = _avec_infos_wiki(cx, r)
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
 
 
 @router.delete("/cans/{ean}", status_code=204)
-def supprimer(ean: str, u: dict = Depends(utilisateur)) -> None:
-    with base() as cx:
+def supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
+    with cx.transaction():
         n = cx.execute("DELETE FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).rowcount
     if n == 0:
         raise HTTPException(404, "canette inconnue")
@@ -422,27 +669,35 @@ def supprimer(ean: str, u: dict = Depends(utilisateur)) -> None:
 # --- Wiki : catalogue partagé, en lecture pour tous les comptes connectés ---------
 
 
+COLONNES_FICHE = (
+    "ean, nom, edition, volume, categorie, gamme, flavor, " + _statut("") + " AS status, region, description, "
+    "(photo IS NOT NULL) AS a_photo, maj"
+)
+
+
+def _fiche(r: dict) -> dict:
+    """Forme publique d'une fiche ; « photo » n'est qu'un marqueur de version."""
+    return {
+        "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"],
+        "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
+        "region": r["region"],
+        "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
+    }
+
+
 @router.get("/wiki")
-def wiki_liste(u: dict = Depends(utilisateur)) -> dict:
+def wiki_liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     """Toutes les fiches, sans les photos (servies à part, pour garder la réponse légère)."""
-    with base() as cx:
+    with cx.transaction():
         lignes = cx.execute(
-            "SELECT ean, nom, edition, volume, pays, description, (photo IS NOT NULL) AS a_photo, maj FROM wiki "
-            "ORDER BY (nom = ''), lower(nom), ean"
+            f"SELECT {COLONNES_FICHE} FROM wiki ORDER BY (nom = ''), lower(nom), ean"
         ).fetchall()
-    fiches = [
-        {
-            "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"], "pays": r["pays"],
-            "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
-        }
-        for r in lignes
-    ]
-    return {"peut_editer": _est_proprietaire(u["email"]), "fiches": fiches}
+    return {"peut_editer": _est_proprietaire(u["email"]), "fiches": [_fiche(r) for r in lignes]}
 
 
 @router.get("/wiki/{ean}/photo")
-def wiki_photo(ean: str) -> Response:
-    with base() as cx:
+def wiki_photo(ean: str, cx: psycopg.Connection = Depends(connexion)) -> Response:
+    with cx.transaction():
         r = cx.execute("SELECT photo FROM wiki WHERE ean = %s", (ean,)).fetchone()
     m = PHOTO_RE.match(r["photo"]) if r and r["photo"] else None
     if not m:
@@ -457,42 +712,97 @@ def wiki_photo(ean: str) -> Response:
     )
 
 
+@router.put("/wiki/{ean}/photo")
+def wiki_photo_remplacer(ean: str, p: PhotoFiche, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Ajoute ou remplace la photo d'une fiche : réservé à OWNER_EMAIL."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    if not _photo_valide(p.photo):
+        raise HTTPException(422, "format de photo refusé")
+    with cx.transaction():
+        r = cx.execute(
+            f"UPDATE wiki SET photo = %s, maj = %s WHERE ean = %s RETURNING {COLONNES_FICHE}",
+            (p.photo, maintenant(), ean),
+        ).fetchone()
+    if r is None:
+        raise HTTPException(404, "fiche inconnue")
+    return _fiche(r)
+
+
+@router.delete("/wiki/{ean}/photo")
+def wiki_photo_retirer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Retire la photo d'une fiche sans toucher au reste : réservé à OWNER_EMAIL."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    with cx.transaction():
+        r = cx.execute(
+            f"UPDATE wiki SET photo = NULL, maj = %s WHERE ean = %s RETURNING {COLONNES_FICHE}",
+            (maintenant(), ean),
+        ).fetchone()
+    if r is None:
+        raise HTTPException(404, "fiche inconnue")
+    return _fiche(r)
+
+
 @router.put("/wiki/{ean}")
-def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur)) -> dict:
-    """Complète ou corrige une fiche (pays, description…) : réservé à OWNER_EMAIL."""
+def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Complète ou corrige une fiche (description, champs descriptifs…) : réservé à OWNER_EMAIL."""
     if not _est_proprietaire(u["email"]):
         raise HTTPException(403, "réservé au propriétaire")
     nouvel_ean = f.ean.strip() if f.ean is not None else ean
     if not nouvel_ean:
         raise HTTPException(422, "code-barres obligatoire")
-    with base() as cx:
+    if nouvel_ean != ean:
+        nouvel_ean = _normaliser_code(nouvel_ean)
+        if nouvel_ean is None:
+            raise HTTPException(422, "code-barres invalide")
+    now = int(time.time())
+    with cx.transaction():
         if nouvel_ean != ean:
             cible = cx.execute("SELECT 1 FROM wiki WHERE ean = %s", (nouvel_ean,)).fetchone()
             if cible is not None:
                 raise HTTPException(409, "ce code-barres existe déjà dans le Wiki")
         r = cx.execute(
             "UPDATE wiki SET ean = %s, nom = %s, edition = COALESCE(%s, edition), "
-            "volume = %s, pays = %s, description = %s, maj = %s "
-            "WHERE ean = %s RETURNING ean, nom, edition, volume, pays, description, (photo IS NOT NULL) AS a_photo, maj",
+            "volume = %s, categorie = %s, flavor = %s, status = %s, region = %s, "
+            # Une Nouveauté encore en cours garde sa date ; sinon le délai de 30 jours (re)part maintenant.
+            "nouveaute_depuis = CASE WHEN %s <> 'Nouveauté' THEN NULL "
+            "WHEN status = 'Nouveauté' AND nouveaute_depuis >= %s THEN nouveaute_depuis ELSE %s END, "
+            "description = %s, maj = %s "
+            f"WHERE ean = %s RETURNING {COLONNES_FICHE}",
             (nouvel_ean, f.nom.strip(), f.edition.strip() if f.edition is not None else None,
-             f.volume.strip(), f.pays.strip(),
+             f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(), f.status, now - DUREE_NOUVEAUTE, now,
              f.description.strip(), maintenant(), ean),
         ).fetchone()
-    if r is None:
-        raise HTTPException(404, "fiche inconnue")
-    return {
-        "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"], "pays": r["pays"],
-        "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
-    }
+        if r is None:
+            raise HTTPException(404, "fiche inconnue")
+        if nouvel_ean != ean:
+            # Les collections suivent la fiche ; un compte qui possède déjà le nouveau code garde ses deux lignes.
+            cx.execute(
+                "UPDATE collection c SET ean = %s, maj = %s WHERE c.ean = %s AND NOT EXISTS "
+                "(SELECT 1 FROM collection d WHERE d.user_id = c.user_id AND d.ean = %s)",
+                (nouvel_ean, maintenant(), ean, nouvel_ean),
+            )
+            cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (nouvel_ean,))
+            cx.execute(
+                "INSERT INTO wiki_exclus (ean, exclu) VALUES (%s, %s) ON CONFLICT (ean) DO NOTHING",
+                (ean, maintenant()),
+            )
+    return _fiche(r)
 
 
 @router.delete("/wiki/{ean}", status_code=204)
-def wiki_supprimer(ean: str, u: dict = Depends(utilisateur)) -> Response:
+def wiki_supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> Response:
     """Supprime une fiche du catalogue partagé : réservé à OWNER_EMAIL."""
     if not _est_proprietaire(u["email"]):
         raise HTTPException(403, "réservé au propriétaire")
-    with base() as cx:
+    with cx.transaction():
         n = cx.execute("DELETE FROM wiki WHERE ean = %s", (ean,)).rowcount
+        if n:
+            cx.execute(
+                "INSERT INTO wiki_exclus (ean, exclu) VALUES (%s, %s) ON CONFLICT (ean) DO NOTHING",
+                (ean, maintenant()),
+            )
     if n == 0:
         raise HTTPException(404, "fiche inconnue")
     return Response(status_code=204)

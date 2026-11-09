@@ -3,10 +3,17 @@ export type Canette = {
   nom: string
   edition: string
   volume: string
+  categorie: string
+  flavor: string
+  status: string
+  region: string
   etat: string
   nb: number
   notes: string
-  photo: string | null
+  /** Présent seulement quand la photo change : absent à l'enregistrement, le serveur conserve l'ancienne. */
+  photo?: string | null
+  /** Marqueur de version de la photo (null : pas de photo). Les octets se chargent à part. */
+  photo_version: string | null
   ajout: string
 }
 
@@ -15,10 +22,15 @@ export const CANETTE_VIDE = (ean: string): Canette => ({
   nom: '',
   edition: '',
   volume: '',
+  categorie: '',
+  flavor: '',
+  status: '',
+  region: '',
   etat: 'Vide',
   nb: 1,
   notes: '',
   photo: null,
+  photo_version: null,
   ajout: new Date().toISOString(),
 })
 
@@ -30,7 +42,10 @@ export type FicheWiki = {
   nom: string
   edition: string
   volume: string
-  pays: string
+  categorie: string
+  flavor: string
+  status: string
+  region: string
   description: string
   /** Marqueur de version de la photo (null : pas de photo). Les octets se chargent à part. */
   photo: string | null
@@ -38,4 +53,7 @@ export type FicheWiki = {
 
 export type ReponseWiki = { peut_editer: boolean; fiches: FicheWiki[] }
 
-export type ModifFicheWiki = Pick<FicheWiki, 'ean' | 'nom' | 'edition' | 'volume' | 'pays' | 'description'>
+export type ModifFicheWiki = Pick<
+  FicheWiki,
+  'ean' | 'nom' | 'edition' | 'volume' | 'categorie' | 'flavor' | 'status' | 'region' | 'description'
+>

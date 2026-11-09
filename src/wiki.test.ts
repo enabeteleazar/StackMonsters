@@ -1,18 +1,22 @@
 import { describe, expect, it } from 'vitest'
+import { CATEGORIES, REGIONS, STATUTS } from './categories'
 import type { FicheWiki } from './types'
 import { filtrerFiches, suggererFiches, trouverFicheParCodeBarres } from './wiki'
 
-const f = (ean: string, nom: string, pays = ''): FicheWiki => ({
+const f = (ean: string, nom: string): FicheWiki => ({
   ean,
   nom,
   edition: '',
   volume: '500 ml',
-  pays,
+  categorie: '',
+  flavor: '',
+  status: '',
+  region: '',
   description: '',
   photo: null,
 })
 
-const fiches = [f('1', 'Monster Mango Loco', 'États-Unis'), f('2', 'Ultra White', 'France'), f('3016', '')]
+const fiches = [f('1', 'Monster Mango Loco'), f('2', 'Ultra White'), f('3016', '')]
 
 describe('filtrerFiches', () => {
   it('renvoie tout sans recherche', () => {
@@ -23,12 +27,38 @@ describe('filtrerFiches', () => {
     expect(filtrerFiches(fiches, 'mango').map((x) => x.ean)).toEqual(['1'])
   })
 
-  it('cherche dans le pays sans tenir compte des accents', () => {
-    expect(filtrerFiches(fiches, 'etats-unis').map((x) => x.ean)).toEqual(['1'])
+  it('filtre par gamme et combine le filtre avec la recherche textuelle', () => {
+    const catalogue = [
+      { ...fiches[0], categorie: 'Juiced' },
+      { ...fiches[1], categorie: 'Ultra' },
+      { ...fiches[2], nom: 'Monster Juiced', categorie: 'Juiced' },
+    ]
+    expect(filtrerFiches(catalogue, '', 'juiced').map((x) => x.ean)).toEqual(['1', '3016'])
+    expect(filtrerFiches(catalogue, 'mango', 'Juiced').map((x) => x.ean)).toEqual(['1'])
+    expect(filtrerFiches(catalogue, '', 'Original')).toEqual([])
+  })
+
+  it('cherche dans les catégories descriptives sans tenir compte de la casse', () => {
+    const catalogue = [{ ...fiches[0], categorie: 'Juiced', flavor: 'Mango', status: 'Active', region: 'Europe' }]
+    expect(filtrerFiches(catalogue, 'juiced').map((x) => x.ean)).toEqual(['1'])
+    expect(filtrerFiches(catalogue, 'mango').map((x) => x.ean)).toEqual(['1'])
+    expect(filtrerFiches(catalogue, 'active').map((x) => x.ean)).toEqual(['1'])
+    expect(filtrerFiches(catalogue, 'europe').map((x) => x.ean)).toEqual(['1'])
   })
 
   it('cherche par code-barres, y compris pour une fiche sans nom', () => {
     expect(filtrerFiches(fiches, '3016').map((x) => x.ean)).toEqual(['3016'])
+  })
+
+  describe('options du catalogue', () => {
+    it('contient les 10 catégories et 6 régions extraites du fichier fourni', () => {
+      expect(CATEGORIES).toEqual([
+        'Original', 'Ultra', 'Juiced', 'Reserve', 'Special',
+        'Java', 'Rehab', 'Nitro', 'Water', 'Asia',
+      ])
+      expect(REGIONS).toEqual(['Global', 'US', 'Europe', 'Europe/Aus', 'US/Global', 'Japan'])
+      expect(STATUTS).toEqual(['Active', 'Stop', 'Nouveauté'])
+    })
   })
 
   it('ne renvoie rien quand rien ne correspond', () => {
@@ -46,7 +76,7 @@ describe('suggererFiches', () => {
   })
 
   it('conserve plusieurs fiches de même nom pour des versions différentes', () => {
-    const catalogue = [f('1', 'Monster Ultra', 'France'), f('2', 'Monster Ultra', 'États-Unis')]
+    const catalogue = [f('1', 'Monster Ultra'), f('2', 'Monster Ultra')]
     expect(suggererFiches(catalogue, 'Monster Ultra').map((x) => x.ean)).toEqual(['1', '2'])
   })
 
