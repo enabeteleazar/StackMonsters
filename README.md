@@ -10,7 +10,8 @@ Front React + TypeScript (Vite), API FastAPI (`api/index.py`), Postgres (Neon), 
 
 ## Comptes
 Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais, 5 demandes par heure et
-par adresse). Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
+par adresse). Par adresse IP et par heure : 20 demandes de code et 60 vérifications au maximum (table
+`limites_ip`, empreintes HMAC uniquement). Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
 La page d'accueil publique présente le service ; la collection privée n'est affichée qu'après
 validation de la session par l'API.
 Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
@@ -21,12 +22,15 @@ Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comp
 - Catégories et régions proposées dans le formulaire propriétaire : elles proviennent des valeurs distinctes
   du catalogue source. Le statut est `Active` ou `Stop`.
 - Table `wiki` (une ligne par `ean`), séparée des collections : elle ne contient ni propriétaire, ni
-  quantité, ni état, ni notes. Elle est alimentée à l'ajout d'une canette (nom, volume, photo) et ne
-  prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Retirer une canette de sa
+  quantité, ni état, ni notes. Elle est alimentée à l'ajout d'une canette (champs descriptifs) et ne
+  prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Les photos des comptes et
+  les canettes sans code-barres (`LOCAL-…`) n'y sont jamais envoyées. Retirer une canette de sa
   collection ne la retire pas du Wiki. À la première création de la table, elle est amorcée depuis les
   collections existantes (une seule fois).
 - Le pays et la description ne viennent pas des utilisateurs : ils sont saisis par `OWNER_EMAIL` depuis la
   fiche (« Modifier la fiche », `PUT /api/wiki/{ean}`, 403 pour tout autre compte).
+- Les photos du Wiki sont ajoutées, remplacées ou retirées par `OWNER_EMAIL` depuis la fiche
+  (`PUT` et `DELETE /api/wiki/{ean}/photo`, 403 pour tout autre compte).
 - Routes : `GET /api/wiki` (liste sans photos), `GET /api/wiki/{ean}/photo` (image, chargée à la demande
   quand la vignette approche de l'écran), toutes derrière la session. Le Wiki exige la connexion réseau.
 

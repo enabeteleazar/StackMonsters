@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -19,6 +21,7 @@ def env(monkeypatch):
             ([ix._empreinte_ip(IP_A), ix._empreinte_ip(IP_B)],),
         )
         cx.execute("DELETE FROM wiki WHERE ean LIKE 'TEST-%'")
+        cx.execute("DELETE FROM limites_ip")  # base de test uniquement (voir conftest.py)
     yield TestClient(ix.app), codes
     with ix.base() as cx:
         cx.execute("DELETE FROM users WHERE email LIKE 'test-%@example.com'")
@@ -108,6 +111,28 @@ def test_mauvais_code_et_limite_d_essais(env):
     assert c.post("/api/auth/verification", json={"email": A, "code": codes[A]}).status_code == 401
 
 
+def test_essais_simultanes_ne_depassent_pas_la_limite(env):
+    c, codes = env
+    c.post("/api/auth/demande", json={"email": A})
+    faux = "000000" if codes[A] != "000000" else "111111"
+    depart = threading.Barrier(30)
+
+    def essayer():
+        depart.wait()
+        c.post("/api/auth/verification", json={"email": A, "code": faux})
+
+    fils = [threading.Thread(target=essayer) for _ in range(30)]
+    for fil in fils:
+        fil.start()
+    for fil in fils:
+        fil.join()
+
+    with ix.base() as cx:
+        essais = cx.execute("SELECT essais FROM codes WHERE email = %s", (A,)).fetchone()["essais"]
+    assert essais == ix.ESSAIS_MAX
+    assert c.post("/api/auth/verification", json={"email": A, "code": codes[A]}).status_code == 401
+
+
 def test_code_a_usage_unique(env):
     c, codes = env
     connecter(c, codes, A)
@@ -151,6 +176,43 @@ def test_code_expire_reste_refuse_pendant_la_fenetre_de_limite(env, monkeypatch)
 
     horloge[0] = debut + ix.DUREE_CODE + 1
     assert c.post("/api/auth/verification", json={"email": A, "code": codes[A]}).status_code == 401
+
+
+def test_limite_de_demandes_par_ip(env):
+    c, _ = env
+    entetes = {"X-Forwarded-For": IP_A}
+    for i in range(ix.DEMANDES_MAX_IP):
+        assert c.post("/api/auth/demande", json={"email": f"test-ip-{i}@example.com"}, headers=entetes).status_code == 200
+    assert c.post("/api/auth/demande", json={"email": A}, headers=entetes).status_code == 429
+    assert c.post("/api/auth/demande", json={"email": A}, headers={"X-Forwarded-For": IP_B}).status_code == 200
+    with ix.base() as cx:
+        assert IP_A not in str(cx.execute("SELECT * FROM limites_ip").fetchall())
+
+
+def test_limite_ip_ne_consomme_pas_les_essais_du_compte(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setattr(ix, "VERIFICATIONS_MAX_IP", 2)
+    c.post("/api/auth/demande", json={"email": A})
+    faux = "000000" if codes[A] != "000000" else "111111"
+    attaquant = {"X-Forwarded-For": IP_A}
+    statuts = [c.post("/api/auth/verification", json={"email": A, "code": faux}, headers=attaquant).status_code for _ in range(4)]
+    assert statuts == [401, 401, 429, 429]
+    r = c.post("/api/auth/verification", json={"email": A, "code": codes[A]}, headers={"X-Forwarded-For": IP_B})
+    assert r.status_code == 200
+
+
+def test_limite_ip_repart_apres_la_fenetre(env, monkeypatch):
+    c, _ = env
+    monkeypatch.setattr(ix, "VERIFICATIONS_MAX_IP", 1)
+    debut = ix.time.time()
+    horloge = [debut]
+    monkeypatch.setattr(ix.time, "time", lambda: horloge[0])
+    corps, entetes = {"email": A, "code": "000000"}, {"X-Forwarded-For": "2001:db8::1"}
+    assert c.post("/api/auth/verification", json=corps, headers=entetes).status_code == 401
+    # Une autre adresse du même /64 partage le compteur.
+    assert c.post("/api/auth/verification", json=corps, headers={"X-Forwarded-For": "2001:db8::2"}).status_code == 429
+    horloge[0] = debut + ix.FENETRE_DEMANDES + 1
+    assert c.post("/api/auth/verification", json=corps, headers=entetes).status_code == 401
 
 
 def test_identifiants_base_refuses_renvoient_503_sans_exposer_url(monkeypatch):
@@ -313,7 +375,8 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
         "ean", "nom", "edition", "volume", "categorie", "flavor", "status", "region",
         "pays", "description", "photo",
     }
-    assert f["photo"]  # simple marqueur de version : les octets de l'image ne sont pas dans la liste
+    assert f["photo"] is None  # la photo d'un compte reste privée
+    assert c.get("/api/wiki/TEST-1/photo", headers=hb).status_code == 404
     assert "base64" not in str(c.get("/api/wiki", headers=hb).json())
 
 
@@ -329,7 +392,8 @@ def test_wiki_la_premiere_fiche_reste_et_se_complete(env):
     f = fiche(c, ha, "TEST-1")
     assert f["nom"] == "Original"  # pas d'écrasement
     assert f["edition"] == "Ultra"
-    assert f["volume"] == "473 ml" and f["photo"]  # mais les champs vides sont complétés
+    assert f["volume"] == "473 ml"  # mais les champs vides sont complétés
+    assert f["photo"] is None
 
 
 def test_wiki_conserve_la_fiche_quand_on_retire_la_canette(env):
@@ -341,10 +405,46 @@ def test_wiki_conserve_la_fiche_quand_on_retire_la_canette(env):
     assert fiche(c, hb, "TEST-1")["nom"] == "Durable"
 
 
-def test_wiki_photo_servie_a_part(env):
+def test_canette_sans_code_barres_reste_hors_du_wiki(env):
     c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    r = c.put("/api/cans", json=canette("LOCAL-TEST", nom="Perso", photo=PNG_1PX, categorie="Ultra"), headers=ha)
+    assert r.status_code == 200 and r.json()["categorie"] == ""
+    assert fiche(c, hb, "LOCAL-TEST") is None
+    assert c.get("/api/cans/LOCAL-TEST", headers=ha).json()["nom"] == "Perso"
+    assert c.patch("/api/cans/LOCAL-TEST/nb", json={"delta": 1}, headers=ha).json()["nb"] == 2
+
+
+def test_wiki_photo_reservee_au_proprietaire(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+    corps = {"photo": PNG_1PX}
+
+    assert c.put("/api/wiki/TEST-1/photo", json=corps).status_code == 401
+    assert c.put("/api/wiki/TEST-1/photo", json=corps, headers=hb).status_code == 403
+    assert c.delete("/api/wiki/TEST-1/photo", headers=hb).status_code == 403
+    assert fiche(c, hb, "TEST-1")["photo"] is None
+
+    r = c.put("/api/wiki/TEST-1/photo", json=corps, headers=ha)
+    assert r.status_code == 200 and r.json()["photo"]
+    assert c.put("/api/wiki/TEST-INCONNU/photo", json=corps, headers=ha).status_code == 404
+    for refusee in ("data:image/svg+xml;base64,PHN2Zy8+", "data:image/png;base64,abc", "pas une image"):
+        assert c.put("/api/wiki/TEST-1/photo", json={"photo": refusee}, headers=ha).status_code == 422
+
+    r = c.delete("/api/wiki/TEST-1/photo", headers=ha)
+    assert r.status_code == 200 and r.json()["photo"] is None and r.json()["nom"] == "Mango"
+    assert c.get("/api/wiki/TEST-1/photo", headers=hb).status_code == 404
+    assert c.delete("/api/wiki/TEST-INCONNU/photo", headers=ha).status_code == 404
+
+
+def test_wiki_photo_servie_a_part(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
     h = connecter(c, codes, A)
-    c.put("/api/cans", json=canette(photo=PNG_1PX), headers=h)
+    c.put("/api/cans", json=canette(), headers=h)
+    c.put("/api/wiki/TEST-1/photo", json={"photo": PNG_1PX}, headers=h)
     r = c.get("/api/wiki/TEST-1/photo", headers=h)
     assert r.status_code == 200 and r.headers["content-type"] == "image/png"
     assert r.content.startswith(b"\x89PNG") and r.headers["x-content-type-options"] == "nosniff"
@@ -356,8 +456,9 @@ def test_wiki_photo_servie_a_part(env):
 def test_wiki_ne_sert_que_des_formats_d_image_surs(env):
     c, codes = env
     h = connecter(c, codes, A)
-    svg = "data:image/svg+xml;base64,PHN2Zy8+"
-    c.put("/api/cans", json=canette(photo=svg), headers=h)
+    c.put("/api/cans", json=canette(), headers=h)
+    with ix.base() as cx:  # une ancienne fiche peut encore contenir un format non servi
+        cx.execute("UPDATE wiki SET photo = 'data:image/svg+xml;base64,PHN2Zy8+' WHERE ean = 'TEST-1'")
     assert c.get("/api/wiki/TEST-1/photo", headers=h).status_code == 404
 
 
@@ -453,13 +554,15 @@ def test_wiki_amorce_depuis_les_collections_existantes_une_seule_fois(env):
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
     c.put("/api/cans", json=canette(nom="", volume=""), headers=ha)
     c.put("/api/cans", json=canette(nom="Nommée", volume="500 ml", photo=PNG_1PX, nb=4, notes="privé"), headers=hb)
+    c.put("/api/cans", json=canette("LOCAL-AMORCE", nom="Perso"), headers=ha)
     # Simule une base d'avant le Wiki : la table n'existe pas encore, les collections si.
     with ix.base() as cx:
         cx.execute("DROP TABLE wiki")
     ix._schema_pret = False
     with ix.base() as cx:
         r = cx.execute("SELECT * FROM wiki WHERE ean = 'TEST-1'").fetchall()
-    assert len(r) == 1 and r[0]["nom"] == "Nommée" and r[0]["photo"] == PNG_1PX  # la fiche la plus complète
+        assert cx.execute("SELECT COUNT(*) AS n FROM wiki WHERE ean = 'LOCAL-AMORCE'").fetchone()["n"] == 0
+    assert len(r) == 1 and r[0]["nom"] == "Nommée" and r[0]["photo"] is None  # les photos restent privées
     assert "privé" not in str(r) and "nb" not in r[0]
 
     # Une fois la table remplie, un redémarrage ne ré-importe plus rien.

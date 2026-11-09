@@ -103,6 +103,10 @@ export const api = {
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}`, { method: 'PUT', body: JSON.stringify(f) }),
   wikiSupprimer: (ean: string) =>
     requete<void>(`/wiki/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
+  wikiPhotoRemplacer: (ean: string, photo: string) =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/photo`, { method: 'PUT', body: JSON.stringify({ photo }) }),
+  wikiPhotoRetirer: (ean: string) =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/photo`, { method: 'DELETE' }),
   /** Une <img> ne peut pas envoyer l'en-tête Authorization : on charge l'image puis on la sert par URL locale. */
   wikiPhoto: async (ean: string, version: string): Promise<string> => {
     const r = await fetch(`${API_URL}/wiki/${encodeURIComponent(ean)}/photo?v=${encodeURIComponent(version)}`, {
