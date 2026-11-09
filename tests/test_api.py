@@ -181,6 +181,26 @@ def test_code_expire_reste_refuse_pendant_la_fenetre_de_limite(env, monkeypatch)
     assert c.post("/api/auth/verification", json={"email": A, "code": codes[A]}).status_code == 401
 
 
+def test_les_limites_indiquent_le_delai_avant_de_reessayer(env, monkeypatch):
+    c, _ = env
+    debut = ix.time.time()
+    horloge = [debut]
+    monkeypatch.setattr(ix.time, "time", lambda: horloge[0])
+    for _ in range(ix.DEMANDES_MAX):
+        c.post("/api/auth/demande", json={"email": A})
+    horloge[0] = debut + 600
+    r = c.post("/api/auth/demande", json={"email": A})
+    assert r.status_code == 429 and int(r.headers["retry-after"]) == ix.FENETRE_DEMANDES - 600
+
+    monkeypatch.setattr(ix, "VERIFICATIONS_MAX_IP", 1)
+    corps, ip = {"email": B, "code": "000000"}, {"X-Forwarded-For": IP_A}
+    c.post("/api/auth/verification", json=corps, headers=ip)
+    horloge[0] = debut + 1200
+    r = c.post("/api/auth/verification", json=corps, headers=ip)
+    assert r.status_code == 429 and int(r.headers["retry-after"]) == ix.FENETRE_DEMANDES - 600
+    assert r.json()["detail"] == "trop de tentatives"
+
+
 def test_limite_de_demandes_par_ip(env):
     c, _ = env
     entetes = {"X-Forwarded-For": IP_A}

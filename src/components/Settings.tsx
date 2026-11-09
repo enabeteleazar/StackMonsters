@@ -89,7 +89,7 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
         fiches.push(ficheSauvegarde(c, c.photo_version ? await api.photoData(c.ean, c.photo_version) : null))
       }
       telecharger(
-        `canstack-${new Date().toISOString().slice(0, 10)}.json`,
+        `stackmonster-${new Date().toISOString().slice(0, 10)}.json`,
         JSON.stringify(fiches, null, 2),
         'application/json',
       )
@@ -110,7 +110,7 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
         ),
       )
       .join('\n')
-    telecharger('canstack.csv', '﻿' + csv, 'text/csv')
+    telecharger('stackmonster.csv', '﻿' + csv, 'text/csv')
   }
 
   return (

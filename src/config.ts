@@ -8,6 +8,7 @@ export const RESPONSABLE = 'NABET Eleazar'
 export const CONTACT = 'contact@mail.stackmonsters.fr'
 
 // Clé du navigateur où est gardé le jeton d'accès (voir src/api.ts).
+// Nom historique conservé : le changer déconnecterait tous les utilisateurs.
 export const CLE_JETON = 'canstack-jeton'
 
 // Nombre de lectures identiques d'affilée exigées avant de valider un code.

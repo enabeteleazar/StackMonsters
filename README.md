@@ -45,7 +45,7 @@ Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comp
   quand la vignette approche de l'écran), toutes derrière la session. Le Wiki exige la connexion réseau.
 
 ## Catalogue Open Food Facts
-Pour actualiser localement `monster_database.json` avec les produits de la marque Monster Energy :
+Le catalogue de référence est `monster_database.json` (liste JSON). Pour l'actualiser avec les produits de la marque Monster Energy :
 `python3 scripts/import_openfoodfacts.py`. Le script récupère toutes les pages de l'API Open Food Facts,
 fusionne les produits par code-barres et conserve les entrées et champs descriptifs déjà présents.
 L'import est écrit atomiquement : une erreur réseau ou une réponse vide ne remplace pas le fichier.

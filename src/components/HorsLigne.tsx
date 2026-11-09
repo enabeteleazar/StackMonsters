@@ -18,7 +18,7 @@ export default function HorsLigne() {
   return (
     <p className="sous" role="status">
       Hors ligne — dernière collection connue affichée. Les ajouts et modifications ne
-      passeront qu\u2019avec le réseau.
+      passeront qu’avec le réseau.
     </p>
   )
 }

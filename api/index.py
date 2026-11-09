@@ -307,12 +307,17 @@ def _limiter_ip(cx: psycopg.Connection, request: Request, action: str, maximum: 
            ON CONFLICT (cle) DO UPDATE SET
              n = CASE WHEN limites_ip.debut <= %s THEN 1 ELSE limites_ip.n + 1 END,
              debut = CASE WHEN limites_ip.debut <= %s THEN EXCLUDED.debut ELSE limites_ip.debut END
-           RETURNING n""",
+           RETURNING n, debut""",
         (cle, now, expiree, expiree),
-    ).fetchone()["n"]
+    ).fetchone()
     cx.commit()  # le compteur doit survivre au 429 qui suit
-    if n > maximum:
-        raise HTTPException(429, "trop de tentatives")
+    if n["n"] > maximum:
+        raise _trop_de_tentatives(n["debut"] + FENETRE_DEMANDES - now)
+
+
+def _trop_de_tentatives(attente: int) -> HTTPException:
+    """429 commun à toutes les limites, avec le délai réel avant de pouvoir réessayer."""
+    return HTTPException(429, "trop de tentatives", headers={"Retry-After": str(max(1, attente))})
 
 
 def envoyer_code(email: str, code: str) -> None:
@@ -399,11 +404,12 @@ def demande(d: Demande, request: Request) -> dict:
         # Un code expiré compte encore dans la limite : il n'est purgé qu'une fois la fenêtre passée.
         cx.execute("DELETE FROM codes WHERE cree <= %s", (now - FENETRE_DEMANDES,))
         cx.execute("DELETE FROM sessions WHERE expire < %s", (now,))
-        n = cx.execute(
-            "SELECT COUNT(*) AS n FROM codes WHERE email = %s AND cree > %s", (email, now - FENETRE_DEMANDES),
-        ).fetchone()["n"]
-        if n >= DEMANDES_MAX:
-            raise HTTPException(429, "trop de demandes")
+        recentes = cx.execute(
+            "SELECT COUNT(*) AS n, MIN(cree) AS premiere FROM codes WHERE email = %s AND cree > %s",
+            (email, now - FENETRE_DEMANDES),
+        ).fetchone()
+        if recentes["n"] >= DEMANDES_MAX:
+            raise _trop_de_tentatives(recentes["premiere"] + FENETRE_DEMANDES - now)
         code_row = cx.execute(
             "INSERT INTO codes (email, hash, expire, cree) VALUES (%s, %s, %s, %s) RETURNING id",
             (email, _hash_code(email, code), now + DUREE_CODE, now),

@@ -12,6 +12,8 @@ export class ErreurAPI extends Error {
   constructor(
     readonly status: number,
     readonly detail: string,
+    /** Secondes avant de pouvoir réessayer (en-tête Retry-After d'une réponse 429). */
+    readonly attente: number | null = null,
   ) {
     super(`${status} ${detail}`)
   }
@@ -75,7 +77,8 @@ async function requete<T>(chemin: string, init?: RequestInit): Promise<T> {
     } catch {
       // Certaines erreurs de proxy ne renvoient pas de JSON.
     }
-    throw new ErreurAPI(r.status, detail)
+    const attente = Number(r.headers.get('Retry-After'))
+    throw new ErreurAPI(r.status, detail, Number.isFinite(attente) && attente > 0 ? attente : null)
   }
   return r.status === 204 ? (undefined as T) : ((await r.json()) as T)
 }

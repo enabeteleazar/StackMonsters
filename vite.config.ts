@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -74,6 +75,10 @@ export default defineConfig(({ mode }) => {
           manualChunks: { zxing: ['barcode-detector'] },
         },
       },
+    },
+    // Tests unitaires du dossier src seulement : ni les copies de .vercel/, ni les tests Playwright (e2e/).
+    test: {
+      include: ['src/**/*.test.{ts,tsx,js}'],
     },
     server: {
       port: 5273,

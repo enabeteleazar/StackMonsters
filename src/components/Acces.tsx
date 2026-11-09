@@ -2,6 +2,13 @@ import { useState } from 'react'
 import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 import { suivre } from '../suivi'
 
+/** Message unique pour toutes les limites (demandes de code, essais, adresse IP). */
+function messageLimite(err: ErreurAPI): string {
+  if (!err.attente) return 'Trop de tentatives. Réessaie dans une heure.'
+  const minutes = Math.ceil(err.attente / 60)
+  return `Trop de tentatives. Réessaie dans ${minutes} minute${minutes > 1 ? 's' : ''}.`
+}
+
 type Props = {
   /** Appelé après connexion : le parent recharge la collection. */
   surValider: (email: string) => void
@@ -28,7 +35,7 @@ export default function Acces({ surValider, surRetour, refuse }: Props) {
       setEtape('code')
     } catch (err) {
       if (err instanceof ErreurAPI && err.status === 429) {
-        setMessage('Trop de demandes. Réessaie dans une heure.')
+        setMessage(messageLimite(err))
       } else if (
         err instanceof ErreurAPI &&
         err.status === 503 &&
@@ -62,7 +69,7 @@ export default function Acces({ surValider, surRetour, refuse }: Props) {
         err instanceof NonAutorise
           ? 'Code invalide ou expiré.'
           : err instanceof ErreurAPI && err.status === 429
-            ? 'Trop de tentatives. Réessaie dans une heure.'
+            ? messageLimite(err)
             : 'Service injoignable.',
       )
       setCode('')
