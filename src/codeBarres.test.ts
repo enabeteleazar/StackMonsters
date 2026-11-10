@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normaliserCodeBarres, normaliserLecture, upcEVersUpcA } from './codeBarres'
+import { estCodeInterne, normaliserCodeBarres, normaliserLecture, upcEVersUpcA } from './codeBarres'
 
 describe('normaliserCodeBarres', () => {
   it('garde un EAN-13 et un EAN-8 valides', () => {
@@ -17,6 +17,15 @@ describe('normaliserCodeBarres', () => {
     expect(normaliserCodeBarres('30176204220034')).toBeNull()
     expect(normaliserCodeBarres('30176204220A3')).toBeNull()
     expect(normaliserCodeBarres('')).toBeNull()
+  })
+})
+
+describe('estCodeInterne', () => {
+  it('reconnaît les codes inventés à préfixe 20, pas les vrais codes', () => {
+    expect(estCodeInterne('2095190704584')).toBe(true)
+    expect(estCodeInterne('3017620422003')).toBe(false)
+    expect(estCodeInterne('96385074')).toBe(false)
+    expect(estCodeInterne('LOCAL-ABC')).toBe(false)
   })
 })
 

@@ -12,6 +12,7 @@ function avecCle(corps: string): string {
   return `${corps}${(10 - (total % 10)) % 10}`
 }
 const ean13 = () => avecCle(`20${unique().slice(-10).padStart(10, '0')}`)
+const codeReel = () => avecCle(`3${unique().slice(-11).padStart(11, '0')}`) // hors préfixe interne 20
 const upcA = () => avecCle(`2${unique().slice(-10).padStart(10, '0')}`)
 
 const codes = (adresse: string) =>
@@ -108,6 +109,7 @@ test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async
   await ajouterParCode(page, ean13(), nom)
   await nav(page, 'Wiki').click()
   await page.getByText(nom).click()
+  await expect(page.locator('.bandeau-info .ean')).toBeVisible() // le propriétaire voit les codes-barres
   await page.setInputFiles('input[aria-label="Choisir la photo de la fiche"]', 'public/icon-192.png')
   await expect(page.locator('.photo-hero img')).toBeVisible()
   await page.getByRole('button', { name: 'Retirer la photo' }).click()
@@ -197,4 +199,79 @@ test('scan : l’ajout automatique depuis le Wiki peut être annulé', async ({ 
   await expect(autre.getByText('Ajout annulé')).toBeVisible()
   await nav(autre, 'Collection').click()
   await expect(autre.getByText(nom)).toHaveCount(0)
+})
+
+test('une Nouveauté validée par le propriétaire affiche sa bannière dans le Wiki', async ({ page }) => {
+  const nom = `Nouveauté ${unique()}`
+  await connecter(page, PROPRIETAIRE)
+  await ajouterParCode(page, ean13(), nom)
+  await nav(page, 'Wiki').click()
+  await page.getByText(nom).click()
+  await expect(page.locator('.photo-hero .bandeau-nouveaute')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Modifier la fiche' }).click()
+  await page.selectOption('#w-status', 'Nouveauté')
+  await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
+  await expect(page.locator('.photo-hero .bandeau-nouveaute')).toHaveText('Nouveauté')
+
+  await page.getByRole('button', { name: 'Fermer' }).click()
+  const carte = page.locator('.carte-wiki').filter({ hasText: nom })
+  await expect(carte.locator('.bandeau-nouveaute')).toBeVisible()
+})
+
+test('un scan donne son vrai code-barres à une fiche du Wiki qui n’en avait pas', async ({ page, browser }) => {
+  const nom = `Sans code ${unique()}`
+  const interne = ean13() // préfixe 20 : comme les fiches générées par convert.py
+  const reel = codeReel()
+  await connecter(page, email())
+  await ajouterParCode(page, interne, nom)
+
+  const autre = await nouvellePage(browser)
+  autre.on('dialog', (d) => d.accept())
+  await connecter(autre, email())
+  await saisirCode(autre, reel)
+  await autre.getByRole('button', { name: 'Ajouter au Wiki' }).click()
+  await autre.fill('#s-nom', nom.slice(0, 12))
+  await autre.getByRole('button', { name: 'Associer ce code-barres' }).click()
+  await expect(autre.getByText('Code-barres associé')).toBeVisible()
+  await autre.getByRole('button', { name: 'Pleine', exact: true }).click()
+
+  await nav(autre, 'Wiki').click()
+  await autre.getByText(nom).click()
+  await expect(autre.locator('.bandeau-info .ean')).toHaveCount(0) // codes réservés au propriétaire
+  await autre.getByRole('button', { name: 'Fermer' }).click()
+  await saisirCode(autre, reel)
+  await expect(autre.getByText('Déjà dans ta collection')).toBeVisible()
+  // Le premier collectionneur a suivi : sa canette porte maintenant le vrai code.
+  await nav(page, 'Collection').click()
+  await page.reload()
+  await nav(page, 'Collection').click()
+  await page.getByText(nom).click()
+  await expect(page.locator('.ean')).toHaveText(reel)
+})
+
+test('un second code-barres rejoint une fiche qui a déjà un vrai code', async ({ page, browser }) => {
+  const nom = `Deux codes ${unique()}`
+  const principal = codeReel()
+  const second = codeReel()
+  await connecter(page, email())
+  await ajouterParCode(page, principal, nom)
+
+  const autre = await nouvellePage(browser)
+  autre.on('dialog', (d) => d.accept())
+  await connecter(autre, email())
+  await saisirCode(autre, second)
+  await autre.getByRole('button', { name: 'Ajouter au Wiki' }).click()
+  await autre.fill('#s-nom', `Monster ${nom} 500ml`) // la marque et le volume ne gênent pas la correspondance
+  await autre.getByRole('button', { name: 'Associer ce code-barres' }).click()
+  await autre.getByRole('button', { name: 'Vide', exact: true }).click()
+
+  await nav(autre, 'Wiki').click()
+  await autre.getByText(nom).click()
+  await expect(autre.locator('.bandeau-info .ean')).toHaveCount(0) // codes réservés au propriétaire
+  await expect(autre.locator('.autre-code')).toHaveCount(0)
+  // Un nouveau scan du second code retrouve la canette déjà possédée.
+  await autre.getByRole('button', { name: 'Fermer' }).click()
+  await saisirCode(autre, second)
+  await expect(autre.getByText('Déjà dans ta collection')).toBeVisible()
 })

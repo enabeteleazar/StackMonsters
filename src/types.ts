@@ -49,6 +49,8 @@ export type FicheWiki = {
   description: string
   /** Marqueur de version de la photo (null : pas de photo). Les octets se chargent à part. */
   photo: string | null
+  /** Codes-barres supplémentaires (autre pays, autre format) qui désignent aussi cette fiche. */
+  codes: string[]
 }
 
 export type ReponseWiki = { peut_editer: boolean; fiches: FicheWiki[] }

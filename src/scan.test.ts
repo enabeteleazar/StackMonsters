@@ -5,7 +5,7 @@ import { trouverFicheParCodeBarres } from './wiki'
 
 const fiche = (ean: string): FicheWiki => ({
   ean, nom: 'Mango', edition: '', volume: 'x', categorie: 'Ultra', flavor: '', status: '', region: '',
-  description: '', photo: null,
+  description: '', photo: null, codes: [],
 })
 
 describe('scan vers Wiki', () => {

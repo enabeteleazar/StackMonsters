@@ -50,6 +50,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: '/',
+    // Version de l'application, lue dans package.json (même source que l'API).
+    define: {
+      __VERSION_APP__: JSON.stringify(JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')).version),
+    },
     plugins: [
       react(),
       tailwindcss(),

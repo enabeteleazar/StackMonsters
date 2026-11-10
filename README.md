@@ -20,7 +20,14 @@ Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id`
 - Après un scan (ou un code saisi à la main) : canette déjà possédée → fiche miniature et « +1 » ;
   présente dans le Wiki → ajout immédiat, choix rapide de l'état, ajout annulable ; inconnue → invitation à
   créer la fiche (nom et photo). Le nom rejoint le Wiki sans écraser une valeur existante ; la photo reste
-  dans la collection.
+  dans la collection. Si le nom saisi correspond à une fiche du Wiki qui n'a qu'un code interne (préfixe `20`,
+  voir `convert.py`), l'utilisateur peut lui associer le code scanné (`POST /api/wiki/{ean}/code-barres`) : la
+  fiche et les collections prennent le vrai code, l'ancien n'est plus recréé. Si la fiche a déjà un vrai code, le
+  code scanné devient un **code supplémentaire** (table `wiki_codes`, autre pays ou autre format) : le scanner
+  retrouve la fiche, sans doublon. Le propriétaire retire un code associé par erreur depuis la fiche.
+  Les codes-barres ne sont affichés dans les fiches du Wiki que pour `OWNER_EMAIL` (l'application les reçoit
+  quand même : ils servent à reconnaître une canette scannée).
+  La correspondance des noms se fait mot par mot, sans tenir compte de « Monster », « Energy » ni du volume.
 - Codes acceptés à la création : EAN-13, EAN-8, UPC-A et UPC-E, clé de contrôle vérifiée (client et serveur).
   Un UPC-A est enregistré sur 13 chiffres (`0` en tête) pour éviter les doublons, un UPC-E est développé par
   le scanner. Une fiche déjà en base reste modifiable même si son code est ancien.

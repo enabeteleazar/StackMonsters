@@ -98,6 +98,7 @@ export default function Wiki({ surNonAutorise }: Props) {
               <button key={f.ean} className="carte-canette carte-wiki" onClick={() => setOuverte(f.ean)}>
                 <div className="carte-photo">
                   <PhotoWiki ean={f.ean} version={f.photo} />
+                  {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
                 </div>
                 <div className="carte-corps">
                   <span className="nom">{f.nom || 'Sans nom'}{f.edition ? ` - ${f.edition}` : ''}</span>

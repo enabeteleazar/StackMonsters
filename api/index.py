@@ -31,9 +31,11 @@ from pydantic import BaseModel, Field, field_validator
 
 
 def _version() -> str:
+    """Numéro de version, lu dans package.json : une seule source pour le front et l'API."""
     try:
-        return (Path(__file__).resolve().parent.parent / "VERSION").read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
+        paquet = json.loads((Path(__file__).resolve().parent.parent / "package.json").read_text(encoding="utf-8"))
+        return str(paquet.get("version") or "0.0.0")
+    except (FileNotFoundError, ValueError):
         return "0.0.0"
 
 
@@ -70,6 +72,9 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
 PHOTO_RE = re.compile(r"^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$")
 CODE_LOCAL_RE = re.compile(r"^LOCAL-[A-Z0-9]{1,40}$")
+# Préfixe GS1 « 20 » (usage interne) : codes inventés pour les fiches du Wiki dont on ignore le vrai
+# code-barres (voir convert.py). Aucun produit du commerce ne le porte.
+CODE_INTERNE_RE = re.compile(r"^20[0-9]{11}$")
 
 
 def _photo_valide(photo: str) -> bool:
@@ -143,6 +148,10 @@ INSERT INTO wiki (ean, nom, edition, volume, cree, maj)
     (4, "SELECT 1;"),
     # Date de passage au statut « Nouveauté » (affiché « Active » après 30 jours).
     (5, "ALTER TABLE wiki ADD COLUMN IF NOT EXISTS nouveaute_depuis BIGINT;"),
+    # Codes-barres supplémentaires d'une fiche (autre pays, autre format) : scanner l'un d'eux retrouve la fiche.
+    (6, """CREATE TABLE IF NOT EXISTS wiki_codes (ean TEXT PRIMARY KEY,
+        fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE, ajout TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS wiki_codes_fiche ON wiki_codes (fiche);"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -186,6 +195,10 @@ class FicheWiki(BaseModel):
     status: Literal["", "Active", "Stop", "Nouveauté"] = ""
     region: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
+
+
+class CodeBarres(BaseModel):
+    ean: str = Field(min_length=1, max_length=64)
 
 
 class PhotoFiche(BaseModel):
@@ -600,7 +613,16 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         ean = c.ean if deja_la else _normaliser_code(c.ean)
         if ean is None:
             raise HTTPException(422, "code-barres invalide")
+        principal = None if deja_la else _fiche_du_code(cx, ean)
+        if principal:  # un code supplémentaire désigne la fiche existante : pas de doublon
+            if cx.execute(
+                "SELECT 1 FROM collection WHERE user_id = %s AND ean = %s", (u["id"], principal),
+            ).fetchone():
+                raise HTTPException(409, "cette canette est déjà dans ta collection, sous un autre code-barres")
+            ean = principal
         exclue = cx.execute("SELECT 1 FROM wiki_exclus WHERE ean = %s", (ean,)).fetchone()
+        # Seul le propriétaire valide une « Nouveauté » ; venue d'un autre compte, elle est ignorée.
+        statut = c.status if c.status != "Nouveauté" or _est_proprietaire(u["email"]) else ""
         # Le Wiki reçoit les champs descriptifs fournis, sans écraser une fiche existante.
         # Il ne reçoit ni les canettes sans code-barres (LOCAL-), ni les photos : elles restent privées.
         # Une fiche retirée par le propriétaire (wiki_exclus) n'est pas recréée.
@@ -628,8 +650,8 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                                   OR (wiki.region = '' AND EXCLUDED.region <> '')
                                  THEN EXCLUDED.maj ELSE wiki.maj END""",
                 (ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
-                 c.status, c.region.strip(),
-                 int(time.time()) if c.status == "Nouveauté" else None, maintenant(), maintenant()),
+                 statut, c.region.strip(),
+                 int(time.time()) if statut == "Nouveauté" else None, maintenant(), maintenant()),
             )
         enregistrement = cx.execute(
             f"""INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
@@ -671,7 +693,8 @@ def supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection =
 
 COLONNES_FICHE = (
     "ean, nom, edition, volume, categorie, gamme, flavor, " + _statut("") + " AS status, region, description, "
-    "(photo IS NOT NULL) AS a_photo, maj"
+    "(photo IS NOT NULL) AS a_photo, maj, "
+    "COALESCE((SELECT array_agg(k.ean ORDER BY k.ean) FROM wiki_codes k WHERE k.fiche = wiki.ean), '{}') AS codes"
 )
 
 
@@ -682,7 +705,21 @@ def _fiche(r: dict) -> dict:
         "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
         "region": r["region"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
+        "codes": list(r["codes"]),
     }
+
+
+def _fiche_du_code(cx: psycopg.Connection, code: str) -> str | None:
+    """Code principal de la fiche dont « code » est un code-barres supplémentaire."""
+    r = cx.execute("SELECT fiche FROM wiki_codes WHERE ean = %s", (code,)).fetchone()
+    return r["fiche"] if r else None
+
+
+def _code_pris(cx: psycopg.Connection, code: str) -> bool:
+    """Vrai si le code est déjà celui d'une fiche, principal ou supplémentaire."""
+    return cx.execute(
+        "SELECT 1 FROM wiki WHERE ean = %s UNION ALL SELECT 1 FROM wiki_codes WHERE ean = %s LIMIT 1", (code, code),
+    ).fetchone() is not None
 
 
 @router.get("/wiki")
@@ -759,8 +796,7 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
     now = int(time.time())
     with cx.transaction():
         if nouvel_ean != ean:
-            cible = cx.execute("SELECT 1 FROM wiki WHERE ean = %s", (nouvel_ean,)).fetchone()
-            if cible is not None:
+            if _code_pris(cx, nouvel_ean):
                 raise HTTPException(409, "ce code-barres existe déjà dans le Wiki")
         r = cx.execute(
             "UPDATE wiki SET ean = %s, nom = %s, edition = COALESCE(%s, edition), "
@@ -777,17 +813,79 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
         if r is None:
             raise HTTPException(404, "fiche inconnue")
         if nouvel_ean != ean:
-            # Les collections suivent la fiche ; un compte qui possède déjà le nouveau code garde ses deux lignes.
-            cx.execute(
-                "UPDATE collection c SET ean = %s, maj = %s WHERE c.ean = %s AND NOT EXISTS "
-                "(SELECT 1 FROM collection d WHERE d.user_id = c.user_id AND d.ean = %s)",
-                (nouvel_ean, maintenant(), ean, nouvel_ean),
-            )
-            cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (nouvel_ean,))
-            cx.execute(
-                "INSERT INTO wiki_exclus (ean, exclu) VALUES (%s, %s) ON CONFLICT (ean) DO NOTHING",
-                (ean, maintenant()),
-            )
+            _suivre_changement_de_code(cx, ean, nouvel_ean)
+            # Relecture : les codes supplémentaires ne suivent le nouveau code qu'en fin d'instruction.
+            r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (nouvel_ean,)).fetchone()
+    return _fiche(r)
+
+
+def _suivre_changement_de_code(cx: psycopg.Connection, ancien: str, nouveau: str) -> None:
+    """Après un changement de code d'une fiche : les collections suivent, l'ancien code n'est plus recréé."""
+    # Un compte qui possède déjà le nouveau code garde ses deux lignes.
+    cx.execute(
+        "UPDATE collection c SET ean = %s, maj = %s WHERE c.ean = %s AND NOT EXISTS "
+        "(SELECT 1 FROM collection d WHERE d.user_id = c.user_id AND d.ean = %s)",
+        (nouveau, maintenant(), ancien, nouveau),
+    )
+    cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (nouveau,))
+    cx.execute(
+        "INSERT INTO wiki_exclus (ean, exclu) VALUES (%s, %s) ON CONFLICT (ean) DO NOTHING",
+        (ancien, maintenant()),
+    )
+
+
+@router.post("/wiki/{ean}/code-barres")
+def wiki_associer_code(
+    ean: str, corps: CodeBarres, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Rattache un code-barres scanné à une fiche existante.
+
+    Fiche à code interne (préfixe 20) : le code scanné devient son code principal.
+    Fiche qui a déjà un vrai code : il devient un code supplémentaire (autre pays, autre format).
+    """
+    nouveau = _normaliser_code(corps.ean.strip())
+    if nouveau is None or nouveau.startswith("LOCAL-") or CODE_INTERNE_RE.match(nouveau):
+        raise HTTPException(422, "code-barres invalide")
+    try:
+        with cx.transaction():
+            if _code_pris(cx, nouveau):
+                raise HTTPException(409, "ce code-barres est déjà dans le Wiki")
+            if cx.execute("SELECT 1 FROM wiki WHERE ean = %s FOR UPDATE", (ean,)).fetchone() is None:
+                raise HTTPException(404, "fiche inconnue")
+            if CODE_INTERNE_RE.match(ean):
+                cx.execute("UPDATE wiki SET ean = %s, maj = %s WHERE ean = %s", (nouveau, maintenant(), ean))
+                _suivre_changement_de_code(cx, ean, nouveau)
+                principal = nouveau
+            else:
+                cx.execute(
+                    "INSERT INTO wiki_codes (ean, fiche, ajout) VALUES (%s, %s, %s)", (nouveau, ean, maintenant()),
+                )
+                # Une canette déjà enregistrée sous ce code rejoint la fiche, sauf si le compte l'a déjà.
+                cx.execute(
+                    "UPDATE collection c SET ean = %s, maj = %s WHERE c.ean = %s AND NOT EXISTS "
+                    "(SELECT 1 FROM collection d WHERE d.user_id = c.user_id AND d.ean = %s)",
+                    (ean, maintenant(), nouveau, ean),
+                )
+                cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (nouveau,))
+                principal = ean
+            r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (principal,)).fetchone()
+    except psycopg.errors.UniqueViolation:  # deux associations simultanées du même code
+        raise HTTPException(409, "ce code-barres est déjà dans le Wiki") from None
+    return _fiche(r)
+
+
+@router.delete("/wiki/{ean}/code-barres/{code}")
+def wiki_retirer_code(
+    ean: str, code: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Retire un code-barres supplémentaire associé par erreur : réservé à OWNER_EMAIL."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    with cx.transaction():
+        n = cx.execute("DELETE FROM wiki_codes WHERE ean = %s AND fiche = %s", (code, ean)).rowcount
+        if n == 0:
+            raise HTTPException(404, "code inconnu pour cette fiche")
+        r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (ean,)).fetchone()
     return _fiche(r)
 
 
@@ -797,6 +895,12 @@ def wiki_supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connect
     if not _est_proprietaire(u["email"]):
         raise HTTPException(403, "réservé au propriétaire")
     with cx.transaction():
+        # Ses codes supplémentaires disparaissent avec elle et ne doivent pas la recréer non plus.
+        cx.execute(
+            "INSERT INTO wiki_exclus (ean, exclu) SELECT ean, %s FROM wiki_codes WHERE fiche = %s "
+            "ON CONFLICT (ean) DO NOTHING",
+            (maintenant(), ean),
+        )
         n = cx.execute("DELETE FROM wiki WHERE ean = %s", (ean,)).rowcount
         if n:
             cx.execute(
