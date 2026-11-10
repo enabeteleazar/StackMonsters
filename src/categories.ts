@@ -11,7 +11,7 @@ export const CATEGORIES = [
   'Asia',
 ] as const
 
-export const REGIONS = ['Global', 'US', 'Europe', 'Europe/Aus', 'US/Global', 'Japan'] as const
+export const REGIONS = ['Global', 'US', 'Canada', 'Europe', 'Europe/Aus', 'US/Global', 'Japan'] as const
 
 export const STATUTS = ['Active', 'Stop', 'Nouveauté'] as const
 
