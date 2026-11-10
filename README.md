@@ -57,6 +57,12 @@ L'import est écrit atomiquement : une erreur réseau ou une réponse vide ne re
 Les produits importés gardent leurs données source et l'attribution [Open Food Facts](https://world.openfoodfacts.org/)
 sous licence [ODbL](https://opendatacommons.org/licenses/odbl/1-0/).
 
+## Référencement
+`public/robots.txt` autorise l'indexation du site, sauf l'API et la page de maintenance, et annonce
+`public/sitemap.xml`, qui ne liste que la page d'accueil publique (le reste exige une connexion). Les deux
+visent le domaine `stackmonsters.fr` : il doit être relié au projet Vercel (Settings → Domains) pour que les
+moteurs de recherche les suivent. Mettre à jour `<lastmod>` quand la page d'accueil change.
+
 ## Photos de la page d'accueil
 La photo de canette dans `public/images/` provient de Wikimedia Commons et est affichée avec attribution :
 - [Monster Energy Mega can](https://commons.wikimedia.org/wiki/File:Monster_Energy_Mega_can.jpg), DYVER.
