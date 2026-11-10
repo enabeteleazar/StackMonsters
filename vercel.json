@@ -5,6 +5,11 @@
       "destination": "/api/index.py"
     }
   ],
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "package.json"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

@@ -304,6 +304,13 @@ def test_le_proprietaire_recupere_la_collection_historique(env, monkeypatch):
         cx.execute("DELETE FROM canettes WHERE ean = 'TEST-HIST'")
 
 
+def test_version_lue_dans_package_json(env):
+    c, codes = env
+    h = connecter(c, codes, A)
+    attendue = json.loads((ix.Path(ix.__file__).resolve().parent.parent / "package.json").read_text())["version"]
+    assert c.get("/api/health", headers=h).json()["version"] == attendue != "0.0.0"
+
+
 def test_documentation_fermee(env):
     c, _ = env
     assert all(c.get(p).status_code == 404 for p in ("/docs", "/redoc", "/openapi.json"))

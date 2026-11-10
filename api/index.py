@@ -31,9 +31,11 @@ from pydantic import BaseModel, Field, field_validator
 
 
 def _version() -> str:
+    """Numéro de version, lu dans package.json : une seule source pour le front et l'API."""
     try:
-        return (Path(__file__).resolve().parent.parent / "VERSION").read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
+        paquet = json.loads((Path(__file__).resolve().parent.parent / "package.json").read_text(encoding="utf-8"))
+        return str(paquet.get("version") or "0.0.0")
+    except (FileNotFoundError, ValueError):
         return "0.0.0"
 
 

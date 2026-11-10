@@ -150,9 +150,12 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
         <div className="reglages-ligne">
           <span className="libelle">
             <Radio size={17} />
-            Version du service
+            Version
           </span>
-          <span className="valeur">{sante?.version ?? '—'}</span>
+          <span className="valeur">
+            {/* Une version d'API différente signale un déploiement incomplet ou un cache périmé. */}
+            {!sante || sante.version === __VERSION_APP__ ? __VERSION_APP__ : `${__VERSION_APP__} · service ${sante.version}`}
+          </span>
         </div>
         <div className="reglages-ligne">
           <span className="libelle">
