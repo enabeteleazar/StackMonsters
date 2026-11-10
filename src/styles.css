@@ -322,6 +322,11 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 .consentement div{display:flex;gap:10px;margin-top:10px}
 .consentement .btn{flex:1}
 .flux-carte .photo-wiki{height:72px}
+/* Bannière posée sur la photo d'une fiche du Wiki validée « Nouveauté » par le propriétaire */
+.bandeau-nouveaute{position:absolute;top:10px;left:10px;z-index:2;padding:4px 9px;border-radius:999px;
+  background:var(--acide);color:var(--abysse);font-family:var(--display);font-size:11px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;box-shadow:0 0 14px rgba(158,232,24,.55);pointer-events:none}
+.photo-hero .bandeau-nouveaute{top:calc(16px + env(safe-area-inset-top));left:18px;font-size:13px;padding:6px 12px}
 /* Résultat de scan */
 .scan-entete{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;max-width:640px;
   margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 18px 0}

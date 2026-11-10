@@ -198,3 +198,21 @@ test('scan : l’ajout automatique depuis le Wiki peut être annulé', async ({ 
   await nav(autre, 'Collection').click()
   await expect(autre.getByText(nom)).toHaveCount(0)
 })
+
+test('une Nouveauté validée par le propriétaire affiche sa bannière dans le Wiki', async ({ page }) => {
+  const nom = `Nouveauté ${unique()}`
+  await connecter(page, PROPRIETAIRE)
+  await ajouterParCode(page, ean13(), nom)
+  await nav(page, 'Wiki').click()
+  await page.getByText(nom).click()
+  await expect(page.locator('.photo-hero .bandeau-nouveaute')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Modifier la fiche' }).click()
+  await page.selectOption('#w-status', 'Nouveauté')
+  await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
+  await expect(page.locator('.photo-hero .bandeau-nouveaute')).toHaveText('Nouveauté')
+
+  await page.getByRole('button', { name: 'Fermer' }).click()
+  const carte = page.locator('.carte-wiki').filter({ hasText: nom })
+  await expect(carte.locator('.bandeau-nouveaute')).toBeVisible()
+})

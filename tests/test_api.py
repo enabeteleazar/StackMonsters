@@ -596,10 +596,19 @@ def test_nouveaute_en_cours_garde_sa_date(env, monkeypatch):
         assert cx.execute("SELECT nouveaute_depuis FROM wiki WHERE ean = '2000000000015'").fetchone()["nouveaute_depuis"] is None
 
 
-def test_nouveaute_choisie_a_la_creation(env):
+def test_seul_le_proprietaire_valide_une_nouveaute(env, monkeypatch):
     c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    # Proposée par un autre compte : ignorée, sans erreur (le scan recopie le statut d'une fiche).
+    r = c.put("/api/cans", json=canette("2000000000022", status="Nouveauté"), headers=hb)
+    assert r.status_code == 200 and r.json()["status"] == ""
+    assert fiche(c, ha, "2000000000022")["status"] == ""
+
     assert c.put("/api/cans", json=canette(status="Nouveauté"), headers=ha).json()["status"] == "Nouveauté"
+    assert fiche(c, hb, "2000000000015")["status"] == "Nouveauté"
+    # Un autre compte qui l'ajoute ensuite la voit telle quelle.
+    assert c.put("/api/cans", json=canette(status="Nouveauté"), headers=hb).json()["status"] == "Nouveauté"
     _vieillir_nouveaute("2000000000015", 31)
     assert fiche(c, hb, "2000000000015")["status"] == "Active"
     assert c.put("/api/cans", json=canette(status="Bientôt"), headers=ha).status_code == 422

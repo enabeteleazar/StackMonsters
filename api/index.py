@@ -601,6 +601,8 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         if ean is None:
             raise HTTPException(422, "code-barres invalide")
         exclue = cx.execute("SELECT 1 FROM wiki_exclus WHERE ean = %s", (ean,)).fetchone()
+        # Seul le propriétaire valide une « Nouveauté » ; venue d'un autre compte, elle est ignorée.
+        statut = c.status if c.status != "Nouveauté" or _est_proprietaire(u["email"]) else ""
         # Le Wiki reçoit les champs descriptifs fournis, sans écraser une fiche existante.
         # Il ne reçoit ni les canettes sans code-barres (LOCAL-), ni les photos : elles restent privées.
         # Une fiche retirée par le propriétaire (wiki_exclus) n'est pas recréée.
@@ -628,8 +630,8 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                                   OR (wiki.region = '' AND EXCLUDED.region <> '')
                                  THEN EXCLUDED.maj ELSE wiki.maj END""",
                 (ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
-                 c.status, c.region.strip(),
-                 int(time.time()) if c.status == "Nouveauté" else None, maintenant(), maintenant()),
+                 statut, c.region.strip(),
+                 int(time.time()) if statut == "Nouveauté" else None, maintenant(), maintenant()),
             )
         enregistrement = cx.execute(
             f"""INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)

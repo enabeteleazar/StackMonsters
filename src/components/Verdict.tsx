@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Sparkles, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
-import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
+import { CATEGORIES, libelleStatut, REGIONS, STATUTS_COLLECTION } from '../categories'
 import { normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
 import { CANETTE_VIDE, ETATS, type Canette, type FicheWiki } from '../types'
@@ -430,7 +430,8 @@ function Formulaire({
                 <label htmlFor="f-status">Status</label>
                 <select id="f-status" value={c.status} disabled={verrouille('status')} onChange={(e) => champ('status', e.target.value)}>
                   <option value="">Non renseigné</option>
-                  {STATUTS.map((status) => (
+                  {/* Une Nouveauté déjà validée reste affichée, mais ne se choisit pas ici. */}
+                  {[...STATUTS_COLLECTION, ...(c.status === 'Nouveauté' ? ['Nouveauté'] : [])].map((status) => (
                     <option key={status} value={status}>{libelleStatut(status)}</option>
                   ))}
                 </select>
