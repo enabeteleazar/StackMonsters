@@ -119,6 +119,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ ean }),
     }),
+  wikiRetirerCode: (ean: string, code: string) =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/code-barres/${encodeURIComponent(code)}`, { method: 'DELETE' }),
   wikiPhotoRetirer: (ean: string) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/photo`, { method: 'DELETE' }),
   wikiPhoto: (ean: string, version: string) => photoLocale('wiki', ean, version),

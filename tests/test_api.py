@@ -619,6 +619,7 @@ REELS = ("3017620422003", "0036000291452", "96385074")  # vrais codes du commerc
 
 def _oublier_codes_reels():
     with ix.base() as cx:
+        cx.execute("DELETE FROM wiki_codes WHERE ean = ANY(%s) OR fiche = ANY(%s)", (list(REELS), list(REELS)))
         cx.execute("DELETE FROM wiki WHERE ean = ANY(%s)", (list(REELS),))
         cx.execute("DELETE FROM wiki_exclus WHERE ean = ANY(%s)", (list(REELS),))
 
@@ -651,12 +652,60 @@ def test_association_de_code_refusee(env, monkeypatch):
     c.put("/api/cans", json=canette(REELS[0], nom="Déjà réel"), headers=ha)
 
     associer = lambda ean, code: c.post(f"/api/wiki/{ean}/code-barres", json={"ean": code}, headers=hb)  # noqa: E731
-    assert associer(REELS[0], REELS[2]).status_code == 409  # la fiche a déjà un vrai code
     assert associer("2000000000015", REELS[0]).status_code == 409  # ce code est déjà dans le Wiki
     for invalide in ("3017620422004", "2000000000022", "LOCAL-ABC", "123"):
         assert associer("2000000000015", invalide).status_code == 422
     assert associer("2000000000039", REELS[2]).status_code == 404  # fiche interne inconnue
     assert fiche(c, hb, "2000000000015")["nom"] == "Sans code"
+    _oublier_codes_reels()
+
+
+def test_fiche_a_plusieurs_codes_barres(env, monkeypatch):
+    c, codes = env
+    _oublier_codes_reels()
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(REELS[0], nom="Ultra Paradise", nb=2), headers=ha)
+    # Une autre canette a été enregistrée sous le second code avant qu'on sache que c'est la même.
+    c.put("/api/cans", json=canette(REELS[2], nom="Paradise EU"), headers=hb)
+    with ix.base() as cx:
+        cx.execute("DELETE FROM wiki WHERE ean = %s", (REELS[2],))
+
+    r = c.post(f"/api/wiki/{REELS[0]}/code-barres", json={"ean": REELS[2]}, headers=hb)
+    assert r.status_code == 200 and r.json()["ean"] == REELS[0] and r.json()["codes"] == [REELS[2]]
+    assert fiche(c, hb, REELS[0])["codes"] == [REELS[2]]
+    # La canette de B rejoint la fiche ; scanner le second code ne crée plus de doublon.
+    assert [x["ean"] for x in c.get("/api/cans", headers=hb).json()] == [REELS[0]]
+    # A possède déjà la fiche : refus explicite plutôt qu'écraser sa quantité.
+    assert c.put("/api/cans", json=canette(REELS[2], nom="Autre nom"), headers=ha).status_code == 409
+    assert [(x["ean"], x["nb"]) for x in c.get("/api/cans", headers=ha).json()] == [(REELS[0], 2)]
+    hc = connecter(c, codes, "test-c@example.com")  # un nouveau venu qui scanne le second code
+    assert c.put("/api/cans", json=canette(REELS[2], nom="Paradise"), headers=hc).json()["ean"] == REELS[0]
+    assert all(f["ean"] != REELS[2] for f in c.get("/api/wiki", headers=ha).json()["fiches"])
+
+    assert c.post(f"/api/wiki/{REELS[0]}/code-barres", json={"ean": REELS[2]}, headers=hb).status_code == 409
+    assert c.put(f"/api/wiki/{REELS[1]}", json={"ean": REELS[2], "nom": "x"}, headers=ha).status_code in (404, 409)
+
+    # Renommer la fiche garde ses codes ; seul le propriétaire retire un code.
+    c.put(f"/api/wiki/{REELS[0]}", json={"ean": REELS[1], "nom": "Ultra Paradise"}, headers=ha)
+    assert fiche(c, ha, REELS[1])["codes"] == [REELS[2]]
+    assert c.delete(f"/api/wiki/{REELS[1]}/code-barres/{REELS[2]}", headers=hb).status_code == 403
+    r = c.delete(f"/api/wiki/{REELS[1]}/code-barres/{REELS[2]}", headers=ha)
+    assert r.status_code == 200 and r.json()["codes"] == []
+    assert c.delete(f"/api/wiki/{REELS[1]}/code-barres/{REELS[2]}", headers=ha).status_code == 404
+    _oublier_codes_reels()
+
+
+def test_suppression_d_une_fiche_exclut_aussi_ses_codes(env, monkeypatch):
+    c, codes = env
+    _oublier_codes_reels()
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    h = connecter(c, codes, A)
+    c.put("/api/cans", json=canette(REELS[0], nom="Mango"), headers=h)
+    c.post(f"/api/wiki/{REELS[0]}/code-barres", json={"ean": REELS[2]}, headers=h)
+    assert c.delete(f"/api/wiki/{REELS[0]}", headers=h).status_code == 204
+    c.put("/api/cans", json=canette(REELS[2], nom="Recréée ?"), headers=h)
+    assert fiche(c, h, REELS[2]) is None
     _oublier_codes_reels()
 
 
@@ -695,7 +744,7 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
     assert (f["categorie"], f["flavor"], f["status"], f["region"]) == ("", "", "", "")
     assert set(f) == {
         "ean", "nom", "edition", "volume", "categorie", "flavor", "status", "region",
-        "description", "photo",
+        "description", "photo", "codes",
     }
     assert f["photo"] is None  # la photo d'un compte reste privée
     assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 404
@@ -912,6 +961,7 @@ def test_wiki_amorce_depuis_les_collections_existantes_une_seule_fois(env):
     c.put("/api/cans", json=canette("LOCAL-AMORCE", nom="Perso"), headers=ha)
     # Simule une base d'avant le Wiki : la table n'existe pas encore, les collections si.
     with ix.connecter() as cx:
+        cx.execute("DROP TABLE wiki_codes")
         cx.execute("DROP TABLE wiki")
         cx.execute("DELETE FROM schema_migrations")
         assert ix.appliquer_migrations(cx) == [v for v, _ in ix.MIGRATIONS]

@@ -26,6 +26,7 @@ export default function FicheWiki({
   const [edition, setEdition] = useState(false)
   const [suppressionOccupe, setSuppressionOccupe] = useState(false)
   const [erreurSuppression, setErreurSuppression] = useState<string | null>(null)
+  const [codeOccupe, setCodeOccupe] = useState(false)
   const [photoOccupee, setPhotoOccupee] = useState(false)
   const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
   const photoInput = useRef<HTMLInputElement>(null)
@@ -40,6 +41,20 @@ export default function FicheWiki({
       else setErreurPhoto(e instanceof ErreurAPI ? `Photo non modifiée — ${e.detail}` : 'Photo non modifiée, réessaie.')
     } finally {
       setPhotoOccupee(false)
+    }
+  }
+
+  const retirerCode = async (code: string) => {
+    if (!confirm(`Retirer le code-barres ${code} de cette fiche ?`)) return
+    setCodeOccupe(true)
+    setErreurPhoto(null)
+    try {
+      surEnregistree(fiche.ean, await api.wikiRetirerCode(fiche.ean, code))
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+      else setErreurPhoto(e instanceof ErreurAPI ? `Code non retiré — ${e.detail}` : 'Code non retiré, réessaie.')
+    } finally {
+      setCodeOccupe(false)
     }
   }
 
@@ -79,8 +94,22 @@ export default function FicheWiki({
 
       <div className="verdict-scroll">
         <div className="bandeau-info">
-          <div className="ean">{fiche.ean}</div>
+          {/* Codes-barres réservés au propriétaire : les autres comptes ne voient que la fiche. */}
+          {peutEditer && <div className="ean">{fiche.ean}</div>}
           <h2>{fiche.nom || 'Sans nom'}</h2>
+          {peutEditer && fiche.codes.length > 0 && (
+            <div className="autres-codes">
+              <span>Autres codes-barres</span>
+              {fiche.codes.map((code) => (
+                <span key={code} className="autre-code">
+                  {code}
+                  <button disabled={codeOccupe} onClick={() => void retirerCode(code)} aria-label={`Retirer le code ${code}`}>
+                    <X size={13} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {edition ? (

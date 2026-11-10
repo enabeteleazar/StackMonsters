@@ -5,7 +5,7 @@ import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
 import { suivre } from '../suivi'
 import { CANETTE_VIDE, ETATS, type Canette, type FicheWiki } from '../types'
-import { suggererFiches, trouverFicheParCodeBarres } from '../wiki'
+import { fichesCorrespondantes, trouverFicheParCodeBarres } from '../wiki'
 import PhotoWiki from './PhotoWiki'
 
 type Props = {
@@ -106,6 +106,8 @@ export default function ResultatScan(p: Props) {
           setEtape({ nom: 'inconnue' })
           return
         }
+        // Code supplémentaire d'une fiche : la canette est peut-être déjà possédée sous le code principal.
+        if (fiche.ean !== code && (await montrerSiPossedee(fiche.ean))) return
         await ajouterDepuisFiche(fiche)
       } catch (e) {
         if (e instanceof NonAutorise) p.surNonAutorise()
@@ -116,23 +118,35 @@ export default function ResultatScan(p: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Le code scanné devient celui de la fiche (pour tous) ; la canette rejoint ensuite la collection.
+  /** Affiche la canette possédée sous ce code, le cas échéant ; faux si elle n'est pas dans la collection. */
+  const montrerSiPossedee = async (ean: string) => {
+    try {
+      const deja = await api.lire(ean)
+      setConnue(deja)
+      setNb(deja.nb)
+      setEtape({ nom: 'possedee' })
+      return true
+    } catch (e) {
+      if (e instanceof ErreurAPI && e.status === 404) return false
+      throw e
+    }
+  }
+
+  // Le code scanné rejoint la fiche (pour tous) : code principal si elle n'avait qu'un code interne,
+  // code supplémentaire sinon. La canette rejoint ensuite la collection, sans écraser un exemplaire existant.
   const associer = (fiche: FicheWiki) =>
     proteger(async () => {
-      if (!confirm(`Associer le code-barres ${code} à « ${fiche.nom} » ? Il servira à tous les collectionneurs.`)) return
+      const question = estCodeInterne(fiche.ean)
+        ? `Donner le code-barres ${code} à « ${fiche.nom} » ? Il servira à tous les collectionneurs.`
+        : `Ajouter ${code} comme autre code-barres de « ${fiche.nom} » ? Il servira à tous les collectionneurs.`
+      if (!confirm(question)) return
       const maj = await api.wikiAssocierCode(fiche.ean, code)
       setInfo(`Code-barres associé à « ${maj.nom} » dans le Wiki. Merci, pionnier !`)
-      try {
-        // Déjà dans la collection sous le code interne : la ligne a suivi, on la garde telle quelle.
-        const deja = await api.lire(maj.ean)
-        setConnue(deja)
-        setNb(deja.nb)
-        setEtape({ nom: 'possedee' })
+      if (await montrerSiPossedee(maj.ean)) {
         await p.surCollectionChangee()
-      } catch (e) {
-        if (!(e instanceof ErreurAPI && e.status === 404)) throw e
-        await ajouterDepuisFiche(maj)
+        return
       }
+      await ajouterDepuisFiche(maj)
     }, 'Association impossible')
 
   const plusUn = () =>
@@ -253,7 +267,7 @@ export default function ResultatScan(p: Props) {
         {etape.nom === 'creation' && (
           <CreationRapide
             occupe={occupe}
-            fichesSansCode={peutAssocier ? fiches.filter((fiche) => estCodeInterne(fiche.ean)) : []}
+            fichesExistantes={peutAssocier ? fiches : []}
             surAssocier={(fiche) => void associer(fiche)}
             surValider={(champs) =>
               void proteger(() => ajouter({ ...CANETTE_VIDE(code), ...champs }), 'Ajout impossible')
@@ -311,14 +325,14 @@ type ChampsCreation = Pick<Canette, 'nom' | 'photo'>
 
 function CreationRapide({
   occupe,
-  fichesSansCode,
+  fichesExistantes,
   surAssocier,
   surValider,
   surAnnuler,
 }: {
   occupe: boolean
-  /** Fiches du Wiki qui n'ont qu'un code interne : candidates pour recevoir le code scanné. */
-  fichesSansCode: FicheWiki[]
+  /** Fiches du Wiki : celles dont le nom correspond peuvent recevoir le code scanné. */
+  fichesExistantes: FicheWiki[]
   surAssocier: (fiche: FicheWiki) => void
   surValider: (champs: ChampsCreation) => void
   surAnnuler: () => void
@@ -326,7 +340,7 @@ function CreationRapide({
   const [champs, setChamps] = useState<ChampsCreation>({ nom: '', photo: null })
   const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
   const maj = <K extends keyof ChampsCreation>(k: K, v: ChampsCreation[K]) => setChamps((c) => ({ ...c, [k]: v }))
-  const propositions = suggererFiches(fichesSansCode, champs.nom)
+  const propositions = fichesCorrespondantes(fichesExistantes, champs.nom)
 
   return (
     <form
@@ -353,14 +367,18 @@ function CreationRapide({
         </div>
         {propositions.length > 0 && (
           <div className="suggestions-wiki" aria-live="polite">
-            <div className="suggestions-wiki-titre">Déjà dans le Wiki, sans code-barres</div>
-            <p className="sous">C’est la même canette ? Donne-lui le code que tu viens de scanner.</p>
+            <div className="suggestions-wiki-titre">Déjà dans le Wiki ?</div>
+            <p className="sous">
+              C’est la même canette ? Associe-lui le code que tu viens de scanner plutôt que de créer un doublon.
+            </p>
             <div className="suggestions-wiki-liste">
               {propositions.map((fiche) => (
                 <div className="suggestion-wiki" key={fiche.ean}>
                   <span>
                     <b>{fiche.nom}{fiche.edition ? ` - ${fiche.edition}` : ''}</b>
-                    {fiche.volume && <small>{fiche.volume}</small>}
+                    <small>
+                      {[fiche.volume, estCodeInterne(fiche.ean) ? 'sans code-barres' : null].filter(Boolean).join(' · ')}
+                    </small>
                   </span>
                   <button
                     className="btn btn-fantome"

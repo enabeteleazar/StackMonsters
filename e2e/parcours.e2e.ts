@@ -109,6 +109,7 @@ test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async
   await ajouterParCode(page, ean13(), nom)
   await nav(page, 'Wiki').click()
   await page.getByText(nom).click()
+  await expect(page.locator('.bandeau-info .ean')).toBeVisible() // le propriétaire voit les codes-barres
   await page.setInputFiles('input[aria-label="Choisir la photo de la fiche"]', 'public/icon-192.png')
   await expect(page.locator('.photo-hero img')).toBeVisible()
   await page.getByRole('button', { name: 'Retirer la photo' }).click()
@@ -237,11 +238,40 @@ test('un scan donne son vrai code-barres à une fiche du Wiki qui n’en avait p
 
   await nav(autre, 'Wiki').click()
   await autre.getByText(nom).click()
-  await expect(autre.locator('.bandeau-info .ean')).toHaveText(reel)
+  await expect(autre.locator('.bandeau-info .ean')).toHaveCount(0) // codes réservés au propriétaire
+  await autre.getByRole('button', { name: 'Fermer' }).click()
+  await saisirCode(autre, reel)
+  await expect(autre.getByText('Déjà dans ta collection')).toBeVisible()
   // Le premier collectionneur a suivi : sa canette porte maintenant le vrai code.
   await nav(page, 'Collection').click()
   await page.reload()
   await nav(page, 'Collection').click()
   await page.getByText(nom).click()
   await expect(page.locator('.ean')).toHaveText(reel)
+})
+
+test('un second code-barres rejoint une fiche qui a déjà un vrai code', async ({ page, browser }) => {
+  const nom = `Deux codes ${unique()}`
+  const principal = codeReel()
+  const second = codeReel()
+  await connecter(page, email())
+  await ajouterParCode(page, principal, nom)
+
+  const autre = await nouvellePage(browser)
+  autre.on('dialog', (d) => d.accept())
+  await connecter(autre, email())
+  await saisirCode(autre, second)
+  await autre.getByRole('button', { name: 'Ajouter au Wiki' }).click()
+  await autre.fill('#s-nom', `Monster ${nom} 500ml`) // la marque et le volume ne gênent pas la correspondance
+  await autre.getByRole('button', { name: 'Associer ce code-barres' }).click()
+  await autre.getByRole('button', { name: 'Vide', exact: true }).click()
+
+  await nav(autre, 'Wiki').click()
+  await autre.getByText(nom).click()
+  await expect(autre.locator('.bandeau-info .ean')).toHaveCount(0) // codes réservés au propriétaire
+  await expect(autre.locator('.autre-code')).toHaveCount(0)
+  // Un nouveau scan du second code retrouve la canette déjà possédée.
+  await autre.getByRole('button', { name: 'Fermer' }).click()
+  await saisirCode(autre, second)
+  await expect(autre.getByText('Déjà dans ta collection')).toBeVisible()
 })
