@@ -89,6 +89,7 @@ export const api = {
     requete<Canette>('/cans', { method: 'PUT', body: JSON.stringify(c) }),
   ajuster: (ean: string, delta: number) =>
     requete<Canette>(`/cans/${encodeURIComponent(ean)}/nb`, { method: 'PATCH', body: JSON.stringify({ delta }) }),
+  lire: (ean: string) => requete<Canette>(`/cans/${encodeURIComponent(ean)}`),
   supprimer: (ean: string) =>
     requete<void>(`/cans/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
   demande: (email: string) =>
@@ -112,6 +113,12 @@ export const api = {
     requete<void>(`/wiki/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
   wikiPhotoRemplacer: (ean: string, photo: string) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/photo`, { method: 'PUT', body: JSON.stringify({ photo }) }),
+  /** Donne le code-barres scanné à une fiche du Wiki qui n'avait qu'un code interne. */
+  wikiAssocierCode: (eanInterne: string, ean: string) =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(eanInterne)}/code-barres`, {
+      method: 'POST',
+      body: JSON.stringify({ ean }),
+    }),
   wikiPhotoRetirer: (ean: string) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/photo`, { method: 'DELETE' }),
   wikiPhoto: (ean: string, version: string) => photoLocale('wiki', ean, version),

@@ -332,6 +332,8 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
   margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 18px 0}
 .scan-entete .ean{font-family:var(--mono);font-size:12.5px;letter-spacing:.13em;color:var(--alu)}
 .scan-badge{align-self:flex-start;margin-top:18px}
+.scan-info{margin:16px 0 0;padding:10px 12px;border-radius:var(--r-md);background:rgba(158,232,24,.1);
+  border:1px solid var(--ligne-vive);color:var(--acide-vif);font-size:13.5px}
 .carte-scan{display:flex;gap:14px;align-items:center;margin-top:14px;padding:14px;background:var(--graphite);
   border:1px solid var(--ligne);border-radius:var(--r-lg)}
 .carte-scan-photo{position:relative;flex:0 0 88px;height:88px;border-radius:var(--r-md);overflow:hidden;

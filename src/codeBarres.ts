@@ -14,6 +14,12 @@ export function normaliserCodeBarres(code: string): string | null {
   return code.length === 12 ? `0${code}` : code
 }
 
+/**
+ * Code inventé (préfixe GS1 « 20 », usage interne) d'une fiche du Wiki dont on ignore le vrai code-barres ;
+ * un scan peut le remplacer par le vrai. Même règle que le serveur (CODE_INTERNE_RE).
+ */
+export const estCodeInterne = (code: string) => /^20\d{11}$/.test(code)
+
 /** Développe un UPC-E à 8 chiffres en UPC-A à 12 chiffres. */
 export function upcEVersUpcA(code: string): string | null {
   if (!/^[01]\d{7}$/.test(code)) return null

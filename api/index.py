@@ -70,6 +70,9 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
 PHOTO_RE = re.compile(r"^data:(image/(?:jpeg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$")
 CODE_LOCAL_RE = re.compile(r"^LOCAL-[A-Z0-9]{1,40}$")
+# Préfixe GS1 « 20 » (usage interne) : codes inventés pour les fiches du Wiki dont on ignore le vrai
+# code-barres (voir convert.py). Aucun produit du commerce ne le porte.
+CODE_INTERNE_RE = re.compile(r"^20[0-9]{11}$")
 
 
 def _photo_valide(photo: str) -> bool:
@@ -186,6 +189,10 @@ class FicheWiki(BaseModel):
     status: Literal["", "Active", "Stop", "Nouveauté"] = ""
     region: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
+
+
+class CodeBarres(BaseModel):
+    ean: str = Field(min_length=1, max_length=64)
 
 
 class PhotoFiche(BaseModel):
@@ -779,17 +786,48 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
         if r is None:
             raise HTTPException(404, "fiche inconnue")
         if nouvel_ean != ean:
-            # Les collections suivent la fiche ; un compte qui possède déjà le nouveau code garde ses deux lignes.
-            cx.execute(
-                "UPDATE collection c SET ean = %s, maj = %s WHERE c.ean = %s AND NOT EXISTS "
-                "(SELECT 1 FROM collection d WHERE d.user_id = c.user_id AND d.ean = %s)",
-                (nouvel_ean, maintenant(), ean, nouvel_ean),
-            )
-            cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (nouvel_ean,))
-            cx.execute(
-                "INSERT INTO wiki_exclus (ean, exclu) VALUES (%s, %s) ON CONFLICT (ean) DO NOTHING",
-                (ean, maintenant()),
-            )
+            _suivre_changement_de_code(cx, ean, nouvel_ean)
+    return _fiche(r)
+
+
+def _suivre_changement_de_code(cx: psycopg.Connection, ancien: str, nouveau: str) -> None:
+    """Après un changement de code d'une fiche : les collections suivent, l'ancien code n'est plus recréé."""
+    # Un compte qui possède déjà le nouveau code garde ses deux lignes.
+    cx.execute(
+        "UPDATE collection c SET ean = %s, maj = %s WHERE c.ean = %s AND NOT EXISTS "
+        "(SELECT 1 FROM collection d WHERE d.user_id = c.user_id AND d.ean = %s)",
+        (nouveau, maintenant(), ancien, nouveau),
+    )
+    cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (nouveau,))
+    cx.execute(
+        "INSERT INTO wiki_exclus (ean, exclu) VALUES (%s, %s) ON CONFLICT (ean) DO NOTHING",
+        (ancien, maintenant()),
+    )
+
+
+@router.post("/wiki/{ean}/code-barres")
+def wiki_associer_code(
+    ean: str, corps: CodeBarres, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Donne son vrai code-barres, scanné par un utilisateur, à une fiche qui n'avait qu'un code interne."""
+    nouveau = _normaliser_code(corps.ean.strip())
+    if nouveau is None or nouveau.startswith("LOCAL-") or CODE_INTERNE_RE.match(nouveau):
+        raise HTTPException(422, "code-barres invalide")
+    if not CODE_INTERNE_RE.match(ean):
+        raise HTTPException(409, "cette fiche a déjà un code-barres")
+    try:
+        with cx.transaction():
+            if cx.execute("SELECT 1 FROM wiki WHERE ean = %s", (nouveau,)).fetchone():
+                raise HTTPException(409, "ce code-barres est déjà dans le Wiki")
+            r = cx.execute(
+                f"UPDATE wiki SET ean = %s, maj = %s WHERE ean = %s RETURNING {COLONNES_FICHE}",
+                (nouveau, maintenant(), ean),
+            ).fetchone()
+            if r is None:
+                raise HTTPException(404, "fiche inconnue")
+            _suivre_changement_de_code(cx, ean, nouveau)
+    except psycopg.errors.UniqueViolation:  # deux associations simultanées du même code
+        raise HTTPException(409, "ce code-barres est déjà dans le Wiki") from None
     return _fiche(r)
 
 

@@ -12,6 +12,7 @@ function avecCle(corps: string): string {
   return `${corps}${(10 - (total % 10)) % 10}`
 }
 const ean13 = () => avecCle(`20${unique().slice(-10).padStart(10, '0')}`)
+const codeReel = () => avecCle(`3${unique().slice(-11).padStart(11, '0')}`) // hors préfixe interne 20
 const upcA = () => avecCle(`2${unique().slice(-10).padStart(10, '0')}`)
 
 const codes = (adresse: string) =>
@@ -215,4 +216,32 @@ test('une Nouveauté validée par le propriétaire affiche sa bannière dans le 
   await page.getByRole('button', { name: 'Fermer' }).click()
   const carte = page.locator('.carte-wiki').filter({ hasText: nom })
   await expect(carte.locator('.bandeau-nouveaute')).toBeVisible()
+})
+
+test('un scan donne son vrai code-barres à une fiche du Wiki qui n’en avait pas', async ({ page, browser }) => {
+  const nom = `Sans code ${unique()}`
+  const interne = ean13() // préfixe 20 : comme les fiches générées par convert.py
+  const reel = codeReel()
+  await connecter(page, email())
+  await ajouterParCode(page, interne, nom)
+
+  const autre = await nouvellePage(browser)
+  autre.on('dialog', (d) => d.accept())
+  await connecter(autre, email())
+  await saisirCode(autre, reel)
+  await autre.getByRole('button', { name: 'Ajouter au Wiki' }).click()
+  await autre.fill('#s-nom', nom.slice(0, 12))
+  await autre.getByRole('button', { name: 'Associer ce code-barres' }).click()
+  await expect(autre.getByText('Code-barres associé')).toBeVisible()
+  await autre.getByRole('button', { name: 'Pleine', exact: true }).click()
+
+  await nav(autre, 'Wiki').click()
+  await autre.getByText(nom).click()
+  await expect(autre.locator('.bandeau-info .ean')).toHaveText(reel)
+  // Le premier collectionneur a suivi : sa canette porte maintenant le vrai code.
+  await nav(page, 'Collection').click()
+  await page.reload()
+  await nav(page, 'Collection').click()
+  await page.getByText(nom).click()
+  await expect(page.locator('.ean')).toHaveText(reel)
 })

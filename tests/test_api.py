@@ -614,6 +614,52 @@ def test_seul_le_proprietaire_valide_une_nouveaute(env, monkeypatch):
     assert c.put("/api/cans", json=canette(status="Bientôt"), headers=ha).status_code == 422
 
 
+REELS = ("3017620422003", "0036000291452", "96385074")  # vrais codes du commerce, sans préfixe interne
+
+
+def _oublier_codes_reels():
+    with ix.base() as cx:
+        cx.execute("DELETE FROM wiki WHERE ean = ANY(%s)", (list(REELS),))
+        cx.execute("DELETE FROM wiki_exclus WHERE ean = ANY(%s)", (list(REELS),))
+
+
+def test_un_scan_donne_son_vrai_code_a_une_fiche_sans_code_barres(env, monkeypatch):
+    c, codes = env
+    _oublier_codes_reels()
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango Loco", nb=3, photo=PNG_1PX), headers=ha)  # code interne 20…
+
+    assert c.post("/api/wiki/2000000000015/code-barres", json={"ean": REELS[0]}).status_code == 401
+    r = c.post("/api/wiki/2000000000015/code-barres", json={"ean": " 036000291452 "}, headers=hb)  # UPC-A
+    assert r.status_code == 200 and r.json()["ean"] == REELS[1] and r.json()["nom"] == "Mango Loco"
+
+    assert fiche(c, hb, "2000000000015") is None
+    mienne = c.get(f"/api/cans/{REELS[1]}", headers=ha).json()  # la collection du propriétaire a suivi
+    assert mienne["nb"] == 3 and mienne["photo_version"]
+    c.put("/api/cans", json=canette(nom="Ancien code"), headers=hb)  # l'ancien code ne revient pas
+    assert fiche(c, hb, "2000000000015") is None
+    _oublier_codes_reels()
+
+
+def test_association_de_code_refusee(env, monkeypatch):
+    c, codes = env
+    _oublier_codes_reels()
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Sans code"), headers=ha)
+    c.put("/api/cans", json=canette(REELS[0], nom="Déjà réel"), headers=ha)
+
+    associer = lambda ean, code: c.post(f"/api/wiki/{ean}/code-barres", json={"ean": code}, headers=hb)  # noqa: E731
+    assert associer(REELS[0], REELS[2]).status_code == 409  # la fiche a déjà un vrai code
+    assert associer("2000000000015", REELS[0]).status_code == 409  # ce code est déjà dans le Wiki
+    for invalide in ("3017620422004", "2000000000022", "LOCAL-ABC", "123"):
+        assert associer("2000000000015", invalide).status_code == 422
+    assert associer("2000000000039", REELS[2]).status_code == 404  # fiche interne inconnue
+    assert fiche(c, hb, "2000000000015")["nom"] == "Sans code"
+    _oublier_codes_reels()
+
+
 # --- Wiki (catalogue partagé) ----------------------------------------------------
 
 PNG_1PX = (
