@@ -14,15 +14,6 @@ export default function Collection({ canettes, surOuvrir }: Props) {
   const [q, setQ] = useState('')
   const [tri, setTri] = useState<Tri>('recent')
 
-  const editions = useMemo(() => {
-    const m = new Map<string, number>()
-    canettes.forEach((c) => {
-      const e = c.edition || '—'
-      m.set(e, (m.get(e) ?? 0) + 1)
-    })
-    return [...m.entries()].sort((a, b) => b[1] - a[1])
-  }, [canettes])
-
   const vues = useMemo(() => {
     const t = q.trim().toLowerCase()
     const filtrees = canettes
@@ -40,10 +31,6 @@ export default function Collection({ canettes, surOuvrir }: Props) {
         <div className="stat">
           <b>{canettes.length}</b>
           <span>Références</span>
-        </div>
-        <div className="stat">
-          <b>{editions[0]?.[0] ?? '—'}</b>
-          <span>Édition n°1</span>
         </div>
       </div>
 
@@ -74,7 +61,7 @@ export default function Collection({ canettes, surOuvrir }: Props) {
               <div className="carte-corps">
                 <span className="nom">{c.nom || 'Sans nom'}</span>
                 <span className="meta">
-                  {c.edition || '—'} · {c.volume || '—'}{c.categorie ? ` · ${c.categorie}` : ''}
+                  {[c.volume, c.categorie].filter(Boolean).join(' · ') || '—'}
                 </span>
               </div>
             </button>

@@ -101,7 +101,7 @@ export default function Wiki({ surNonAutorise }: Props) {
                   {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
                 </div>
                 <div className="carte-corps">
-                  <span className="nom">{f.nom || 'Sans nom'}{f.edition ? ` - ${f.edition}` : ''}</span>
+                  <span className="nom">{f.nom || 'Sans nom'}</span>
                 </div>
               </button>
             ))}

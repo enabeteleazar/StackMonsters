@@ -107,10 +107,6 @@ export default function Verdict(p: Props) {
           <>
             <div className="meta-grille">
               <div className="meta-item">
-                <span>Version</span>
-                <b>{p.existante!.edition || '—'}</b>
-              </div>
-              <div className="meta-item">
                 <span>Volume</span>
                 <b>{p.existante!.volume || '—'}</b>
               </div>
@@ -350,7 +346,7 @@ function Formulaire({
                   return (
                     <div className="suggestion-wiki" key={fiche.ean}>
                       <span>
-                        <b>{fiche.nom}{fiche.edition ? ` - ${fiche.edition}` : ''}</b>
+                        <b>{fiche.nom}</b>
                         {fiche.volume && <small>{fiche.volume}</small>}
                       </span>
                       <button
@@ -371,27 +367,14 @@ function Formulaire({
             {erreurFiche && <p className="suggestions-wiki-erreur" role="alert">{erreurFiche}</p>}
           </div>
         )}
-        <div className={nouvelle ? '' : 'duo'}>
-          {!nouvelle && (
-            <div>
-              <label htmlFor="f-edition">Version</label>
-              <input
-                id="f-edition"
-                value={c.edition}
-                placeholder="Ultra White"
-                onChange={(e) => champ('edition', e.target.value)}
-              />
-            </div>
-          )}
-          <div>
-            <label htmlFor="f-volume">Volume</label>
-            <input
-              id="f-volume"
-              value={c.volume}
-              placeholder="500 ml"
-              onChange={(e) => champ('volume', e.target.value)}
-            />
-          </div>
+        <div>
+          <label htmlFor="f-volume">Volume</label>
+          <input
+            id="f-volume"
+            value={c.volume}
+            placeholder="500 ml"
+            onChange={(e) => champ('volume', e.target.value)}
+          />
         </div>
         {champsWiki && (
           <>
