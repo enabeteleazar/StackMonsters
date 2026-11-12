@@ -4,6 +4,7 @@ import { api, jeton, NonAutorise } from '../api'
 import { ficheSauvegarde } from '../sauvegarde'
 import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
 import { moteurNatif } from '../scanner'
+import LienInstagram from './LienInstagram'
 import type { Canette } from '../types'
 
 type Props = {
@@ -223,6 +224,7 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
           pas une sauvegarde de remplacement.
         </p>
       </div>
+      <LienInstagram />
     </section>
   )
 }

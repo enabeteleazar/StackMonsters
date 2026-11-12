@@ -1,4 +1,5 @@
 import { ArrowRight, BarChart3, LibraryBig, ScanLine, ShieldCheck } from 'lucide-react'
+import LienInstagram from './LienInstagram'
 
 type Props = {
   surConnexion: () => void
@@ -108,6 +109,7 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
           StackMonster est un projet indépendant, non affilié à Monster Energy et non édité par la marque.{' '}
           <a href="#confidentialite">Confidentialité</a>
         </p>
+        <LienInstagram />
       </main>
     </div>
   )

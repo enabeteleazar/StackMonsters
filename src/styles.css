@@ -162,6 +162,16 @@ main.large{max-width:1080px}
 .accueil-public-cta-bas:hover{color:var(--acide-vif)}
 .accueil-public-independance{margin:22px auto 0;padding-top:14px;border-top:1px solid var(--ligne);
   color:var(--alu-sombre);font-size:10px;line-height:1.5;text-align:center}
+/* Pied de page : lien Instagram bien visible, avec sa phrase d'accroche. */
+.pied-instagram{display:flex;flex-direction:column;align-items:center;gap:10px;margin:22px auto 0;
+  padding-top:18px;border-top:1px solid var(--ligne);text-align:center;max-width:420px}
+.pied-instagram > a{display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;
+  border-radius:16px;color:#fff;
+  background:radial-gradient(circle at 30% 107%,#fdf497 0%,#fdf497 5%,#fd5949 45%,#d6249f 60%,#285AEB 90%);
+  box-shadow:0 6px 18px -6px rgba(214,36,159,.6);transition:transform .15s var(--ease)}
+.pied-instagram > a:hover{transform:scale(1.06)}
+.pied-instagram p{margin:0;color:var(--alu);font-size:13px;line-height:1.5}
+.pied-instagram p a{color:var(--acide);font-weight:600;text-decoration:none}
 .attente-session{padding-top:22px;color:var(--alu);text-align:center;font-size:13px}
 .btn-retour-accueil{padding:12px!important;color:var(--alu);font-size:12px}
 @media (min-width:760px){
@@ -235,7 +245,7 @@ main.large{max-width:1080px}
 .scan-cta:active{transform:scale(.985)}
 .scan-cta svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,.25))}
 
-nav.nav-bas button.nav-scan{position:relative;color:var(--blanc)}
+nav.nav-bas button.nav-scan{position:relative;color:var(--blanc);justify-content:center}
 nav.nav-bas button.nav-scan .nav-scan-rond{
   width:46px;height:46px;border-radius:50%;
   background:radial-gradient(circle at 35% 30%,var(--acide-vif),var(--acide) 70%);
@@ -311,7 +321,7 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
   color:var(--acide);
 }
 
-.flux-recent{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;margin:0 -18px;padding-left:18px;padding-right:18px;scrollbar-width:none}
+.flux-recent{display:flex;justify-content:center;gap:10px;padding-bottom:4px}
 .flux-recent::-webkit-scrollbar{display:none}
 .flux-carte{
   flex:0 0 auto;width:104px;background:var(--graphite);border:1px solid var(--ligne);
@@ -602,10 +612,13 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 .reglages-ligne .valeur.ko{color:var(--alerte)}
 
 /* ============ navigation ============ */
+/* Toujours collée en bas de l'écran : propre calque (pas de saut au défilement sur iOS), et le clavier
+   la recouvre au lieu de la remonter (interactive-widget=resizes-visual dans index.html). */
 nav.nav-bas{
   position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;
   background:rgba(13,15,10,.92);backdrop-filter:blur(10px);
   border-top:1px solid var(--ligne);padding-bottom:env(safe-area-inset-bottom);
+  transform:translateZ(0);
 }
 nav.nav-bas button{
   flex:1;padding:11px 0 14px;display:flex;flex-direction:column;align-items:center;gap:4px;
