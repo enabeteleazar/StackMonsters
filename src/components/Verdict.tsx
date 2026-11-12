@@ -135,6 +135,12 @@ export default function Verdict(p: Props) {
                 <b>{p.existante!.nb}</b>
               </div>
             </div>
+            {p.existante!.description && (
+              <div className="fiche-description">
+                <span className="etiquette">Description</span>
+                <p>{p.existante!.description}</p>
+              </div>
+            )}
             {p.existante!.notes && <p className="sous">Notes : {p.existante!.notes}</p>}
 
             <div className="actions">
@@ -152,14 +158,17 @@ export default function Verdict(p: Props) {
                   if (fichier) void remplacerPhoto(fichier)
                 }}
               />
-              <button
-                className="btn btn-fantome"
-                disabled={occupe}
-                onClick={() => photoInput.current?.click()}
-              >
-                <ImagePlus size={18} />
-                {p.existante!.photo_version ? 'Remplacer la photo' : 'Ajouter une photo'}
-              </button>
+              {/* La photo du Wiki prime : une photo personnelle ne serait pas affichée. */}
+              {!p.existante!.photo_wiki && (
+                <button
+                  className="btn btn-fantome"
+                  disabled={occupe}
+                  onClick={() => photoInput.current?.click()}
+                >
+                  <ImagePlus size={18} />
+                  {p.existante!.photo_version ? 'Remplacer la photo' : 'Ajouter une photo'}
+                </button>
+              )}
               {erreurPhoto && <p className="sous" role="alert">{erreurPhoto}</p>}
               <button className="btn btn-fantome" onClick={() => setEdition(true)}>
                 Modifier la fiche
@@ -256,6 +265,8 @@ function Formulaire({
   const valeursWiki = nouvelle ? fiches?.find((fiche) => fiche.ean === ficheChoisie) : depart
   const verrouille = (k: 'categorie' | 'flavor' | 'status' | 'region') => !!valeursWiki?.[k]
   const champsVerrouilles = (['categorie', 'flavor', 'status', 'region'] as const).some(verrouille)
+  // Nom et volume affichés viennent du Wiki : les modifier ici n'aurait aucun effet visible.
+  const texteVerrouille = (k: 'nom' | 'volume') => !nouvelle && !!depart.dans_wiki && !!depart[k]
   // Le code n'est contrôlé qu'à la création : une fiche existante reste toujours modifiable.
   const codeBarresValide = !nouvelle || codeBarresLocal || normaliserCodeBarres(c.ean) !== null
   const codeBarresInvalide = nouvelle && !!c.ean && !codeBarresValide
@@ -321,6 +332,7 @@ function Formulaire({
             id="f-nom"
             value={c.nom}
             placeholder="Monster Mango Loco"
+            disabled={texteVerrouille('nom')}
             onChange={(e) => champ('nom', e.target.value)}
           />
         </div>
@@ -374,15 +386,16 @@ function Formulaire({
             id="f-volume"
             value={c.volume}
             placeholder="500 ml"
+            disabled={texteVerrouille('volume')}
             onChange={(e) => champ('volume', e.target.value)}
           />
         </div>
         {champsWiki && (
           <>
-            {champsVerrouilles && (
+            {(champsVerrouilles || texteVerrouille('nom')) && (
               <p className="sous">
-                Catégorie, saveur, statut et région viennent du Wiki partagé : seuls les champs encore vides
-                peuvent être complétés ici.
+                Nom, volume, catégorie, saveur, statut et région viennent du Wiki partagé : seuls les champs
+                encore vides peuvent être complétés ici.
               </p>
             )}
             <div>

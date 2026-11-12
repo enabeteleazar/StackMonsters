@@ -14,6 +14,12 @@ export type Canette = {
   photo?: string | null
   /** Marqueur de version de la photo (null : pas de photo). Les octets se chargent à part. */
   photo_version: string | null
+  /** Vrai quand la photo affichée est celle de la fiche du Wiki (la photo personnelle est alors masquée). */
+  photo_wiki?: boolean
+  /** Vrai quand la canette a une fiche dans le Wiki : nom, volume, description... en viennent. */
+  dans_wiki?: boolean
+  /** Description de la fiche du Wiki (lecture seule depuis la collection). */
+  description?: string
   ajout: string
 }
 

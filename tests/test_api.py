@@ -94,7 +94,7 @@ def test_chaque_utilisateur_ne_voit_que_sa_collection(env):
     assert c.get("/api/cans/2000000000015", headers=hb).status_code == 404
     assert c.delete("/api/cans/2000000000015", headers=hb).status_code == 404
     c.put("/api/cans", json=canette(nom="de B"), headers=hb)  # même EAN, autre propriétaire
-    assert c.get("/api/cans/2000000000015", headers=ha).json()["nom"] == "de A"
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["nom"] == "De A"
 
 
 def test_email_insensible_a_la_casse(env):
@@ -543,7 +543,7 @@ def test_suppression_de_compte_efface_ses_donnees_seulement(env):
     with ix.base() as cx:
         assert cx.execute("SELECT COUNT(*) AS n FROM users WHERE email = %s", (A,)).fetchone()["n"] == 0
         assert cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s", (A,)).fetchone()["n"] == 0
-    assert [x["nom"] for x in c.get("/api/cans", headers=hb).json()] == ["De B"]
+    assert [x["nom"] for x in c.get("/api/cans", headers=hb).json()] == ["Mango"]  # nom repris du Wiki
     assert fiche(c, hb, "2000000000015")["nom"] == "Mango"  # le Wiki, anonyme, reste
 
     h = connecter(c, codes, A)  # une nouvelle inscription repart de zéro
@@ -919,7 +919,7 @@ def test_wiki_changement_de_code_barres_garde_les_deux_lignes_d_un_compte(env, m
         )
     assert c.put("/api/wiki/2000000000015", json={"ean": "2000000000022", "nom": "M"}, headers=ha).status_code == 200
     noms = {x["ean"]: x["nom"] for x in c.get("/api/cans", headers=hb).json()}
-    assert noms == {"2000000000015": "Ancienne", "2000000000022": "Déjà là"}
+    assert noms == {"2000000000015": "Ancienne", "2000000000022": "M"}  # nom repris de la fiche du Wiki
 
 
 def test_wiki_fiche_supprimee_ne_reapparait_pas(env, monkeypatch, tmp_path):
@@ -1044,3 +1044,28 @@ def test_nom_majuscule_a_chaque_mot(saisi, attendu):
     assert ix.formater_nom(saisi) == attendu
     assert ix.Canette(ean="1", nom=saisi).nom == attendu
     assert ix.FicheWiki(nom=saisi).nom == attendu
+
+
+def test_la_collection_reprend_les_infos_du_wiki(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango", volume="500 ml", photo=PNG_1PX, notes="à moi"), headers=hb)
+    perso = c.get("/api/cans/2000000000015", headers=hb).json()
+    assert perso["photo_version"] and not perso["photo_wiki"] and perso["dans_wiki"]
+
+    corps = {"nom": "Mango Loco", "volume": "473 ml", "description": "Texte du Wiki."}
+    assert c.put("/api/wiki/2000000000015", json=corps, headers=ha).status_code == 200
+    assert c.put("/api/wiki/2000000000015/photo", json={"photo": PNG_1PX}, headers=ha).status_code == 200
+
+    r = c.get("/api/cans/2000000000015", headers=hb).json()
+    assert (r["nom"], r["volume"], r["description"], r["notes"]) == ("Mango Loco", "473 ml", "Texte du Wiki.", "à moi")
+    assert r["photo_wiki"] and r["photo_version"].startswith("wiki-")
+    assert c.get("/api/cans", headers=hb).json()[0]["nom"] == "Mango Loco"
+    assert c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=hb).json()["nom"] == "Mango Loco"
+    assert c.get("/api/cans/2000000000015/photo", headers=hb).status_code == 200
+
+    # Photo du Wiki retirée : la photo personnelle revient.
+    assert c.delete("/api/wiki/2000000000015/photo", headers=ha).status_code == 200
+    r = c.get("/api/cans/2000000000015", headers=hb).json()
+    assert r["photo_version"] and not r["photo_wiki"]

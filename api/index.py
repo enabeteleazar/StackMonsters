@@ -59,16 +59,17 @@ def _statut(prefixe: str) -> str:
     )
 
 
+# Une canette de la collection affiche les informations de sa fiche du Wiki (nom, édition, volume,
+# description, photo...). Ses propres valeurs ne servent que lorsque le Wiki n'en a pas
+# (canette LOCAL-, fiche retirée, champ vide). État, quantité et notes restent personnels.
 COLONNES_COLLECTION = (
-    "c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.ajout, "
-    "CASE WHEN c.photo IS NULL THEN NULL ELSE c.maj END AS photo_version, "
+    "c.ean, COALESCE(NULLIF(w.nom, ''), c.nom) AS nom, COALESCE(NULLIF(w.edition, ''), c.edition) AS edition, "
+    "COALESCE(NULLIF(w.volume, ''), c.volume) AS volume, c.etat, c.nb, c.notes, c.ajout, "
+    "CASE WHEN w.photo IS NOT NULL THEN 'wiki-' || w.maj WHEN c.photo IS NOT NULL THEN c.maj END AS photo_version, "
+    "COALESCE(w.photo IS NOT NULL, false) AS photo_wiki, (w.ean IS NOT NULL) AS dans_wiki, "
+    "COALESCE(w.description, '') AS description, "
     "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
     "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region"
-)
-# Réponses de l'API : les octets des photos sont servis à part (/cans/{ean}/photo).
-COLONNES_REPONSE = (
-    "ean, nom, edition, volume, etat, nb, notes, ajout, "
-    "CASE WHEN photo IS NULL THEN NULL ELSE maj END AS photo_version"
 )
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
 FENETRE_DEMANDES = 3600
@@ -575,18 +576,14 @@ def statistiques(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depend
     return {"utilisateurs": n_users, "references": t["refs"], "connexions_uniques": n_connexions}
 
 
-def _avec_infos_wiki(cx: psycopg.Connection, canette: dict) -> dict:
-    """Ajoute les champs descriptifs du Wiki ; une canette peut ne pas y figurer (LOCAL-, fiche retirée)."""
-    w = cx.execute(
-        f"SELECT categorie, gamme, flavor, {_statut('')} AS status, region FROM wiki WHERE ean = %s", (canette["ean"],),
-    ).fetchone() or {}
-    return {
-        **canette,
-        "categorie": w.get("categorie") or w.get("gamme") or "",
-        "flavor": w.get("flavor", ""),
-        "status": w.get("status", ""),
-        "region": w.get("region", ""),
-    }
+def _canette(cx: psycopg.Connection, user_id: int, ean: str) -> dict | None:
+    """Canette de la collection d'un compte, complétée par sa fiche du Wiki."""
+    return cx.execute(
+        f"SELECT {COLONNES_COLLECTION} "
+        "FROM collection c LEFT JOIN wiki w ON w.ean = c.ean "
+        "WHERE c.user_id = %s AND c.ean = %s",
+        (user_id, ean),
+    ).fetchone()
 
 
 @router.get("/cans")
@@ -603,12 +600,7 @@ def liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(conne
 @router.get("/cans/{ean}")
 def lire(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     with cx.transaction():
-        r = cx.execute(
-            f"SELECT {COLONNES_COLLECTION} "
-            "FROM collection c LEFT JOIN wiki w ON w.ean = c.ean "
-            "WHERE c.user_id = %s AND c.ean = %s",
-            (u["id"], ean),
-        ).fetchone()
+        r = _canette(cx, u["id"], ean)
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
@@ -616,9 +608,13 @@ def lire(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depe
 
 @router.get("/cans/{ean}/photo")
 def photo_canette(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> Response:
-    """Photo d'une canette de sa propre collection, chargée à la demande."""
+    """Photo d'une canette de sa propre collection, chargée à la demande : celle du Wiki en priorité."""
     with cx.transaction():
-        r = cx.execute("SELECT photo FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).fetchone()
+        r = cx.execute(
+            "SELECT COALESCE(w.photo, c.photo) AS photo FROM collection c LEFT JOIN wiki w ON w.ean = c.ean "
+            "WHERE c.user_id = %s AND c.ean = %s",
+            (u["id"], ean),
+        ).fetchone()
     m = PHOTO_RE.match(r["photo"]) if r and r["photo"] else None
     if not m:
         raise HTTPException(404, "photo inconnue")
@@ -688,28 +684,26 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                  statut, c.region.strip(),
                  int(time.time()) if statut == "Nouveauté" else None, maintenant(), maintenant()),
             )
-        enregistrement = cx.execute(
-            f"""INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
+        cx.execute(
+            """INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, ean) DO UPDATE SET
                   nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
                   nb=EXCLUDED.nb, notes=EXCLUDED.notes, maj=EXCLUDED.maj,
-                  photo = CASE WHEN %s THEN EXCLUDED.photo ELSE collection.photo END
-                RETURNING {COLONNES_REPONSE}""",
+                  photo = CASE WHEN %s THEN EXCLUDED.photo ELSE collection.photo END""",
             (u["id"], ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
              c.ajout or maintenant(), maintenant(), "photo" in c.model_fields_set),  # champ absent : photo conservée
-        ).fetchone()
-        return _avec_infos_wiki(cx, enregistrement)
+        )
+        return _canette(cx, u["id"], ean)
 
 
 @router.patch("/cans/{ean}/nb")
 def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     with cx.transaction():
-        r = cx.execute(
-            f"UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s RETURNING {COLONNES_REPONSE}",
-            (d.delta, maintenant(), u["id"], ean)).fetchone()
-        if r is not None:
-            r = _avec_infos_wiki(cx, r)
+        n = cx.execute(
+            "UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s",
+            (d.delta, maintenant(), u["id"], ean)).rowcount
+        r = _canette(cx, u["id"], ean) if n else None
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
