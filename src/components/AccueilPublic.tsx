@@ -1,4 +1,4 @@
-import { ArrowRight, BarChart3, LibraryBig, ScanLine, ShieldCheck } from 'lucide-react'
+import { ArrowRight, BarChart3, ScanLine, Trophy, UserRound, Zap } from 'lucide-react'
 import LienInstagram from './LienInstagram'
 
 type Props = {
@@ -6,6 +6,7 @@ type Props = {
   serviceIndisponible: boolean
 }
 
+/** Page d'accueil des visiteurs sans session : accroche, canette mise en scène, puis inscription. */
 export default function AccueilPublic({ surConnexion, serviceIndisponible }: Props) {
   return (
     <div className="accueil-public">
@@ -22,94 +23,71 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
 
       <main className="accueil-public-contenu">
         <section className="accueil-public-hero">
-          <span className="eyebrow">Le compagnon des collectionneurs</span>
-          <h1 className="accueil-public-titre">
-            Chaque canette
-            <span>raconte une histoire.</span>
-          </h1>
-          <p className="accueil-public-description">
-            Garde toute ta collection Monster à portée de main. Scanne, organise et retrouve tes
-            trouvailles où que tu sois.
-          </p>
-          {serviceIndisponible && (
-            <p className="accueil-public-alerte" role="status">
-              Le service est momentanément indisponible. Réessaie dans un instant.
-            </p>
-          )}
-          <button className="btn btn-primaire accueil-public-cta" onClick={surConnexion}>
-            Se connecter
-            <ArrowRight size={19} />
-          </button>
-          <p className="accueil-public-note">Connexion simple et sécurisée par e-mail</p>
+          <div className="accueil-public-texte">
+            <h1 className="accueil-public-description">
+              Compte, scanne et explore ta collection <b>Monster.</b>
+            </h1>
+            <span className="accueil-public-trait" aria-hidden="true" />
+            <ul className="accueil-public-fonctions">
+              <li>
+                <ScanLine size={30} strokeWidth={1.8} />
+                Scanne tes canettes
+              </li>
+              <li>
+                <BarChart3 size={30} strokeWidth={1.8} />
+                Découvre ta collection
+              </li>
+              <li>
+                <Trophy size={30} strokeWidth={1.8} />
+                Suis tes statistiques
+              </li>
+            </ul>
+          </div>
+
+          <figure className="accueil-public-canette" aria-hidden="true">
+            <span className="accueil-public-fumee" />
+            <span className="accueil-public-canette-cadre">
+              <img src="/images/monster-mega-detouree.webp" alt="" width={200} height={579} />
+            </span>
+            <span className="accueil-public-sol" />
+          </figure>
         </section>
 
-        <section className="accueil-public-apercu" aria-label="Fonctionnalités de StackMonster">
-          <div className="accueil-public-apercu-tete">
-            <span className="accueil-public-pastille"><ScanLine size={17} /> Monster Mega</span>
-            <span className="accueil-public-lueur" aria-hidden="true" />
-          </div>
-          <div className="accueil-public-galerie">
-            <figure>
-              <img src="/images/monster-mega.jpg" alt="Canette Monster Energy Mega sur fond noir" />
-              <figcaption>
-                <b>Monster Mega</b>
-                <a href="https://commons.wikimedia.org/wiki/File:Monster_Energy_Mega_can.jpg" target="_blank" rel="noreferrer">
-                  Photo : DYVER
-                </a>
-              </figcaption>
-            </figure>
-          </div>
-          <div className="accueil-public-apercu-pied">
-            <div>
-              <span>Ta prochaine trouvaille</span>
-              <b>À ajouter à la collection</b>
-            </div>
-            <ScanLine size={21} />
-          </div>
-          <p className="accueil-public-licence">
-            Photo sous licence{' '}
+        {serviceIndisponible && (
+          <p className="accueil-public-alerte" role="status">
+            Le service est momentanément indisponible. Réessaie dans un instant.
+          </p>
+        )}
+
+        <div className="accueil-public-action">
+          <button className="accueil-public-cta" onClick={surConnexion}>
+            <UserRound size={26} strokeWidth={1.8} />
+            <span className="accueil-public-cta-separateur" aria-hidden="true" />
+            Entrez
+            <ArrowRight size={24} />
+          </button>
+        </div>
+
+        <footer className="accueil-public-pied">
+          <p className="accueil-public-signature">
+            <Zap size={22} />
+            <b>StackMonster</b>
+            <span>— Ta collection Monster, au même endroit.</span>
+          </p>
+          <LienInstagram />
+          <p className="accueil-public-independance">
+            StackMonster est un projet indépendant, non affilié à Monster Energy et non édité par la marque.
+            Photo (détourée) :{' '}
+            <a href="https://commons.wikimedia.org/wiki/File:Monster_Energy_Mega_can.jpg" target="_blank" rel="noreferrer">
+              DYVER
+            </a>
+            ,{' '}
             <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">
               CC BY-SA 4.0
             </a>
+            . <a href="#confidentialite">Confidentialité</a>
           </p>
-        </section>
-
-        <section className="accueil-public-fonctions">
-          <article>
-            <ScanLine size={22} />
-            <h2>Scanne</h2>
-            <p>Ajoute une canette en quelques secondes grâce au code-barres.</p>
-          </article>
-          <article>
-            <LibraryBig size={22} />
-            <h2>Organise</h2>
-            <p>Retrouve tes références et variantes dans un seul espace.</p>
-          </article>
-          <article>
-            <BarChart3 size={22} />
-            <h2>Progresse</h2>
-            <p>Visualise ta collection et suis tes nouvelles trouvailles.</p>
-          </article>
-          <article>
-            <ShieldCheck size={22} />
-            <h2>Protège</h2>
-            <p>Ta collection reste privée et accessible uniquement après connexion.</p>
-          </article>
-        </section>
-
-        <p className="accueil-public-prive">
-          <ShieldCheck size={17} />
-          Ta collection reste privée et accessible uniquement après connexion.
-        </p>
-
-        <button className="accueil-public-cta-bas" onClick={surConnexion}>
-          Accéder à ma collection <ArrowRight size={18} />
-        </button>
-        <p className="accueil-public-independance">
-          StackMonster est un projet indépendant, non affilié à Monster Energy et non édité par la marque.{' '}
-          <a href="#confidentialite">Confidentialité</a>
-        </p>
-        <LienInstagram />
+        </footer>
       </main>
     </div>
   )
