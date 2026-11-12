@@ -7,12 +7,12 @@ export default function PiedPublic() {
     <footer className="accueil-public-pied">
       <p className="accueil-public-signature">
         <Zap size={22} />
-        <b>StackMonster</b>
+        <b>StackMonsters</b>
         <span>—{' '}Ta collection Monster, au même endroit.</span>
       </p>
       <LienInstagram />
       <p className="accueil-public-independance">
-        StackMonster est un projet indépendant, non affilié à Monster Energy et non édité par la marque.
+        StackMonsters est un projet indépendant, non affilié à Monster Energy et non édité par la marque.
         Photo (détourée) :{' '}
         <a href="https://commons.wikimedia.org/wiki/File:Monster_Energy_Mega_can.jpg" target="_blank" rel="noreferrer">
           DYVER

@@ -96,7 +96,7 @@ export default function Acces({ surValider, surRetour, refuse }: Props) {
             <img src="/favicon.svg" alt="" />
           </span>
           <div className="logo-marque">
-            Stack<em>Monster</em>
+            Stack<em>Monsters</em>
           </div>
         </div>
       </header>

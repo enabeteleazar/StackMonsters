@@ -1,4 +1,4 @@
-// Suivi du trafic vers le tableau de bord StackMonster (via ntfy.sh).
+// Suivi du trafic vers le tableau de bord StackMonsters (via ntfy.sh).
 // Actif seulement en production et si VITE_TRACK_TOPIC est défini (Vercel → Environment Variables).
 // Rien ne part sans consentement. Pour ne pas compter vos propres visites : localStorage.setItem('sm_ignore', '1')
 

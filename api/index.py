@@ -1,4 +1,4 @@
-"""API StackMonster (Vercel) : connexion par e-mail + code, collection par utilisateur.
+"""API StackMonsters (Vercel) : connexion par e-mail + code, collection par utilisateur.
 
 Flux : POST /auth/demande {email} envoie un code à 6 chiffres ; POST /auth/verification
 {email, code} renvoie un jeton de session (30 jours). Toutes les autres routes exigent
@@ -422,9 +422,9 @@ def envoyer_code(email: str, code: str) -> None:
             return
         raise HTTPException(503, "envoi d'e-mail non configuré")
     corps = {
-        "from": os.environ.get("MAIL_FROM", "StackMonster <onboarding@resend.dev>"),
+        "from": os.environ.get("MAIL_FROM", "StackMonsters <onboarding@resend.dev>"),
         "to": [email],
-        "subject": f"Ton code StackMonster : {code}",
+        "subject": f"Ton code StackMonsters : {code}",
         "text": f"Ton code de connexion : {code}\nIl est valable 10 minutes. Si tu n'es pas à l'origine de cette demande, ignore ce message.",
     }
     req = urllib.request.Request(
@@ -1012,7 +1012,7 @@ def wiki_supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connect
     return Response(status_code=204)
 
 
-app = FastAPI(title="StackMonster", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="StackMonsters", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
 for r in (auth, router):  # avec et sans le préfixe /api (selon ce que Vercel transmet)
     app.include_router(r)
     app.include_router(r, prefix="/api")

@@ -1,6 +1,6 @@
 {
-  "name": "StackMonster",
-  "short_name": "StackMonster",
+  "name": "StackMonsters",
+  "short_name": "StackMonsters",
   "description": "Scanne et collectionne tes canettes.",
   "start_url": "/",
   "scope": "/",

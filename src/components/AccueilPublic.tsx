@@ -16,7 +16,7 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
             <img src="/favicon.svg" alt="" />
           </span>
           <div className="logo-marque">
-            Stack<em>Monster</em>
+            Stack<em>Monsters</em>
           </div>
         </div>
       </header>

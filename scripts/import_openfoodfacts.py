@@ -25,7 +25,7 @@ FIELDS = (
     "quantity,ingredients_text,ingredients_text_en,nutriments,nutriscore_grade,"
     "nova_group,ecoscore_grade,image_url,url,last_modified_t"
 )
-USER_AGENT = "StackMonster catalog importer/1.0 (Open Food Facts API client)"
+USER_AGENT = "StackMonsters catalog importer/1.0 (Open Food Facts API client)"
 MAX_PRODUCTS = 20_000
 
 

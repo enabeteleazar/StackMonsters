@@ -2,8 +2,8 @@
 """Reprend une collection existante dans la base Postgres (Neon).
 
     DATABASE_URL=postgresql://... python scripts/migrer.py /var/lib/canstack/canstack.db
-    DATABASE_URL=postgresql://... python scripts/migrer.py stackmonster-2026-11-01.json
-    DATABASE_URL=postgresql://... python scripts/migrer.py stackmonster-2026-11-01.json --email moi@exemple.fr
+    DATABASE_URL=postgresql://... python scripts/migrer.py stackmonsters-2026-11-01.json
+    DATABASE_URL=postgresql://... python scripts/migrer.py stackmonsters-2026-11-01.json --email moi@exemple.fr
 
 - un fichier .db : la base SQLite de l'ancienne version auto-hébergée (fidèle, photos et dates comprises) ;
 - un fichier .json : la « Sauvegarde JSON » de l'écran Réglages.

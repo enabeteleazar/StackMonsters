@@ -1,4 +1,4 @@
-# StackMonster — Project board
+# StackMonsters — Project board
 
 > Vue de suivi statique dans le dépôt. Pour déplacer une carte, modifier sa section et synchroniser le statut de l'Issue GitHub.
 > Le GitHub Project natif n'a pas pu être créé avec les opérations disponibles dans cette connexion.

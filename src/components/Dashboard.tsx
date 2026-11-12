@@ -55,7 +55,7 @@ export default function Dashboard({
         ))}
       </div>
       <span className="eyebrow">
-        StackMonster · {nomUtilisateur ? `Bonjour, ${nomUtilisateur}` : 'Collection'}
+        StackMonsters · {nomUtilisateur ? `Bonjour, ${nomUtilisateur}` : 'Collection'}
       </span>
       <h1 className="tb-titre">
         Ta collection

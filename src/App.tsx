@@ -190,7 +190,7 @@ export default function App() {
           <div className="logo">
             <Logo />
             <div className="logo-marque">
-              Stack<em>Monster</em>
+              Stack<em>Monsters</em>
             </div>
           </div>
         </header>
@@ -226,7 +226,7 @@ export default function App() {
         <div className="logo">
           <Logo />
           <div className="logo-marque">
-            Stack<em>Monster</em>
+            Stack<em>Monsters</em>
           </div>
         </div>
       </header>

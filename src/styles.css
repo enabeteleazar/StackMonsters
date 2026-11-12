@@ -1,5 +1,5 @@
 /* ============================================================
-   StackMonster — design system
+   StackMonsters — design system
    Identité Monster Energy : noir profond, vert fluo en accent,
    anthracite, blanc. Le vert reste un accent, jamais un fond.
    ============================================================ */
@@ -744,4 +744,6 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .seulement-mobile-marque{margin:0;font:700 22px var(--display);text-transform:uppercase;letter-spacing:.16em}
 .seulement-mobile-marque em{font-style:normal;color:var(--acide)}
 .seulement-mobile h1{margin:8px 0 0;font:600 italic clamp(26px,3vw,40px)/1.2 "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
-.seulement-mobile p:last-child{margin:0;color:var(--alu);font-size:15px}
+.seulement-mobile-conseil{margin:0;color:var(--alu);font-size:15px}
+.seulement-mobile .pied-instagram{margin-top:18px;padding-top:18px}
+.seulement-mobile .pied-instagram p{font-size:14px}

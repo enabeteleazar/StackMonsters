@@ -7,9 +7,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="StackMonster">
+  <meta name="apple-mobile-web-app-title" content="StackMonsters">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <title>StackMonster — collection Monster</title>
+  <title>StackMonsters — collection Monster</title>
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/icon-180.png" />
 </head>
@@ -17,9 +17,11 @@
   <!-- Affiché seulement sur ordinateur (voir .seulement-mobile dans src/styles.css) : l'appli est faite pour mobile et tablette. -->
   <div class="seulement-mobile" hidden>
     <img src="/favicon.svg" alt="" width="64" height="64">
-    <p class="seulement-mobile-marque">Stack<em>Monster</em></p>
+    <p class="seulement-mobile-marque">Stack<em>Monsters</em></p>
     <h1>Site développé pour mobile</h1>
-    <p>Ouvre StackMonster sur ton téléphone ou ta tablette.</p>
+    <p class="seulement-mobile-conseil">Ouvre StackMonsters sur ton téléphone ou ta tablette.</p>
+    <!-- Phrase et lien Instagram, ajoutés par src/main.tsx (adresse lue dans VITE_INSTAGRAM_URL). -->
+    <div id="instagram-ordinateur"></div>
   </div>
   <div id="racine"></div>
   <script type="module" src="/src/main.tsx"></script>

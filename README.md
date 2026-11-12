@@ -1,4 +1,4 @@
-# StackMonster
+# StackMonsters
 
 PWA de collection de canettes : scan du code-barres, fiche, compteur, photo.
 Front React + TypeScript (Vite), API FastAPI (`api/index.py`), Postgres (Neon), Vercel.
