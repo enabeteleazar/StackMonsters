@@ -512,6 +512,13 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 }
 @media (min-width:560px){.grille-collection{grid-template-columns:repeat(3,1fr)}}
 @media (min-width:900px){.grille-collection{grid-template-columns:repeat(4,1fr)}}
+/* Collection en liste : petite photo à gauche, nom à droite. */
+.liste-collection{display:flex;flex-direction:column;gap:8px}
+.carte-canette.carte-ligne{flex-direction:row;align-items:center;padding:0;border-radius:var(--r-md);min-height:72px}
+.carte-canette.carte-ligne .carte-photo{flex:0 0 72px;width:72px;height:72px;aspect-ratio:auto;align-self:stretch}
+.carte-ligne .carte-corps{flex:1;min-width:0;padding:10px 14px}
+.carte-ligne .carte-corps .nom{font-size:15px}
+.carte-canette.carte-ligne:hover{transform:none}
 
 .carte-canette{
   background:linear-gradient(165deg,var(--graphite-clair),var(--graphite));

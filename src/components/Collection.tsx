@@ -52,17 +52,14 @@ export default function Collection({ canettes, surOuvrir }: Props) {
       </div>
 
       {vues.length ? (
-        <div className="grille-collection">
+        <div className="liste-collection">
           {vues.map((c) => (
-            <button key={c.ean} className="carte-canette" onClick={() => surOuvrir(c.ean)}>
+            <button key={c.ean} className="carte-canette carte-ligne" onClick={() => surOuvrir(c.ean)}>
               <div className="carte-photo">
                 <PhotoWiki source="collection" ean={c.ean} version={c.photo_version} />
               </div>
               <div className="carte-corps">
                 <span className="nom">{c.nom || 'Sans nom'}</span>
-                <span className="meta">
-                  {[c.volume, c.categorie].filter(Boolean).join(' · ') || '—'}
-                </span>
               </div>
             </button>
           ))}
