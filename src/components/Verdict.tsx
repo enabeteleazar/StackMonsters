@@ -53,36 +53,45 @@ export default function Verdict(p: Props) {
   }
 
   return (
-    <div className="verdict">
-      <div className="photo-hero">
-        {!edition && p.existante?.photo_version ? (
-          <PhotoWiki
-            source="collection"
-            ean={p.existante.ean}
-            version={p.existante.photo_version}
-            taille={34}
-            legende="Pas de photo"
-          />
-        ) : (
-          <div className="ph-vide">
-            <ImageOff size={34} />
-            <span>Pas de photo</span>
-          </div>
-        )}
+    <div className={`verdict${connue ? '' : ' verdict-sans-photo'}`}>
+      {/* Nouvelle canette : pas d'espace photo en haut, seulement le bouton de fermeture. */}
+      {!connue && (
         <button className="btn-icone fermer" onClick={p.surFermeture} aria-label="Fermer">
           <X size={20} />
         </button>
-        {!edition && (
-          <span className={`badge ${connue ? 'badge-possede' : 'badge-nouveau'} badge-etat`}>
-            {connue ? <CheckCircle2 size={13} /> : <Sparkles size={13} />}
-            {connue ? 'Possédée' : 'Nouvelle'}
-          </span>
-        )}
-      </div>
+      )}
+      {connue && (
+        <div className="photo-hero">
+          {!edition && p.existante?.photo_version ? (
+            <PhotoWiki
+              source="collection"
+              ean={p.existante.ean}
+              version={p.existante.photo_version}
+              taille={34}
+              legende="Pas de photo"
+            />
+          ) : (
+            <div className="ph-vide">
+              <ImageOff size={34} />
+              <span>Pas de photo</span>
+            </div>
+          )}
+          <button className="btn-icone fermer" onClick={p.surFermeture} aria-label="Fermer">
+            <X size={20} />
+          </button>
+          {!edition && (
+            <span className={`badge ${connue ? 'badge-possede' : 'badge-nouveau'} badge-etat`}>
+              {connue ? <CheckCircle2 size={13} /> : <Sparkles size={13} />}
+              {connue ? 'Possédée' : 'Nouvelle'}
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="verdict-scroll">
         <div className="bandeau-info">
-          <div className="ean">{eanAffiche}</div>
+          {/* Un code LOCAL- n'est qu'un identifiant technique : il n'est jamais montré. */}
+          {!eanAffiche.startsWith('LOCAL-') && <div className="ean">{eanAffiche}</div>}
           <h2>{titre}</h2>
           {!edition && (
             <p>
@@ -309,23 +318,26 @@ function Formulaire({
   return (
     <>
       <div className="champs">
-        <div>
-          <label htmlFor="f-code-barres">Code-barres</label>
-          <input
-            id="f-code-barres"
-            value={c.ean}
-            readOnly={!nouvelle}
-            inputMode="numeric"
-            maxLength={64}
-            aria-label="Code-barres de la canette"
-            onChange={(e) => {
-              const ean = e.target.value.trim()
-              champ('ean', ean)
-              setFicheChoisie(null)
-              surSelectionFiche(ean)
-            }}
-          />
-        </div>
+        {/* Canette sans code-barres : pas de champ, le code est tiré du nom à l'enregistrement. */}
+        {!c.ean.startsWith('LOCAL-') && (
+          <div>
+            <label htmlFor="f-code-barres">Code-barres</label>
+            <input
+              id="f-code-barres"
+              value={c.ean}
+              readOnly={!nouvelle}
+              inputMode="numeric"
+              maxLength={64}
+              aria-label="Code-barres de la canette"
+              onChange={(e) => {
+                const ean = e.target.value.trim()
+                champ('ean', ean)
+                setFicheChoisie(null)
+                surSelectionFiche(ean)
+              }}
+            />
+          </div>
+        )}
         <div>
           <label htmlFor="f-nom">Nom</label>
           <input

@@ -428,6 +428,10 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 .indice{font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;
   font-size:12.5px;text-shadow:0 1px 6px #000}
 .fermer{position:absolute;top:calc(14px + env(safe-area-inset-top));right:16px;z-index:2}
+/* Saisie du code à la main, en bas de l'écran caméra (code illisible ou caméra indisponible). */
+.camera-manuel{position:absolute;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:2;
+  margin:0;max-width:480px;margin-inline:auto}
+.camera-manuel input{flex:1;min-width:0}
 
 /* ============ verdict / fiche produit ============ */
 .verdict{position:fixed;inset:0;z-index:50;background:var(--abysse);display:flex;
@@ -451,6 +455,8 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 .photo-hero .badge-etat{position:absolute;left:18px;bottom:16px}
 
 .bandeau-info{padding:18px 0 6px}
+/* Sans photo en haut : le titre descend sous le bouton de fermeture. */
+.verdict-sans-photo .bandeau-info{padding-top:calc(64px + env(safe-area-inset-top))}
 .bandeau-info .ean{font-family:var(--mono);font-size:12.5px;letter-spacing:.13em;color:var(--alu)}
 .bandeau-info h2{
   font-family:var(--impact);font-weight:400;text-transform:uppercase;
