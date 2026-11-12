@@ -1,6 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { PlusCircle, ScanLine } from 'lucide-react'
-import { normaliserCodeBarres } from '../codeBarres'
 import type { Canette } from '../types'
 import PhotoWiki from './PhotoWiki'
 
@@ -10,7 +9,6 @@ type Props = {
   surScanner: () => void
   surAjouter: () => void
   surOuvrir: (ean: string) => void
-  surCodeManuel: (ean: string) => void
 }
 
 function estCeMois(iso: string) {
@@ -25,10 +23,7 @@ export default function Dashboard({
   surScanner,
   surAjouter,
   surOuvrir,
-  surCodeManuel,
 }: Props) {
-  const [saisie, setSaisie] = useState('')
-  const codeManuel = normaliserCodeBarres(saisie.trim())
 
   const rayures = useMemo(
     () =>
@@ -97,27 +92,6 @@ export default function Dashboard({
         <button className="raccourci" onClick={surAjouter}>
           <PlusCircle size={22} />
           <span>Ajouter sans code-barres</span>
-        </button>
-      </div>
-
-      <div className="manuel">
-        <input
-          value={saisie}
-          name="code-manuel"
-          inputMode="numeric"
-          placeholder="Code saisi à la main"
-          aria-label="Code saisi à la main"
-          onChange={(e) => setSaisie(e.target.value)}
-        />
-        <button
-          disabled={!codeManuel}
-          onClick={() => {
-            if (!codeManuel) return
-            setSaisie('')
-            surCodeManuel(codeManuel)
-          }}
-        >
-          OK
         </button>
       </div>
 

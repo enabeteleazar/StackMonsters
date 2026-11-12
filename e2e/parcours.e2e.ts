@@ -37,6 +37,7 @@ const nav = (page: Page, nom: string) => page.locator('nav.nav-bas').getByRole('
 
 async function saisirCode(page: Page, code: string) {
   await nav(page, 'Accueil').click()
+  await page.getByRole('button', { name: 'Scan canette' }).click()
   await page.getByLabel('Code saisi à la main').fill(code)
   await page.getByRole('button', { name: 'OK', exact: true }).click()
 }

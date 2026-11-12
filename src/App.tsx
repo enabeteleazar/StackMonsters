@@ -252,7 +252,6 @@ export default function App() {
             surScanner={() => setCamera(true)}
             surAjouter={ajouterSansCode}
             surOuvrir={ouvrirFiche}
-            surCodeManuel={ouvrirScan}
           />
         )}
         {vue === 'collec' && <Collection canettes={canettes} surOuvrir={ouvrirFiche} />}
