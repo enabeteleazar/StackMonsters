@@ -43,7 +43,7 @@ export default function Dashboard({
   }, [canettes])
 
   const recentes = useMemo(
-    () => [...canettes].sort((a, b) => b.ajout.localeCompare(a.ajout)).slice(0, 8),
+    () => [...canettes].sort((a, b) => b.ajout.localeCompare(a.ajout)).slice(0, 3),
     [canettes],
   )
 
