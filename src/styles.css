@@ -443,6 +443,8 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
   display:flex;align-items:center;justify-content:center;overflow:hidden;
 }
 .photo-hero img{width:100%;height:100%;object-fit:contain;padding:22px}
+.photo-hero-plein{margin:0}
+.photo-hero-plein img{object-fit:cover;padding:0}
 .photo-hero .ph-vide{color:var(--alu-sombre);display:flex;flex-direction:column;align-items:center;gap:8px;
   font-family:var(--display);text-transform:uppercase;font-size:11.5px;letter-spacing:.08em}
 .photo-hero .fermer{position:absolute;top:calc(14px + env(safe-area-inset-top));right:16px}
@@ -537,6 +539,7 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 /* ============ wiki (catalogue partagé) ============ */
 .photo-wiki{position:relative;flex:1;align-self:stretch;min-width:0;display:flex;align-items:center;justify-content:center}
 .photo-wiki img{position:absolute;inset:0}
+.carte-wiki{padding:0}
 .carte-wiki .carte-corps .nom{
   white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
   min-height:2.3em;

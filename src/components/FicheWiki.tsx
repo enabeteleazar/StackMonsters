@@ -84,7 +84,7 @@ export default function FicheWiki({
 
   return (
     <div className="verdict" role="dialog" aria-modal="true" aria-label={fiche.nom || 'Fiche de canette'}>
-      <div className="photo-hero">
+      <div className="photo-hero photo-hero-plein">
         <PhotoWiki ean={fiche.ean} version={fiche.photo} taille={34} legende="Pas de photo" />
         {fiche.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
         <button className="btn-icone fermer" onClick={surFermeture} aria-label="Fermer">
