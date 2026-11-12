@@ -1,5 +1,5 @@
-import { ArrowRight, BarChart3, ScanLine, Trophy, UserRound, Zap } from 'lucide-react'
-import LienInstagram from './LienInstagram'
+import { ArrowRight, BarChart3, ScanLine, Trophy, UserRound } from 'lucide-react'
+import PiedPublic from './PiedPublic'
 
 type Props = {
   surConnexion: () => void
@@ -68,27 +68,9 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
           </button>
         </div>
 
-        <footer className="accueil-public-pied">
-          <p className="accueil-public-signature">
-            <Zap size={22} />
-            <b>StackMonster</b>
-            <span>— Ta collection Monster, au même endroit.</span>
-          </p>
-          <LienInstagram />
-          <p className="accueil-public-independance">
-            StackMonster est un projet indépendant, non affilié à Monster Energy et non édité par la marque.
-            Photo (détourée) :{' '}
-            <a href="https://commons.wikimedia.org/wiki/File:Monster_Energy_Mega_can.jpg" target="_blank" rel="noreferrer">
-              DYVER
-            </a>
-            ,{' '}
-            <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer">
-              CC BY-SA 4.0
-            </a>
-            . <a href="#confidentialite">Confidentialité</a>
-          </p>
-        </footer>
       </main>
+
+      <PiedPublic />
     </div>
   )
 }

@@ -212,23 +212,11 @@ export default function App() {
 
   if (etatAcces === 'connexion') {
     return (
-      <>
-        <header>
-          <div className="logo">
-            <Logo />
-            <div className="logo-marque">
-              Stack<em>Monster</em>
-            </div>
-          </div>
-        </header>
-        <main>
-          <Acces
-            refuse={refuse}
-            surValider={apresConnexion}
-            surRetour={() => setEtatAcces('accueil')}
-          />
-        </main>
-      </>
+      <Acces
+        refuse={refuse}
+        surValider={apresConnexion}
+        surRetour={() => setEtatAcces('accueil')}
+      />
     )
   }
 

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ArrowLeft, ArrowRight, KeyRound, Mail } from 'lucide-react'
 import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 import { suivre } from '../suivi'
 
@@ -78,68 +79,102 @@ export default function Acces({ surValider, surRetour, refuse }: Props) {
     }
   }
 
+  const etapeCode = etape === 'code'
+  const information =
+    message ||
+    (etapeCode
+      ? `Code envoyé à ${email}. Il est valable 10 minutes.`
+      : refuse
+        ? 'Ta session a expiré. Reconnecte-toi avec ton e-mail.'
+        : 'Entre ton e-mail : tu recevras un code à 6 chiffres.')
+
   return (
-    <section className="tableau-bord">
-      <span className="eyebrow">StackMonster</span>
-      <h1 className="tb-titre">
-        Connexion
-        <span>par e-mail</span>
-      </h1>
-      <p className="sous">
-        {message ||
-          (etape === 'email'
-            ? refuse
-              ? 'Ta session a expiré. Reconnecte-toi avec ton e-mail.'
-              : 'Entre ton e-mail : tu recevras un code à 6 chiffres.'
-            : `Code envoyé à ${email}. Il est valable 10 minutes.`)}
-      </p>
-      <div className="champs">
-        {etape === 'email' ? (
-          <div>
-            <label htmlFor="f-email">E-mail</label>
-            <input
-              id="f-email"
-              type="email"
-              inputMode="email"
-              autoComplete="email"
-              autoCapitalize="off"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && demander()}
-            />
+    <div className="connexion">
+      <header className="accueil-public-entete">
+        <div className="logo">
+          <span className="accueil-public-marque">
+            <img src="/favicon.svg" alt="" />
+          </span>
+          <div className="logo-marque">
+            Stack<em>Monster</em>
           </div>
-        ) : (
-          <div>
-            <label htmlFor="f-code">Code</label>
-            <input
-              id="f-code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-              onKeyDown={(e) => e.key === 'Enter' && verifier()}
-            />
-          </div>
-        )}
-      </div>
-      <div className="actions">
-        <button
-          className="btn btn-primaire actions-principal"
-          disabled={occupe}
-          onClick={etape === 'email' ? demander : verifier}
-        >
-          {etape === 'email' ? 'Recevoir le code' : 'Se connecter'}
-        </button>
-        {etape === 'code' && (
-          <button className="btn" onClick={() => { setEtape('email'); setCode(''); setMessage('') }}>
-            Changer d&rsquo;e-mail
+        </div>
+      </header>
+
+      <main className="connexion-contenu">
+        <span className="connexion-fumee" aria-hidden="true" />
+        <h1 className="connexion-titre">
+          Connexion <b>par e-mail.</b>
+        </h1>
+        <span className="accueil-public-trait" aria-hidden="true" />
+
+        <ol className="connexion-etapes" aria-label="Étapes de connexion">
+          <li aria-current={!etapeCode ? 'step' : undefined}>
+            <Mail size={16} /> E-mail
+          </li>
+          <li aria-current={etapeCode ? 'step' : undefined}>
+            <KeyRound size={16} /> Code
+          </li>
+        </ol>
+
+        <div className="connexion-carte">
+          <p className={message ? 'connexion-info connexion-info-alerte' : 'connexion-info'} role={message ? 'alert' : undefined}>
+            {information}
+          </p>
+          {etapeCode ? (
+            <div className="connexion-champ">
+              <label htmlFor="f-code">Code reçu</label>
+              <input
+                id="f-code"
+                className="connexion-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                placeholder="••••••"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                onKeyDown={(e) => e.key === 'Enter' && verifier()}
+              />
+            </div>
+          ) : (
+            <div className="connexion-champ">
+              <label htmlFor="f-email">E-mail</label>
+              <input
+                id="f-email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                autoCapitalize="off"
+                placeholder="toi@exemple.fr"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && demander()}
+              />
+            </div>
+          )}
+
+          <button
+            className="accueil-public-cta connexion-cta"
+            disabled={occupe}
+            onClick={etapeCode ? verifier : demander}
+          >
+            {etapeCode ? <KeyRound size={22} strokeWidth={1.8} /> : <Mail size={22} strokeWidth={1.8} />}
+            <span className="accueil-public-cta-separateur" aria-hidden="true" />
+            {occupe ? 'Patiente…' : etapeCode ? 'Se connecter' : 'Recevoir le code'}
+            <ArrowRight size={22} />
           </button>
-        )}
-        <button className="btn btn-retour-accueil" onClick={surRetour}>
-          Retour à l&rsquo;accueil
+
+          {etapeCode && (
+            <button className="connexion-lien" onClick={() => { setEtape('email'); setCode(''); setMessage('') }}>
+              Changer d&rsquo;e-mail
+            </button>
+          )}
+        </div>
+
+        <button className="connexion-lien connexion-retour" onClick={surRetour}>
+          <ArrowLeft size={16} /> Retour à l&rsquo;accueil
         </button>
-      </div>
-    </section>
+      </main>
+    </div>
   )
 }

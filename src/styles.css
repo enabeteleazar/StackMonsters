@@ -106,22 +106,24 @@ main.large{max-width:1080px}
 
 /* ============ accueil public (visiteur sans session) ============ */
 /* La page tient exactement dans l'écran : pas de défilement vertical, les espacements suivent la hauteur. */
-html:has(.accueil-public),html:has(.accueil-public) body{height:100%;overflow:hidden;overscroll-behavior:none}
+html:has(.accueil-public),html:has(.accueil-public) body,
+html:has(.connexion),html:has(.connexion) body{height:100%;overflow:hidden;overscroll-behavior:none}
 .accueil-public{height:100vh;height:100dvh;overflow:hidden;position:relative;display:flex;flex-direction:column;
   background:
     radial-gradient(70% 55% at 85% 32%,rgba(158,232,24,.22),transparent 70%),
     radial-gradient(60% 40% at 50% 100%,rgba(158,232,24,.10),transparent 70%),
     #000}
 .accueil-public-entete{
+  position:relative;background:none;
   width:100%;max-width:1100px;margin:0 auto;padding:calc(min(18px,2.2vh) + env(safe-area-inset-top)) 20px 0;
   display:flex;align-items:center;justify-content:space-between;flex:0 0 auto;
 }
 .accueil-public-marque{width:min(46px,5.5vh);height:min(46px,5.5vh);display:grid;place-items:center;border:2px solid var(--acide);
   border-radius:12px;box-shadow:0 0 18px rgba(158,232,24,.45), inset 0 0 12px rgba(158,232,24,.15)}
 .accueil-public-marque img{width:30px;height:30px}
-.accueil-public .logo-marque{font-size:22px;letter-spacing:.16em}
+.accueil-public .logo-marque,.connexion .logo-marque{font-size:22px;letter-spacing:.16em}
 .accueil-public-contenu{flex:1;min-height:0;width:100%;max-width:980px;margin:0 auto;display:flex;flex-direction:column;
-  padding:0 20px calc(min(16px,2vh) + env(safe-area-inset-bottom))}
+  padding:0 20px min(36px,4vh)}
 
 .accueil-public-hero{position:relative;flex:1;min-height:0;display:grid;
   grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);align-items:center}
@@ -180,7 +182,8 @@ html:has(.accueil-public),html:has(.accueil-public) body{height:100%;overflow:hi
 .accueil-public-sol{position:absolute;left:-40%;right:-40%;bottom:2%;height:60px;border-radius:50%;
   border-top:2px solid rgba(158,232,24,.55);box-shadow:0 -8px 30px -10px rgba(158,232,24,.7)}
 @media (prefers-reduced-motion:reduce){
-  .accueil-public-fumee,.accueil-public-canette-cadre::before,.accueil-public-canette-cadre::after{animation:none}
+  .accueil-public-fumee,.accueil-public-canette-cadre::before,.accueil-public-canette-cadre::after,
+  .connexion-fumee{animation:none}
 }
 
 .accueil-public-alerte{max-width:480px;margin:6px auto 0;padding:10px 14px;border:1px solid rgba(255,77,77,.25);
@@ -195,16 +198,18 @@ html:has(.accueil-public),html:has(.accueil-public) body{height:100%;overflow:hi
 .accueil-public-cta svg{flex-shrink:0}
 .accueil-public-cta-separateur{width:2px;height:30px;background:rgba(10,12,7,.6)}
 
-.accueil-public-pied{position:relative;flex:0 0 auto;margin-top:min(36px,4vh);padding-top:min(26px,3vh);text-align:center}
-.accueil-public-pied::before{content:"";position:absolute;left:-30%;right:-30%;top:0;height:60px;border-radius:50%;
+/* Pied de page de l'accueil public, en pleine largeur. */
+.accueil-public-pied{position:relative;flex:0 0 auto;width:100%;overflow:hidden;text-align:center;
+  padding:min(26px,3vh) 20px calc(min(16px,2vh) + env(safe-area-inset-bottom))}
+.accueil-public-pied::before{content:"";position:absolute;left:-10%;right:-10%;top:0;height:60px;border-radius:50%;
   border-top:2px solid var(--acide);box-shadow:0 -6px 24px -8px rgba(158,232,24,.7);pointer-events:none}
 .accueil-public-signature{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px 10px;
   margin:0;font-style:italic;color:var(--alu);font-size:clamp(13px,3.8vw,17px);
   font-family:"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
 .accueil-public-signature svg{color:var(--acide)}
 .accueil-public-signature b{color:var(--acide);font-weight:800}
-.accueil-public .pied-instagram{border-top:0;padding-top:0;margin-top:min(14px,1.6vh)}
-.accueil-public .pied-instagram p{font-size:12px}
+.accueil-public-pied .pied-instagram{border-top:0;padding-top:0;margin-top:min(14px,1.6vh)}
+.accueil-public-pied .pied-instagram p{font-size:12px}
 .accueil-public-independance{margin:min(14px,1.6vh) auto 0;max-width:520px;color:var(--alu-sombre);font-size:10px;line-height:1.5}
 .accueil-public-independance a{color:var(--alu);text-underline-offset:2px}
 
@@ -214,8 +219,8 @@ html:has(.accueil-public),html:has(.accueil-public) body{height:100%;overflow:hi
   .accueil-public-fonctions li{gap:10px;font-size:13px}
   .accueil-public-fonctions svg{width:22px;height:22px}
   .accueil-public-trait{margin:8px 0 10px}
-  .accueil-public-pied{margin-top:12px;padding-top:14px}
-  .accueil-public .pied-instagram p,.accueil-public-signature{font-size:11.5px}
+  .accueil-public-pied{padding-top:14px}
+  .accueil-public-pied .pied-instagram p,.accueil-public-signature{font-size:11.5px}
 }
 /* Petit écran : la canette passe derrière le texte, à droite. */
 @media (max-width:560px){
@@ -223,6 +228,43 @@ html:has(.accueil-public),html:has(.accueil-public) body{height:100%;overflow:hi
   .accueil-public-texte{max-width:64%}
   .accueil-public-canette{position:absolute;top:0;right:-10px;width:52%;height:100%;min-height:0;z-index:1}
 }
+/* ============ connexion (même univers que l'accueil public) ============ */
+/* Écran fixe : en-tête en haut ; seule la zone du formulaire défile au besoin (petit écran, clavier ouvert). */
+.connexion{height:100vh;height:100dvh;position:relative;overflow:hidden;display:flex;flex-direction:column;
+  background:
+    radial-gradient(70% 45% at 85% 18%,rgba(158,232,24,.20),transparent 70%),
+    radial-gradient(60% 40% at 50% 100%,rgba(158,232,24,.10),transparent 70%),
+    #000}
+.connexion-contenu{position:relative;flex:1;min-height:0;width:100%;max-width:none;overflow-x:hidden;overflow-y:auto;
+  display:flex;flex-direction:column;overscroll-behavior:contain;
+  padding:min(40px,5vh) max(20px,calc(50vw - 210px)) 24px}
+.connexion-fumee{position:absolute;top:-40px;right:-120px;width:320px;height:320px;pointer-events:none;
+  background:radial-gradient(closest-side,rgba(158,232,24,.35),transparent);filter:blur(30px);
+  animation:fumee 9s ease-in-out infinite alternate}
+.connexion-titre{position:relative;margin:0;font:600 italic clamp(28px,8vw,40px)/1.15 "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  color:var(--blanc)}
+.connexion-titre b{display:block;color:var(--acide);font-weight:800;text-shadow:0 0 24px rgba(158,232,24,.35)}
+.connexion-etapes{list-style:none;margin:0 0 18px;padding:0;display:flex;gap:10px}
+.connexion-etapes li{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;
+  border:1px solid var(--ligne);color:var(--alu-sombre);font:600 12px var(--display);text-transform:uppercase;letter-spacing:.08em}
+.connexion-etapes li[aria-current="step"]{color:#0A0C07;background:var(--acide);border-color:var(--acide);
+  box-shadow:0 0 18px rgba(158,232,24,.45)}
+.connexion-carte{position:relative;display:grid;gap:16px;padding:22px 18px;border-radius:22px;
+  border:1px solid rgba(158,232,24,.28);background:linear-gradient(170deg,rgba(23,26,20,.92),rgba(8,9,6,.92));
+  box-shadow:0 0 40px -12px rgba(158,232,24,.45), var(--ombre-forte)}
+.connexion-info{margin:0;color:var(--alu);font-size:14px;line-height:1.5}
+.connexion-info-alerte{color:#ffb3b3}
+.connexion-champ{display:grid;gap:8px}
+.connexion-champ label{font:600 11px var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--alu)}
+.connexion-champ input{min-height:54px;font-size:17px;border-radius:14px;background:#0b0d08;border-color:var(--ligne-vive)}
+.connexion-champ input:focus{border-color:var(--acide);box-shadow:0 0 0 3px rgba(158,232,24,.18)}
+.connexion-code{font-family:var(--mono)!important;font-size:26px!important;letter-spacing:.5em;text-align:center}
+.connexion-cta{max-width:none}
+.connexion-cta:disabled{opacity:.6;cursor:wait}
+.connexion-lien{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:6px;color:var(--alu);
+  font-size:13px;text-decoration:underline;text-underline-offset:3px}
+.connexion-lien:hover{color:var(--acide)}
+.connexion-retour{margin:18px auto 0;text-decoration:none;font:600 12px var(--display);text-transform:uppercase;letter-spacing:.1em}
 /* Pied de page : phrase d'accroche avec le lien Instagram. */
 .pied-instagram{display:flex;flex-direction:column;align-items:center;gap:10px;margin:22px auto 0;
   padding-top:18px;border-top:1px solid var(--ligne);text-align:center;max-width:420px}
@@ -686,3 +728,20 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 @keyframes tourne{to{transform:rotate(360deg)}}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ============ ordinateur : appli réservée au mobile et à la tablette ============ */
+/* Grand écran piloté à la souris : l'appli est masquée et un message s'affiche au centre.
+   Les tablettes (écran tactile) et les fenêtres étroites gardent l'appli. */
+@media (min-width:1025px) and (hover:hover) and (pointer:fine){
+  #racine{display:none}
+  .seulement-mobile[hidden]{display:flex}
+}
+.seulement-mobile{position:fixed;inset:0;z-index:100;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;padding:24px;text-align:center;color:var(--blanc);
+  background:radial-gradient(60% 50% at 50% 40%,rgba(158,232,24,.16),transparent 70%),#000}
+.seulement-mobile img{width:64px;height:64px;padding:12px;border:2px solid var(--acide);border-radius:16px;
+  box-shadow:0 0 22px rgba(158,232,24,.45)}
+.seulement-mobile-marque{margin:0;font:700 22px var(--display);text-transform:uppercase;letter-spacing:.16em}
+.seulement-mobile-marque em{font-style:normal;color:var(--acide)}
+.seulement-mobile h1{margin:8px 0 0;font:600 italic clamp(26px,3vw,40px)/1.2 "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.seulement-mobile p:last-child{margin:0;color:var(--alu);font-size:15px}
