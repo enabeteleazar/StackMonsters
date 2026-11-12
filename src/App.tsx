@@ -298,7 +298,6 @@ export default function App() {
           <span className="nav-scan-rond">
             <ScanLine size={22} strokeWidth={2.4} />
           </span>
-          Scan
         </button>
         <button aria-current={vue === 'wiki'} onClick={() => setVue('wiki')}>
           <BookOpen size={19} />
