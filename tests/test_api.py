@@ -22,7 +22,7 @@ def env(monkeypatch):
             "DELETE FROM connexions_uniques WHERE ip_hash = ANY(%s)",
             ([ix._empreinte_ip(IP_A), ix._empreinte_ip(IP_B)],),
         )
-        cx.execute("DELETE FROM wiki WHERE ean LIKE '200000000%'")
+        cx.execute("DELETE FROM wiki WHERE ean LIKE '200000000%' OR ean LIKE 'LOCAL-%' OR ean LIKE 'TEST-%'")
         cx.execute("DELETE FROM limites_ip")  # base de test uniquement (voir conftest.py)
         cx.execute("DELETE FROM wiki_exclus WHERE ean LIKE '200000000%' OR ean LIKE 'TEST-%'")
     yield TestClient(ix.app), codes
@@ -300,6 +300,7 @@ def test_le_proprietaire_recupere_la_collection_historique(env, monkeypatch):
     assert "TEST-HIST" in [x["ean"] for x in c.get("/api/cans", headers=h).json()]
     hb = connecter(c, codes, B)
     assert c.get("/api/cans", headers=hb).json() == []
+    assert fiche(c, h, "TEST-HIST")["nom"] == "Ancienne"  # reprise dans une collection : elle a sa fiche
     with ix.base() as cx:
         cx.execute("DELETE FROM canettes WHERE ean = 'TEST-HIST'")
 
@@ -411,8 +412,9 @@ def test_enregistrer_sans_champ_photo_conserve_la_photo(env):
     c.put("/api/cans", json=canette(photo=PNG_1PX), headers=h)
     assert c.put("/api/cans", json=canette(nom="Renommée"), headers=h).json()["photo_version"]
     assert c.get("/api/cans/2000000000015/photo", headers=h).status_code == 200
-    assert c.put("/api/cans", json=canette(photo=None), headers=h).json()["photo_version"] is None
-    assert c.get("/api/cans/2000000000015/photo", headers=h).status_code == 404
+    # La photo est devenue celle de la fiche du Wiki : retirer la photo personnelle ne la retire pas.
+    r = c.put("/api/cans", json=canette(photo=None), headers=h).json()
+    assert r["photo_version"] and r["photo_wiki"]
 
 
 def test_upc_a_normalise_sans_doublon(env):
@@ -460,12 +462,12 @@ def test_format_de_photo_refuse(env, photo):
     assert c.put("/api/cans", json=canette(photo=photo), headers=h).status_code == 422
 
 
-def test_ajuster_sans_fiche_wiki(env, monkeypatch):
+def test_ajuster_une_canette_dont_la_fiche_est_protegee(env, monkeypatch):
     c, codes = env
     monkeypatch.setenv("OWNER_EMAIL", A)
     h = connecter(c, codes, A)
     c.put("/api/cans", json=canette(), headers=h)
-    c.delete("/api/wiki/2000000000015", headers=h)
+    assert c.delete("/api/wiki/2000000000015", headers=h).status_code == 409  # possédée : pas de suppression
     assert c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=h).json()["nb"] == 2
 
 
@@ -496,14 +498,15 @@ def test_restauration_dans_un_compte_existant(env, monkeypatch, tmp_path):
     cans = {x["ean"]: x for x in c.get("/api/cans", headers=ha).json()}
     assert set(cans) == {"2000000000015", "2000000000022", "LOCAL-RESTO"}
     r = cans["2000000000015"]
+    # Le nom affiché est celui de la fiche du Wiki (« Avant », première valeur reçue) ; le reste est restauré.
     assert (r["nom"], r["etat"], r["nb"], r["notes"], r["ajout"]) == (
-        "Mango", "Pleine", 4, "Rare", "2025-01-01T00:00:00.000Z",
+        "Avant", "Pleine", 4, "Rare", "2025-01-01T00:00:00.000Z",
     )
     assert r["categorie"] == "Juiced" and r["flavor"] == "Mango"
     assert r["photo_version"]  # une sauvegarde sans photo n'efface pas la photo existante
     assert cans["LOCAL-RESTO"]["photo_version"]
-    assert fiche(c, hb, "LOCAL-RESTO") is None
-    assert fiche(c, hb, "2000000000015")["photo"] is None
+    assert fiche(c, hb, "LOCAL-RESTO")["photo"] is None  # restaurée : elle a sa fiche, sans photo publiée
+    assert fiche(c, hb, "2000000000015")["photo"]  # photo envoyée par l'API avant la restauration
     assert c.get("/api/cans", headers=hb).json() == []
 
 
@@ -663,7 +666,7 @@ def test_association_de_code_refusee(env, monkeypatch):
     for invalide in ("3017620422004", "2000000000022", "LOCAL-ABC", "123"):
         assert associer("2000000000015", invalide).status_code == 422
     assert associer("2000000000039", REELS[2]).status_code == 404  # fiche interne inconnue
-    assert fiche(c, hb, "2000000000015")["nom"] == "Sans code"
+    assert fiche(c, hb, "2000000000015")["nom"] == "Sans Code"
     _oublier_codes_reels()
 
 
@@ -703,15 +706,19 @@ def test_fiche_a_plusieurs_codes_barres(env, monkeypatch):
     _oublier_codes_reels()
 
 
-def test_suppression_d_une_fiche_exclut_aussi_ses_codes(env, monkeypatch):
+def test_suppression_d_une_fiche_retire_ses_codes(env, monkeypatch):
     c, codes = env
     _oublier_codes_reels()
     monkeypatch.setenv("OWNER_EMAIL", A)
     h = connecter(c, codes, A)
     c.put("/api/cans", json=canette(REELS[0], nom="Mango"), headers=h)
     c.post(f"/api/wiki/{REELS[0]}/code-barres", json={"ean": REELS[2]}, headers=h)
+    assert c.delete(f"/api/wiki/{REELS[0]}", headers=h).status_code == 409  # encore possédée
+    assert c.delete(f"/api/cans/{REELS[0]}", headers=h).status_code == 204
     assert c.delete(f"/api/wiki/{REELS[0]}", headers=h).status_code == 204
-    c.put("/api/cans", json=canette(REELS[2], nom="Recréée ?"), headers=h)
+    assert c.get("/api/wiki/" + REELS[2] + "/photo", headers=h).status_code == 404
+    # Une fiche retirée par le propriétaire ne revient pas, ni par son code ni par un code secondaire.
+    assert c.put("/api/cans", json=canette(REELS[2], nom="Recréée ?"), headers=h).status_code == 409
     assert fiche(c, h, REELS[2]) is None
     _oublier_codes_reels()
 
@@ -753,9 +760,12 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
         "ean", "nom", "edition", "volume", "categorie", "flavor", "status", "region",
         "description", "photo", "codes",
     }
-    assert f["photo"] is None  # la photo d'un compte reste privée
-    assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 404
+    assert f["photo"]  # la fiche n'avait pas de photo : celle envoyée devient la sienne
+    assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 200
     assert "base64" not in str(c.get("/api/wiki", headers=hb).json())
+    # Une fiche qui a déjà une photo la garde.
+    c.put("/api/cans", json=canette(nom="Mango Loco", photo=PNG_1PX), headers=hb)
+    assert fiche(c, hb, "2000000000015")["photo"] == f["photo"]
 
 
 def test_wiki_la_premiere_fiche_reste_et_se_complete(env):
@@ -771,7 +781,7 @@ def test_wiki_la_premiere_fiche_reste_et_se_complete(env):
     assert f["nom"] == "Original"  # pas d'écrasement
     assert f["edition"] == "Ultra"
     assert f["volume"] == "473 ml"  # mais les champs vides sont complétés
-    assert f["photo"] is None
+    assert f["photo"]  # la fiche n'avait pas de photo : elle reçoit la première envoyée
 
 
 def test_wiki_conserve_la_fiche_quand_on_retire_la_canette(env):
@@ -783,13 +793,12 @@ def test_wiki_conserve_la_fiche_quand_on_retire_la_canette(env):
     assert fiche(c, hb, "2000000000015")["nom"] == "Durable"
 
 
-def test_canette_sans_nom_ni_code_barres_reste_hors_du_wiki(env):
+def test_canette_sans_code_barres_exige_un_nom(env):
     c, codes = env
-    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
-    r = c.put("/api/cans", json=canette("LOCAL-TEST", nom="", photo=PNG_1PX, categorie="Ultra"), headers=ha)
-    assert r.status_code == 200 and r.json()["ean"] == "LOCAL-TEST" and r.json()["categorie"] == ""
-    assert fiche(c, hb, "LOCAL-TEST") is None
-    assert c.patch("/api/cans/LOCAL-TEST/nb", json={"delta": 1}, headers=ha).json()["nb"] == 2
+    ha = connecter(c, codes, A)
+    r = c.put("/api/cans", json=canette("LOCAL-TEST", nom="  "), headers=ha)
+    assert r.status_code == 422
+    assert c.get("/api/cans", headers=ha).json() == []
 
 
 def test_canette_sans_code_barres_recoit_un_code_tire_du_nom(env):
@@ -919,20 +928,25 @@ def test_wiki_changement_de_code_barres_garde_les_deux_lignes_d_un_compte(env, m
         )
     assert c.put("/api/wiki/2000000000015", json={"ean": "2000000000022", "nom": "M"}, headers=ha).status_code == 200
     noms = {x["ean"]: x["nom"] for x in c.get("/api/cans", headers=hb).json()}
-    assert noms == {"2000000000015": "Ancienne", "2000000000022": "M"}  # nom repris de la fiche du Wiki
+    # Les deux lignes sont gardées ; l'ancien code mène à la fiche qui l'a remplacé, dont le nom est affiché.
+    assert noms == {"2000000000015": "M", "2000000000022": "M"}
 
 
-def test_wiki_fiche_supprimee_ne_reapparait_pas(env, monkeypatch, tmp_path):
+def test_wiki_fiche_supprimee_ne_revient_que_par_restauration(env, monkeypatch, tmp_path):
     c, codes = env
     monkeypatch.setenv("OWNER_EMAIL", A)
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
     c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+    assert c.delete("/api/cans/2000000000015", headers=hb).status_code == 204
     assert c.delete("/api/wiki/2000000000015", headers=ha).status_code == 204
-
-    assert c.put("/api/cans", json=canette(nom="Mango 2"), headers=hb).status_code == 200
-    restaurer(monkeypatch, tmp_path, [{"ean": "2000000000015", "nom": "Mango 3"}], B)
     assert fiche(c, ha, "2000000000015") is None
-    assert c.get("/api/cans/2000000000015", headers=hb).json()["nom"] == "Mango 3"
+
+    # Un nouvel ajout est refusé : la fiche a été retirée volontairement.
+    assert c.put("/api/cans", json=canette(nom="Mango 2"), headers=hb).status_code == 409
+    assert fiche(c, ha, "2000000000015") is None
+    # Une restauration (opération d'administration) remet la canette, et donc sa fiche.
+    restaurer(monkeypatch, tmp_path, [{"ean": "2000000000015", "nom": "Mango 3"}], B)
+    assert fiche(c, ha, "2000000000015")["nom"] == "Mango 3"
 
 
 def test_wiki_refuse_code_barres_deja_utilise(env, monkeypatch):
@@ -948,7 +962,7 @@ def test_wiki_refuse_code_barres_deja_utilise(env, monkeypatch):
     assert fiche(c, hb, "2000000000015")["nom"] == "Mango"
 
 
-def test_wiki_suppression_reservee_au_proprietaire_sans_supprimer_les_collections(env, monkeypatch):
+def test_wiki_suppression_reservee_au_proprietaire_et_refusee_si_possedee(env, monkeypatch):
     c, codes = env
     monkeypatch.setenv("OWNER_EMAIL", A)
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
@@ -958,9 +972,9 @@ def test_wiki_suppression_reservee_au_proprietaire_sans_supprimer_les_collection
     assert c.delete("/api/wiki/2000000000015", headers=hb).status_code == 403
     assert fiche(c, hb, "2000000000015") is not None
 
-    r = c.delete("/api/wiki/2000000000015", headers=ha)
-    assert r.status_code == 204
-    assert fiche(c, hb, "2000000000015") is None
+    # Encore dans une collection : la fiche ne se supprime pas, et la collection reste intacte.
+    assert c.delete("/api/wiki/2000000000015", headers=ha).status_code == 409
+    assert fiche(c, hb, "2000000000015") is not None
     assert c.get("/api/cans/2000000000015", headers=hb).status_code == 200
     assert c.delete("/api/wiki/TEST-INCONNU", headers=ha).status_code == 404
 
@@ -992,6 +1006,9 @@ def test_wiki_amorce_depuis_les_collections_existantes_une_seule_fois(env):
     with ix.base() as cx:
         r = cx.execute("SELECT * FROM wiki WHERE ean = '2000000000015'").fetchall()
         assert cx.execute("SELECT COUNT(*) AS n FROM wiki WHERE ean = 'LOCAL-AMORCE'").fetchone()["n"] == 0
+        assert cx.execute(  # la canette ajoutée sans code-barres a sa fiche, sous le code tiré du nom
+            "SELECT COUNT(*) AS n FROM wiki WHERE ean = %s", (ix.convert.nom_en_13_chiffres("Perso"),)
+        ).fetchone()["n"] == 1
     assert len(r) == 1 and r[0]["nom"] == "Nommée" and r[0]["photo"] is None  # les photos restent privées
     assert "privé" not in str(r) and "nb" not in r[0]
 
@@ -1052,11 +1069,10 @@ def test_la_collection_reprend_les_infos_du_wiki(env, monkeypatch):
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
     c.put("/api/cans", json=canette(nom="Mango", volume="500 ml", photo=PNG_1PX, notes="à moi"), headers=hb)
     perso = c.get("/api/cans/2000000000015", headers=hb).json()
-    assert perso["photo_version"] and not perso["photo_wiki"] and perso["dans_wiki"]
+    assert perso["dans_wiki"] and perso["photo_wiki"]  # la photo envoyée est devenue celle de la fiche
 
     corps = {"nom": "Mango Loco", "volume": "473 ml", "description": "Texte du Wiki."}
     assert c.put("/api/wiki/2000000000015", json=corps, headers=ha).status_code == 200
-    assert c.put("/api/wiki/2000000000015/photo", json={"photo": PNG_1PX}, headers=ha).status_code == 200
 
     r = c.get("/api/cans/2000000000015", headers=hb).json()
     assert (r["nom"], r["volume"], r["description"], r["notes"]) == ("Mango Loco", "473 ml", "Texte du Wiki.", "à moi")
@@ -1065,7 +1081,48 @@ def test_la_collection_reprend_les_infos_du_wiki(env, monkeypatch):
     assert c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=hb).json()["nom"] == "Mango Loco"
     assert c.get("/api/cans/2000000000015/photo", headers=hb).status_code == 200
 
-    # Photo du Wiki retirée : la photo personnelle revient.
+    # Photo du Wiki retirée par le propriétaire : la photo personnelle, conservée, revient.
     assert c.delete("/api/wiki/2000000000015/photo", headers=ha).status_code == 200
     r = c.get("/api/cans/2000000000015", headers=hb).json()
     assert r["photo_version"] and not r["photo_wiki"]
+
+
+def test_migration_cree_la_fiche_des_canettes_hors_wiki(env):
+    c, codes = env
+    ha = connecter(c, codes, A)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=ha)
+    with ix.base() as cx:
+        uid = cx.execute("SELECT id FROM users WHERE email = %s", (A,)).fetchone()["id"]
+        cx.execute(  # ancienne canette privée, d'avant la règle « tout est dans le Wiki »
+            "INSERT INTO collection (user_id, ean, nom, photo, ajout, maj) VALUES (%s, 'LOCAL-ANCIENNE', 'Perso', %s, 'x', 'x')",
+            (uid, PNG_1PX),
+        )
+        cx.execute("DELETE FROM wiki WHERE ean = '2000000000015'")
+        cx.execute("INSERT INTO wiki_exclus (ean, exclu) VALUES ('2000000000015', 'x') ON CONFLICT DO NOTHING")
+        cx.execute(ix.FICHES_MANQUANTES)
+        cx.execute(ix.FICHES_MANQUANTES)  # sans effet la seconde fois
+        assert cx.execute("SELECT COUNT(*) AS n FROM wiki_exclus WHERE ean = '2000000000015'").fetchone()["n"] == 0
+        assert cx.execute("SELECT COUNT(*) AS n FROM collection WHERE user_id = %s", (uid,)).fetchone()["n"] == 2
+    assert fiche(c, ha, "2000000000015")["nom"] == "Mango"
+    ancienne = fiche(c, ha, "LOCAL-ANCIENNE")
+    assert ancienne["nom"] == "Perso" and ancienne["photo"] is None  # les anciennes photos privées le restent
+
+
+def test_un_ancien_code_mene_a_la_fiche_qui_l_a_remplace(env, monkeypatch):
+    c, codes = env
+    _oublier_codes_reels()
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    interne = ix.convert.nom_en_13_chiffres("Test Redirection")
+    try:
+        assert c.put("/api/cans", json=canette("LOCAL-X", nom="Test Redirection"), headers=ha).json()["ean"] == interne
+        assert c.post(f"/api/wiki/{interne}/code-barres", json={"ean": REELS[0]}, headers=ha).json()["ean"] == REELS[0]
+        # Même nom ajouté sans code-barres par un autre compte : il rejoint la fiche, sans doublon.
+        r = c.put("/api/cans", json=canette("LOCAL-Y", nom="Test Redirection"), headers=hb)
+        assert r.status_code == 200 and r.json()["ean"] == REELS[0]
+        assert fiche(c, hb, interne) is None
+        assert c.delete(f"/api/wiki/{REELS[0]}", headers=ha).status_code == 409
+    finally:
+        with ix.base() as cx:
+            cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (interne,))
+        _oublier_codes_reels()

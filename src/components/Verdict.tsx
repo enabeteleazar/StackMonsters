@@ -178,6 +178,9 @@ export default function Verdict(p: Props) {
                   {p.existante!.photo_version ? 'Remplacer la photo' : 'Ajouter une photo'}
                 </button>
               )}
+              {!p.existante!.photo_wiki && (
+                <p className="sous">Ta photo deviendra celle de la fiche du Wiki, visible par tous.</p>
+              )}
               {erreurPhoto && <p className="sous" role="alert">{erreurPhoto}</p>}
               <button className="btn btn-fantome" onClick={() => setEdition(true)}>
                 Modifier la fiche
@@ -280,6 +283,8 @@ function Formulaire({
   const codeBarresValide = !nouvelle || codeBarresLocal || normaliserCodeBarres(c.ean) !== null
   const codeBarresInvalide = nouvelle && !!c.ean && !codeBarresValide
   const quantiteInvalide = !Number.isInteger(c.nb) || c.nb < 1 || c.nb > 9999
+  // Sans code-barres, le code de la fiche est tiré du nom : il est obligatoire.
+  const nomRequis = codeBarresLocal && !c.nom.trim()
   const choixFicheRequis =
     nouvelle && !!ficheCodeDisponible && ficheChoisie !== ficheCodeDisponible.ean
   const rechercheActive = c.nom.trim().length >= 2 || (c.ean.trim().length >= 2 && !c.ean.startsWith('LOCAL-'))
@@ -492,7 +497,7 @@ function Formulaire({
         </div>
         <div className="photo-zone">
           <CameraIcon size={22} />
-          Photo de la canette (facultatif)
+          Photo de la canette (facultatif — si la fiche du Wiki n’a pas encore de photo, celle-ci y sera publiée)
           <input
             type="file"
             accept="image/*"
@@ -509,6 +514,11 @@ function Formulaire({
       {codeBarresInvalide && (
         <p className="suggestions-wiki-erreur" role="alert">
           Code-barres invalide : il doit compter 8, 12 ou 13 chiffres, clé de contrôle comprise.
+        </p>
+      )}
+      {nomRequis && (
+        <p className="suggestions-wiki-erreur" role="alert">
+          Donne un nom à la canette, c’est lui qui identifie sa fiche dans le Wiki.
         </p>
       )}
       {quantiteInvalide && (
@@ -531,7 +541,7 @@ function Formulaire({
           className="btn btn-primaire actions-principal"
           disabled={
             occupe || !c.ean.trim() || !codeBarresValide || !!codeBarresDejaUtilise ||
-            choixFicheRequis || wikiEnChargement || quantiteInvalide
+            choixFicheRequis || wikiEnChargement || quantiteInvalide || nomRequis
           }
           onClick={() => surValider({ ...c, ean: codeCanonique })}
         >

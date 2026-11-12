@@ -47,7 +47,7 @@ export default function Confidentialite() {
                 un compte.
               </li>
               <li>
-                <b>Collection</b> — canettes, quantités, états, notes et photos. But : gérer ta collection privée,
+                <b>Collection</b> — canettes, quantités, états, notes et photos. But : gérer ta collection,
                 visible de toi seul. Base : exécution du service. Les photos sont réduites et leurs métadonnées
                 (position, appareil) supprimées avant l’envoi.
               </li>
@@ -67,9 +67,11 @@ export default function Confidentialite() {
 
           <Bloc titre="Le Wiki partagé">
             <p>
-              Le nom, la version, le volume, la catégorie, la saveur, le statut et la région d’une canette avec
-              code-barres alimentent un catalogue visible des comptes connectés, sans aucun lien avec ton compte. Tes
-              photos, notes, quantités, états et canettes sans code-barres n’y sont jamais envoyés.
+              Chaque canette existe sous forme de fiche dans ce catalogue, visible des comptes connectés, sans
+              aucun lien avec ton compte : ajouter une canette crée sa fiche si elle n’existe pas (nom, version,
+              volume, catégorie, saveur, statut, région). Une photo que tu envoies devient celle de la fiche si elle
+              n’en a pas encore ; les photos envoyées auparavant restent privées. Tes notes, quantités et états n’y
+              sont jamais envoyés.
             </p>
           </Bloc>
 

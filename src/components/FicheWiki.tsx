@@ -59,7 +59,7 @@ export default function FicheWiki({
   }
 
   const supprimer = async () => {
-    if (!confirm(`Supprimer la fiche « ${fiche.nom || fiche.ean} » du Wiki ? Les canettes des collections sont conservées, et la fiche ne sera plus recréée automatiquement.`)) return
+    if (!confirm(`Supprimer la fiche « ${fiche.nom || fiche.ean} » du Wiki ? Ce n’est possible que si aucune collection ne la contient.`)) return
     setSuppressionOccupe(true)
     setErreurSuppression(null)
     try {
