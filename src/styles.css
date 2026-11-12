@@ -519,6 +519,19 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 .carte-ligne .carte-corps{flex:1;min-width:0;padding:10px 14px}
 .carte-ligne .carte-corps .nom{font-size:15px}
 .carte-canette.carte-ligne:hover{transform:none}
+/* Wiki : 3 fiches par ligne, quelle que soit la largeur d'écran. */
+.grille-collection.grille-wiki{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.grille-wiki .carte-wiki .carte-corps{padding:7px 8px 9px}
+.grille-wiki .carte-wiki .carte-corps .nom{font-size:12px}
+/* Pastille de provenance du code-barres d'une fiche du Wiki. */
+.point-code{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0;
+  box-shadow:0 0 0 2px rgba(0,0,0,.55)}
+.carte-photo .point-code{position:absolute;top:7px;right:7px;z-index:2}
+.point-code-reel{background:#2ECC40}
+.point-code-genere{background:#FF9F1A}
+.point-code-autre{background:#FF3B30}
+.legende-codes{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0 0 10px;color:var(--alu);font-size:11px}
+.legende-codes > span{display:inline-flex;align-items:center;gap:6px}
 
 .carte-canette{
   background:linear-gradient(165deg,var(--graphite-clair),var(--graphite));
