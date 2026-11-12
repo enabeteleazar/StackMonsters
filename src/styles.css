@@ -131,11 +131,11 @@ main.large{max-width:1080px}
   border-radius:var(--r-pill);color:var(--alu);font:11px var(--display);letter-spacing:.08em;text-transform:uppercase}
 .accueil-public-pastille svg,.accueil-public-apercu-pied svg{color:var(--acide)}
 .accueil-public-lueur{width:7px;height:7px;border-radius:50%;background:var(--acide);box-shadow:0 0 14px var(--acide)}
-.accueil-public-galerie{display:grid;grid-template-columns:1fr;gap:9px;padding:14px 0}
-.accueil-public-galerie figure{min-width:0;margin:0;overflow:hidden;border:1px solid var(--ligne);
-  border-radius:var(--r-md);background:var(--graphite)}
+/* La photo occupe tout son cadre : aucune marge, aucune bordure. */
+.accueil-public-galerie{display:grid;grid-template-columns:1fr;gap:9px;padding:0;margin:0 -18px}
+.accueil-public-galerie figure{min-width:0;margin:0;overflow:hidden;background:var(--graphite)}
 .accueil-public-galerie img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;background:var(--graphite-clair)}
-.accueil-public-galerie figcaption{padding:8px 7px 9px;display:grid;gap:4px}
+.accueil-public-galerie figcaption{padding:8px 18px 9px;display:grid;gap:4px}
 .accueil-public-galerie figcaption b{font:600 10px var(--display);text-transform:uppercase;
   letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .accueil-public-galerie figcaption a{color:var(--alu);font-size:9px;text-decoration:none;
@@ -168,8 +168,8 @@ main.large{max-width:1080px}
   .accueil-public-contenu{padding-top:42px}
   .accueil-public-hero{padding-top:30px}
   .accueil-public-apercu{margin-top:42px}
-  .accueil-public-galerie{gap:12px;padding:16px 0}
-  .accueil-public-galerie figcaption{padding:9px 10px 11px}
+  .accueil-public-galerie{gap:12px;padding:0}
+  .accueil-public-galerie figcaption{padding:9px 18px 11px}
   .accueil-public-galerie figcaption b{font-size:11px}
   .accueil-public-galerie figcaption a{font-size:10px}
   .accueil-public-fonctions{gap:16px;margin-top:34px}
