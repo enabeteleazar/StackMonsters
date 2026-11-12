@@ -23,7 +23,7 @@ const codes = (adresse: string) =>
 async function connecter(page: Page, adresse: string) {
   const avant = codes(adresse).length
   await page.goto('/')
-  await page.getByRole('button', { name: 'Se connecter' }).first().click()
+  await page.getByRole('button', { name: 'Entrez' }).click()
   await page.fill('#f-email', adresse)
   await page.getByRole('button', { name: 'Recevoir le code' }).click()
   await page.waitForSelector('#f-code')
@@ -128,9 +128,9 @@ test('« Se déconnecter partout » ferme les autres appareils', async ({ page, 
 
   await nav(page, 'Réglages').click()
   await page.getByRole('button', { name: 'Se déconnecter partout' }).click()
-  await expect(page.getByRole('button', { name: 'Se connecter' }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
   await autre.reload()
-  await expect(autre.getByRole('button', { name: 'Se connecter' }).first()).toBeVisible()
+  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
 })
 
 test('la suppression du compte exige l’adresse et efface la collection', async ({ page }) => {
@@ -146,7 +146,7 @@ test('la suppression du compte exige l’adresse et efface la collection', async
 
   page.once('dialog', (d) => d.accept(adresse))
   await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
-  await expect(page.getByRole('button', { name: 'Se connecter' }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
 
   await connecter(page, adresse)
   await nav(page, 'Collection').click()
@@ -158,7 +158,7 @@ test('la politique de confidentialité est accessible sans compte', async ({ pag
   await page.getByRole('link', { name: 'Confidentialité' }).click()
   await expect(page.getByText('NABET Eleazar')).toBeVisible()
   await page.getByRole('button', { name: 'Retour' }).click()
-  await expect(page.getByRole('button', { name: 'Se connecter' }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
 })
 
 test('scan : canette inconnue, puis présente dans le Wiki, puis déjà possédée', async ({ page, browser }) => {
