@@ -783,14 +783,31 @@ def test_wiki_conserve_la_fiche_quand_on_retire_la_canette(env):
     assert fiche(c, hb, "2000000000015")["nom"] == "Durable"
 
 
-def test_canette_sans_code_barres_reste_hors_du_wiki(env):
+def test_canette_sans_nom_ni_code_barres_reste_hors_du_wiki(env):
     c, codes = env
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
-    r = c.put("/api/cans", json=canette("LOCAL-TEST", nom="Perso", photo=PNG_1PX, categorie="Ultra"), headers=ha)
-    assert r.status_code == 200 and r.json()["categorie"] == ""
+    r = c.put("/api/cans", json=canette("LOCAL-TEST", nom="", photo=PNG_1PX, categorie="Ultra"), headers=ha)
+    assert r.status_code == 200 and r.json()["ean"] == "LOCAL-TEST" and r.json()["categorie"] == ""
     assert fiche(c, hb, "LOCAL-TEST") is None
-    assert c.get("/api/cans/LOCAL-TEST", headers=ha).json()["nom"] == "Perso"
     assert c.patch("/api/cans/LOCAL-TEST/nb", json={"delta": 1}, headers=ha).json()["nb"] == 2
+
+
+def test_canette_sans_code_barres_recoit_un_code_tire_du_nom(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    code = ix.convert.nom_en_13_chiffres("Test Sans Code")
+    try:
+        r = c.put("/api/cans", json=canette("LOCAL-TEST", nom="test  sans code", categorie="Ultra"), headers=ha)
+        assert r.status_code == 200
+        assert (r.json()["ean"], r.json()["nom"]) == (code, "Test Sans Code")
+        assert fiche(c, hb, code)["categorie"] == "Ultra"
+        # Même nom, autre compte : même code, donc la même fiche du Wiki, sans doublon.
+        assert c.put("/api/cans", json=canette("LOCAL-AUTRE", nom="Test Sans Code"), headers=hb).json()["ean"] == code
+        # Même nom dans la même collection : refusé plutôt qu'écraser la canette existante.
+        assert c.put("/api/cans", json=canette("LOCAL-BIS", nom="Test Sans Code"), headers=ha).status_code == 409
+    finally:
+        with ix.base() as cx:
+            cx.execute("DELETE FROM wiki WHERE ean = %s", (code,))
 
 
 def test_wiki_photo_reservee_au_proprietaire(env, monkeypatch):
@@ -1012,3 +1029,18 @@ def test_une_seule_connexion_par_requete(env, monkeypatch):
     assert c.put("/api/cans", json=canette(), headers=h).status_code == 200 and len(appels) == 1
     assert c.delete("/api/cans/2000000000099", headers=h).status_code == 404
     assert c.get("/api/cans", headers={"Authorization": "Bearer faux"}).status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("saisi", "attendu"),
+    [
+        ("monster energy ultra white", "Monster Energy Ultra White"),
+        ("  monster   lo-carb ", "Monster Lo-Carb"),
+        ("pipeline punch (USA)", "Pipeline Punch (USA)"),
+        ("", ""),
+    ],
+)
+def test_nom_majuscule_a_chaque_mot(saisi, attendu):
+    assert ix.formater_nom(saisi) == attendu
+    assert ix.Canette(ean="1", nom=saisi).nom == attendu
+    assert ix.FicheWiki(nom=saisi).nom == attendu

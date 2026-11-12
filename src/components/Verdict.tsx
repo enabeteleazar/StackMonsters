@@ -248,13 +248,14 @@ function Formulaire({
   const codeBarresDejaUtilise = canettes.find(
     (canette) => canette.ean === codeCanonique && canette.ean !== depart.ean,
   )
-  // Une canette sans code-barres reste hors du Wiki, qui porte ces champs descriptifs.
-  const champsWiki = !c.ean.startsWith('LOCAL-')
+  const codeBarresLocal = nouvelle && c.ean.startsWith('LOCAL-')
+  // À sa création, une canette sans code-barres reçoit un code tiré de son nom et rejoint le Wiki,
+  // qui porte ces champs descriptifs ; une ancienne canette LOCAL- reste hors du Wiki.
+  const champsWiki = codeBarresLocal || !c.ean.startsWith('LOCAL-')
   // Le Wiki garde la première valeur saisie : un champ déjà rempli ne se modifie pas depuis une collection.
   const valeursWiki = nouvelle ? fiches?.find((fiche) => fiche.ean === ficheChoisie) : depart
   const verrouille = (k: 'categorie' | 'flavor' | 'status' | 'region') => !!valeursWiki?.[k]
   const champsVerrouilles = (['categorie', 'flavor', 'status', 'region'] as const).some(verrouille)
-  const codeBarresLocal = nouvelle && c.ean.startsWith('LOCAL-')
   // Le code n'est contrôlé qu'à la création : une fiche existante reste toujours modifiable.
   const codeBarresValide = !nouvelle || codeBarresLocal || normaliserCodeBarres(c.ean) !== null
   const codeBarresInvalide = nouvelle && !!c.ean && !codeBarresValide

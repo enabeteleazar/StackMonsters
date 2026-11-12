@@ -79,27 +79,27 @@ test('une collection reste privée, ses champs descriptifs alimentent le Wiki', 
   await expect(autre.getByText(nom)).toBeVisible()
 })
 
-test('une canette sans code-barres reste hors du Wiki et se modifie', async ({ page }) => {
+test('une canette sans code-barres reçoit un code tiré de son nom et rejoint le Wiki', async ({ page }) => {
   const nom = `Perso ${unique()}`
   await connecter(page, email())
   await page.getByRole('button', { name: 'Ajouter sans code-barres' }).click()
   await page.waitForSelector('#f-nom')
-  await expect(page.locator('#f-categorie')).toHaveCount(0)
+  await expect(page.locator('#f-categorie')).toHaveCount(1)
   await page.fill('#f-nom', nom)
   await page.getByRole('button', { name: 'Ajouter à la collection' }).click()
   await expect(page.getByText('Fiche enregistrée')).toBeVisible()
 
   await nav(page, 'Wiki').click()
   await expect(page.getByText('Canettes répertoriées')).toBeVisible()
-  await expect(page.getByText(nom)).toHaveCount(0)
+  await expect(page.getByText(nom).first()).toBeVisible()
 
   await nav(page, 'Collection').click()
   await page.getByText(nom).click()
   await page.getByRole('button', { name: 'Modifier la fiche' }).click()
-  await page.fill('#f-nom', `${nom} modifiée`)
+  await page.fill('#f-nom', `${nom} Modifiée`)
   await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await expect(page.getByText('Fiche enregistrée')).toBeVisible()
-  await expect(page.getByText(`${nom} modifiée`).first()).toBeVisible()
+  await expect(page.getByText(`${nom} Modifiée`).first()).toBeVisible()
 })
 
 test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async ({ page }) => {

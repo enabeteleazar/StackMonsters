@@ -11,6 +11,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import importlib.util
 import ipaddress
 import json
 import logging
@@ -28,6 +29,11 @@ import psycopg
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
+
+# convert.py (à la racine du dépôt) fabrique les codes internes « 20… » à partir d'un nom.
+_spec = importlib.util.spec_from_file_location("convert", Path(__file__).resolve().parent.parent / "convert.py")
+convert = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(convert)
 
 
 def _version() -> str:
@@ -86,6 +92,19 @@ def _photo_valide(photo: str) -> bool:
     except (binascii.Error, ValueError):
         return False
     return True
+
+
+# Début de mot : début du nom, ou lettre précédée d'un espace, tiret, barre, point ou parenthèse.
+DEBUT_MOT_RE = re.compile(r"(^|[\s\-/.(\[])(\w)")
+
+
+def formater_nom(nom: str) -> str:
+    """Nom d'un produit : espaces superflus retirés et majuscule à chaque mot.
+
+    Seule la première lettre de chaque mot change : « vr46 » devient « Vr46 », mais « USA » reste « USA ».
+    """
+    nom = " ".join(nom.split())
+    return DEBUT_MOT_RE.sub(lambda m: m.group(1) + m.group(2).upper(), nom)
 
 
 def _normaliser_code(code: str) -> str | None:
@@ -182,6 +201,11 @@ class Canette(BaseModel):
             raise ValueError("format de photo refusé")
         return photo
 
+    @field_validator("nom")
+    @classmethod
+    def formater(cls, nom: str) -> str:
+        return formater_nom(nom)
+
 
 class FicheWiki(BaseModel):
     """Champs d'une fiche du Wiki modifiables par le propriétaire."""
@@ -195,6 +219,11 @@ class FicheWiki(BaseModel):
     status: Literal["", "Active", "Stop", "Nouveauté"] = ""
     region: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
+
+    @field_validator("nom")
+    @classmethod
+    def formater(cls, nom: str) -> str:
+        return formater_nom(nom)
 
 
 class CodeBarres(BaseModel):
@@ -613,6 +642,12 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         ean = c.ean if deja_la else _normaliser_code(c.ean)
         if ean is None:
             raise HTTPException(422, "code-barres invalide")
+        # Nouvelle canette sans code-barres : code interne tiré du nom (convert.py). Le même nom donne
+        # toujours le même code, donc la canette rejoint la fiche du Wiki déjà créée sous ce nom.
+        if not deja_la and ean.startswith("LOCAL-") and c.nom:
+            ean = convert.nom_en_13_chiffres(c.nom)
+            if cx.execute("SELECT 1 FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).fetchone():
+                raise HTTPException(409, "une canette du même nom est déjà dans ta collection")
         principal = None if deja_la else _fiche_du_code(cx, ean)
         if principal:  # un code supplémentaire désigne la fiche existante : pas de doublon
             if cx.execute(
@@ -624,7 +659,7 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         # Seul le propriétaire valide une « Nouveauté » ; venue d'un autre compte, elle est ignorée.
         statut = c.status if c.status != "Nouveauté" or _est_proprietaire(u["email"]) else ""
         # Le Wiki reçoit les champs descriptifs fournis, sans écraser une fiche existante.
-        # Il ne reçoit ni les canettes sans code-barres (LOCAL-), ni les photos : elles restent privées.
+        # Il ne reçoit ni les canettes restées sans code (LOCAL-, sans nom), ni les photos : elles restent privées.
         # Une fiche retirée par le propriétaire (wiki_exclus) n'est pas recréée.
         if not ean.startswith("LOCAL-") and not exclue:
             cx.execute(

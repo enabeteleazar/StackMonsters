@@ -7,7 +7,7 @@
   ],
   "functions": {
     "api/index.py": {
-      "includeFiles": "package.json"
+      "includeFiles": "{package.json,convert.py}"
     }
   },
   "headers": [
