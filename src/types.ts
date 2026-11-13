@@ -54,6 +54,10 @@ export type FicheWiki = {
   photo: string | null
   /** Codes-barres supplémentaires (autre pays, autre format) qui désignent aussi cette fiche. */
   codes: string[]
+  /** Propriétaire seulement : d'où vient la fiche (sans lien avec un compte) et sa dernière correction. */
+  provenance?: { source: string; cree: string; corrigee: string | null }
+  /** Propriétaire seulement : erreurs signalées par les comptes, pas encore traitées. */
+  signalements?: { id: number; motif: string; cree: string }[]
 }
 
 export type ReponseWiki = { peut_editer: boolean; fiches: FicheWiki[] }

@@ -998,6 +998,7 @@ def test_wiki_amorce_depuis_les_collections_existantes_une_seule_fois(env):
     c.put("/api/cans", json=canette("LOCAL-AMORCE", nom="Perso"), headers=ha)
     # Simule une base d'avant le Wiki : la table n'existe pas encore, les collections si.
     with ix.connecter() as cx:
+        cx.execute("DROP TABLE wiki_signalements")
         cx.execute("DROP TABLE wiki_codes")
         cx.execute("DROP TABLE wiki")
         cx.execute("DELETE FROM schema_migrations")
@@ -1177,3 +1178,51 @@ def test_le_mail_du_code_a_une_version_html_et_texte(monkeypatch):
     assert all(f">{c}</div>" in html for c in "482913")
     assert 'src="https://exemple.test/images/logo-mail.png"' in html and "//images" not in html
     assert "<style" not in html  # styles sur chaque balise : Gmail ignore les feuilles de style
+
+
+def test_provenance_anonyme_visible_du_seul_proprietaire(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+    code = ix.convert.nom_en_13_chiffres("Test Provenance")
+    try:
+        c.put("/api/cans", json=canette("LOCAL-PROV", nom="Test Provenance"), headers=hb)
+        assert "provenance" not in fiche(c, hb, "2000000000015")  # un autre compte ne la voit pas
+        p = fiche(c, ha, "2000000000015")["provenance"]
+        assert p["source"] == "code-barres" and p["cree"] and p["corrigee"] is None
+        assert fiche(c, ha, code)["provenance"]["source"] == "sans-code"
+
+        r = c.put("/api/wiki/2000000000015", json={"nom": "Mango Loco"}, headers=ha).json()
+        assert r["provenance"]["source"] == "code-barres" and r["provenance"]["corrigee"]
+        # Aucune trace du compte : la table wiki n'a pas de colonne d'auteur.
+        with ix.base() as cx:
+            cols = {x["column_name"] for x in cx.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name IN ('wiki', 'wiki_signalements')"
+            ).fetchall()}
+        assert not cols & {"user_id", "email", "auteur"}
+    finally:
+        with ix.base() as cx:
+            cx.execute("DELETE FROM wiki WHERE ean = %s", (code,))
+
+
+def test_signaler_une_fiche_et_traiter_le_signalement(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+
+    assert c.post("/api/wiki/2000000000015/signalement", json={"motif": "Mauvais"}).status_code == 401
+    assert c.post("/api/wiki/2000000000015/signalement", json={"motif": " x "}, headers=hb).status_code == 422
+    assert c.post("/api/wiki/TEST-INCONNU/signalement", json={"motif": "Erreur"}, headers=hb).status_code == 404
+    r = c.post("/api/wiki/2000000000015/signalement", json={"motif": "  Mauvais   volume : 473 ml "}, headers=hb)
+    assert r.status_code == 201
+
+    assert "signalements" not in fiche(c, hb, "2000000000015")  # réservé au propriétaire
+    sig = fiche(c, ha, "2000000000015")["signalements"]
+    assert len(sig) == 1 and sig[0]["motif"] == "Mauvais volume : 473 ml"
+
+    assert c.post(f"/api/wiki/signalements/{sig[0]['id']}/traite", headers=hb).status_code == 403
+    r = c.post(f"/api/wiki/signalements/{sig[0]['id']}/traite", headers=ha)
+    assert r.status_code == 200 and r.json()["signalements"] == []
+    assert c.post(f"/api/wiki/signalements/{sig[0]['id']}/traite", headers=ha).status_code == 404

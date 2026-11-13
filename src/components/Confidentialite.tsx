@@ -57,7 +57,7 @@ export default function Confidentialite() {
                 </li>
                 <li>
                   <b>Sécurité</b> — empreintes chiffrées (HMAC) des adresses IP, jamais l’adresse en clair. But :
-                  limiter les abus de connexion et compter les connexions uniques. Base : intérêt légitime à protéger le
+                  limiter les abus (connexions, signalements) et compter les connexions uniques. Base : intérêt légitime à protéger le
                   service.
                 </li>
                 <li>
@@ -76,6 +76,12 @@ export default function Confidentialite() {
                 catégorie, saveur, statut, pays). Une photo que tu envoies devient celle de la fiche si elle
                 n’en a pas encore ; les photos envoyées auparavant restent privées. Tes notes, quantités et états n’y
                 sont jamais envoyés.
+              </p>
+              <p>
+                Chaque fiche garde sa provenance (ajout par code-barres, sans code-barres, reprise d’une collection) et
+                ses dates, sans lien avec ton compte. Tu peux signaler une erreur sur une fiche : le motif saisi est
+                transmis au responsable du Wiki, lui aussi sans lien avec ton compte, et conservé jusqu’à son
+                traitement.
               </p>
             </Bloc>
 

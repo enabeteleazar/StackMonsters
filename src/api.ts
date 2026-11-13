@@ -120,6 +120,15 @@ export const api = {
     }),
   wikiRetirerCode: (ean: string, code: string) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/code-barres/${encodeURIComponent(code)}`, { method: 'DELETE' }),
+  /** Signale une erreur sur une fiche ; le motif est transmis sans lien avec le compte. */
+  wikiSignaler: (ean: string, motif: string) =>
+    requete<{ ok: boolean }>(`/wiki/${encodeURIComponent(ean)}/signalement`, {
+      method: 'POST',
+      body: JSON.stringify({ motif }),
+    }),
+  /** Propriétaire : classe un signalement (corrigé ou rejeté) et récupère la fiche à jour. */
+  wikiSignalementTraite: (id: number) =>
+    requete<FicheWiki>(`/wiki/signalements/${id}/traite`, { method: 'POST' }),
   wikiPhotoRetirer: (ean: string) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/photo`, { method: 'DELETE' }),
   wikiPhoto: (ean: string, version: string) => photoLocale('wiki', ean, version),

@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { ImageOff, ImagePlus, Trash2, X } from 'lucide-react'
+import { CheckCircle2, Flag, ImageOff, ImagePlus, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
 import { reduirePhoto } from '../photo'
 import type { FicheWiki as Fiche, ModifFicheWiki } from '../types'
 import PhotoWiki from './PhotoWiki'
+
+/** Libellé de la provenance (anonyme) d'une fiche, pour le propriétaire. */
+const SOURCES: Record<string, string> = {
+  'code-barres': 'ajout par code-barres',
+  'sans-code': 'ajout sans code-barres',
+  migration: 'reprise d’une collection existante',
+  restauration: 'restauration d’une sauvegarde',
+}
+const dateCourte = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('fr-FR') : '')
 
 type Props = {
   fiche: Fiche
@@ -30,6 +39,43 @@ export default function FicheWiki({
   const [photoOccupee, setPhotoOccupee] = useState(false)
   const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
   const photoInput = useRef<HTMLInputElement>(null)
+  // Signalement d'une erreur (tous les comptes) et traitement des signalements (propriétaire).
+  const [signalementOuvert, setSignalementOuvert] = useState(false)
+  const [motif, setMotif] = useState('')
+  const [etatSignalement, setEtatSignalement] = useState<{ ok: boolean; texte: string } | null>(null)
+  const [signalementOccupe, setSignalementOccupe] = useState(false)
+
+  const signaler = async () => {
+    setSignalementOccupe(true)
+    setEtatSignalement(null)
+    try {
+      await api.wikiSignaler(fiche.ean, motif.trim())
+      setSignalementOuvert(false)
+      setMotif('')
+      setEtatSignalement({ ok: true, texte: 'Merci : ton signalement a été transmis.' })
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+      else setEtatSignalement({
+        ok: false,
+        texte: e instanceof ErreurAPI && e.status === 429
+          ? 'Trop de signalements pour le moment, réessaie plus tard.'
+          : 'Signalement non envoyé, réessaie.',
+      })
+    } finally {
+      setSignalementOccupe(false)
+    }
+  }
+
+  const traiter = async (id: number) => {
+    setSignalementOccupe(true)
+    try {
+      surEnregistree(fiche.ean, await api.wikiSignalementTraite(id))
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+    } finally {
+      setSignalementOccupe(false)
+    }
+  }
 
   const changerPhoto = async (action: () => Promise<Fiche>) => {
     setPhotoOccupee(true)
@@ -97,6 +143,13 @@ export default function FicheWiki({
           {/* Codes-barres réservés au propriétaire : les autres comptes ne voient que la fiche. */}
           {peutEditer && <div className="ean">{fiche.ean}</div>}
           <h2>{fiche.nom || 'Sans nom'}</h2>
+          {peutEditer && fiche.provenance && (
+            <p className="fiche-provenance">
+              {fiche.provenance.cree ? `Créée le ${dateCourte(fiche.provenance.cree)}` : 'Créée'} —{' '}
+              {SOURCES[fiche.provenance.source] ?? 'avant le suivi de la provenance'}
+              {fiche.provenance.corrigee && ` · corrigée le ${dateCourte(fiche.provenance.corrigee)}`}
+            </p>
+          )}
           {peutEditer && fiche.codes.length > 0 && (
             <div className="autres-codes">
               <span>Autres codes-barres</span>
@@ -147,6 +200,24 @@ export default function FicheWiki({
                 <b>{fiche.status || '—'}</b>
               </div>
             </div>
+
+            {peutEditer && !!fiche.signalements?.length && (
+              <div className="fiche-signalements" role="region" aria-label="Erreurs signalées">
+                <span className="etiquette">
+                  <Flag size={14} /> Erreurs signalées ({fiche.signalements.length})
+                </span>
+                {fiche.signalements.map((s) => (
+                  <div className="fiche-signalement" key={s.id}>
+                    <p>
+                      <small>{dateCourte(s.cree)}</small> {s.motif}
+                    </p>
+                    <button className="btn btn-fantome" disabled={signalementOccupe} onClick={() => void traiter(s.id)}>
+                      <CheckCircle2 size={16} /> Marquer comme traité
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="fiche-description">
               <span className="etiquette">Description</span>
@@ -207,6 +278,44 @@ export default function FicheWiki({
                   {suppressionOccupe ? 'Suppression…' : 'Supprimer la fiche du Wiki'}
                 </button>
                 {erreurSuppression && <p className="sous" role="alert">{erreurSuppression}</p>}
+              </div>
+            )}
+
+            {!peutEditer && (
+              <div className="actions fiche-signaler">
+                {signalementOuvert ? (
+                  <div className="champs">
+                    <div>
+                      <label htmlFor="w-signalement">Quelle erreur as-tu repérée ?</label>
+                      <textarea
+                        id="w-signalement"
+                        maxLength={500}
+                        placeholder="Ex. : le volume est 355 ml, pas 500 ml."
+                        value={motif}
+                        onChange={(e) => setMotif(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      className="btn btn-primaire actions-principal"
+                      disabled={signalementOccupe || motif.trim().length < 3}
+                      onClick={() => void signaler()}
+                    >
+                      {signalementOccupe ? 'Envoi…' : 'Envoyer le signalement'}
+                    </button>
+                    <button className="btn btn-fantome" onClick={() => setSignalementOuvert(false)}>
+                      Annuler
+                    </button>
+                  </div>
+                ) : (
+                  <button className="btn btn-fantome" onClick={() => { setSignalementOuvert(true); setEtatSignalement(null) }}>
+                    <Flag size={17} /> Signaler une erreur
+                  </button>
+                )}
+                {etatSignalement && (
+                  <p className={etatSignalement.ok ? 'sous' : 'sous fiche-alerte'} role="status">
+                    {etatSignalement.texte}
+                  </p>
+                )}
               </div>
             )}
           </>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BookOpen, Search, WifiOff } from 'lucide-react'
+import { BookOpen, Flag, Search, WifiOff } from 'lucide-react'
 import { api, NonAutorise } from '../api'
 import { CATEGORIES } from '../categories'
 import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
@@ -33,6 +33,8 @@ export default function Wiki({ surNonAutorise }: Props) {
   const [erreur, setErreur] = useState(false)
   const [q, setQ] = useState('')
   const [gamme, setGamme] = useState('')
+  // Propriétaire : n'afficher que les fiches qui ont des erreurs signalées.
+  const [signaleesSeules, setSignaleesSeules] = useState(false)
   const [ouverte, setOuverte] = useState<string | null>(null)
 
   const charger = useCallback(async () => {
@@ -51,7 +53,11 @@ export default function Wiki({ surNonAutorise }: Props) {
     void charger()
   }, [charger])
 
-  const vues = useMemo(() => filtrerFiches(fiches ?? [], q, gamme), [fiches, q, gamme])
+  const nbSignalees = (fiches ?? []).filter((f) => f.signalements?.length).length
+  const vues = useMemo(() => {
+    const filtrees = filtrerFiches(fiches ?? [], q, gamme)
+    return signaleesSeules ? filtrees.filter((f) => f.signalements?.length) : filtrees
+  }, [fiches, q, gamme, signaleesSeules])
   const fiche = ouverte ? (fiches?.find((f) => f.ean === ouverte) ?? null) : null
   const fermer = useCallback(() => setOuverte(null), [])
 
@@ -115,6 +121,17 @@ export default function Wiki({ surNonAutorise }: Props) {
         {fiches &&
           (vues.length ? (
             <>
+              {peutEditer && nbSignalees > 0 && (
+                <button
+                  className={`wiki-signalees${signaleesSeules ? ' actif' : ''}`}
+                  aria-pressed={signaleesSeules}
+                  onClick={() => setSignaleesSeules((v) => !v)}
+                >
+                  <Flag size={16} />
+                  {nbSignalees} fiche{nbSignalees > 1 ? 's' : ''} signalée{nbSignalees > 1 ? 's' : ''}
+                  <span>{signaleesSeules ? 'Tout afficher' : 'Voir'}</span>
+                </button>
+              )}
               <p className="legende-codes" aria-hidden="true">
                 {(['reel', 'genere', 'autre'] as const).map((t) => (
                   <span key={t}>
@@ -129,6 +146,11 @@ export default function Wiki({ surNonAutorise }: Props) {
                     <span className="wiki-photo">
                       <PhotoWiki ean={f.ean} version={f.photo} />
                       {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
+                      {!!f.signalements?.length && (
+                        <span className="wiki-signale" role="img" aria-label="Erreur signalée">
+                          <Flag size={12} />
+                        </span>
+                      )}
                       <span
                         className={`point-code point-code-${typeCode(f.ean)}`}
                         title={LIBELLES_CODE[typeCode(f.ean)]}

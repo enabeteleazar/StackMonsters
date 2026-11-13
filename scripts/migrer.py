@@ -72,8 +72,8 @@ def restaurer_compte(cx, email: str, lignes: list[dict]) -> int:
         # Le Wiki est le seul endroit où une canette existe : chaque canette restaurée a sa fiche.
         cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (r["ean"],))
         cx.execute(
-            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, nouveaute_depuis, source, cree, maj)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'restauration', %s, %s)
                ON CONFLICT (ean) DO UPDATE SET
                  nom=COALESCE(NULLIF(wiki.nom, ''), EXCLUDED.nom),
                  volume=COALESCE(NULLIF(wiki.volume, ''), EXCLUDED.volume),

@@ -138,8 +138,8 @@ CHAMPS = """ean TEXT NOT NULL, nom TEXT NOT NULL DEFAULT '', edition TEXT NOT NU
 # elles avaient été envoyées comme privées. Aucune ligne de collection n'est modifiée.
 FICHES_MANQUANTES = """
 DELETE FROM wiki_exclus x WHERE EXISTS (SELECT 1 FROM collection c WHERE c.ean = x.ean);
-INSERT INTO wiki (ean, nom, volume, cree, maj)
-    SELECT DISTINCT ON (c.ean) c.ean, c.nom, c.volume, c.ajout, c.maj FROM collection c
+INSERT INTO wiki (ean, nom, volume, source, cree, maj)
+    SELECT DISTINCT ON (c.ean) c.ean, c.nom, c.volume, 'migration', c.ajout, c.maj FROM collection c
     WHERE NOT EXISTS (SELECT 1 FROM wiki w WHERE w.ean = c.ean)
       AND NOT EXISTS (SELECT 1 FROM wiki_codes k WHERE k.ean = c.ean)
     ORDER BY c.ean, (c.nom = ''), c.ajout
@@ -207,6 +207,16 @@ ON CONFLICT (ean) DO NOTHING;
     # Code remplacé (code interne → vrai code, correction) : « vers » mène à la fiche qui le porte désormais.
     # Vide pour une fiche supprimée par le propriétaire.
     (8, "ALTER TABLE wiki_exclus ADD COLUMN IF NOT EXISTS vers TEXT;"),
+    # Provenance anonyme d'une fiche (comment elle a été créée, dernière correction du propriétaire) et
+    # signalements d'erreurs envoyés par les comptes, sans lien avec eux.
+    (9, """
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS corrigee TEXT;
+CREATE TABLE IF NOT EXISTS wiki_signalements (id BIGSERIAL PRIMARY KEY,
+    fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE,
+    motif TEXT NOT NULL, cree TEXT NOT NULL, traite TEXT);
+CREATE INDEX IF NOT EXISTS wiki_signalements_fiche ON wiki_signalements (fiche);
+"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -266,6 +276,20 @@ class CodeBarres(BaseModel):
 
 class PhotoFiche(BaseModel):
     photo: str = Field(max_length=300_000)
+
+
+class Signalement(BaseModel):
+    """Erreur signalée sur une fiche du Wiki ; le motif est transmis sans lien avec le compte."""
+
+    motif: str = Field(min_length=3, max_length=500)
+
+    @field_validator("motif")
+    @classmethod
+    def nettoyer(cls, motif: str) -> str:
+        motif = " ".join(motif.split())
+        if len(motif) < 3:
+            raise ValueError("motif trop court")
+        return motif
 
 
 class Delta(BaseModel):
@@ -765,8 +789,8 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         fiche = (_fiche_de_la_ligne(cx, ean) if deja_la else None) or ean
         cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (fiche,))
         cx.execute(
-            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, nouveaute_depuis, source, cree, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (ean) DO UPDATE SET
                   nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
                   volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
@@ -786,7 +810,9 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                              THEN EXCLUDED.maj ELSE wiki.maj END""",
             (fiche, c.nom.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
              statut, c.region.strip(),
-             int(time.time()) if statut == "Nouveauté" else None, maintenant(), maintenant()),
+             int(time.time()) if statut == "Nouveauté" else None,
+             # Provenance anonyme, fixée à la création de la fiche (jamais modifiée ensuite).
+             "sans-code" if c.ean.startswith("LOCAL-") else "code-barres", maintenant(), maintenant()),
         )
         # Une photo envoyée devient celle de la fiche du Wiki si elle n'en a pas encore (visible par tous).
         if c.photo:
@@ -832,20 +858,29 @@ def supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection =
 
 COLONNES_FICHE = (
     "ean, nom, volume, categorie, gamme, flavor, " + _statut("") + " AS status, region, description, "
-    "(photo IS NOT NULL) AS a_photo, maj, "
-    "COALESCE((SELECT array_agg(k.ean ORDER BY k.ean) FROM wiki_codes k WHERE k.fiche = wiki.ean), '{}') AS codes"
+    "(photo IS NOT NULL) AS a_photo, maj, source, cree, corrigee, "
+    "COALESCE((SELECT array_agg(k.ean ORDER BY k.ean) FROM wiki_codes k WHERE k.fiche = wiki.ean), '{}') AS codes, "
+    "COALESCE((SELECT json_agg(json_build_object('id', s.id, 'motif', s.motif, 'cree', s.cree) ORDER BY s.id) "
+    "FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL), '[]') AS signalements"
 )
 
 
-def _fiche(r: dict) -> dict:
-    """Forme publique d'une fiche ; « photo » n'est qu'un marqueur de version."""
-    return {
+def _fiche(r: dict, proprietaire: bool = False) -> dict:
+    """Forme publique d'une fiche ; « photo » n'est qu'un marqueur de version.
+
+    Le propriétaire reçoit en plus la provenance (anonyme) et les signalements encore ouverts.
+    """
+    fiche = {
         "ean": r["ean"], "nom": r["nom"], "volume": r["volume"],
         "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
         "region": r["region"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
         "codes": list(r["codes"]),
     }
+    if proprietaire:
+        fiche["provenance"] = {"source": r["source"], "cree": r["cree"], "corrigee": r["corrigee"]}
+        fiche["signalements"] = r["signalements"]
+    return fiche
 
 
 def _fiche_du_code(cx: psycopg.Connection, code: str) -> str | None:
@@ -877,7 +912,8 @@ def wiki_liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(
         lignes = cx.execute(
             f"SELECT {COLONNES_FICHE} FROM wiki ORDER BY (nom = ''), lower(nom), ean"
         ).fetchall()
-    return {"peut_editer": _est_proprietaire(u["email"]), "fiches": [_fiche(r) for r in lignes]}
+    proprio = _est_proprietaire(u["email"])
+    return {"peut_editer": proprio, "fiches": [_fiche(r, proprio) for r in lignes]}
 
 
 @router.get("/wiki/{ean}/photo")
@@ -911,7 +947,7 @@ def wiki_photo_remplacer(ean: str, p: PhotoFiche, u: dict = Depends(utilisateur)
         ).fetchone()
     if r is None:
         raise HTTPException(404, "fiche inconnue")
-    return _fiche(r)
+    return _fiche(r, proprietaire=True)
 
 
 @router.delete("/wiki/{ean}/photo")
@@ -926,7 +962,7 @@ def wiki_photo_retirer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Con
         ).fetchone()
     if r is None:
         raise HTTPException(404, "fiche inconnue")
-    return _fiche(r)
+    return _fiche(r, proprietaire=True)
 
 
 @router.put("/wiki/{ean}")
@@ -952,11 +988,11 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
             # Une Nouveauté encore en cours garde sa date ; sinon le délai de 30 jours (re)part maintenant.
             "nouveaute_depuis = CASE WHEN %s <> 'Nouveauté' THEN NULL "
             "WHEN status = 'Nouveauté' AND nouveaute_depuis >= %s THEN nouveaute_depuis ELSE %s END, "
-            "description = %s, maj = %s "
+            "description = %s, maj = %s, corrigee = %s "
             f"WHERE ean = %s RETURNING {COLONNES_FICHE}",
             (nouvel_ean, f.nom.strip(),
              f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(), f.status, now - DUREE_NOUVEAUTE, now,
-             f.description.strip(), maintenant(), ean),
+             f.description.strip(), maintenant(), maintenant(), ean),
         ).fetchone()
         if r is None:
             raise HTTPException(404, "fiche inconnue")
@@ -964,7 +1000,7 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
             _suivre_changement_de_code(cx, ean, nouvel_ean)
             # Relecture : les codes supplémentaires ne suivent le nouveau code qu'en fin d'instruction.
             r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (nouvel_ean,)).fetchone()
-    return _fiche(r)
+    return _fiche(r, proprietaire=True)
 
 
 def _suivre_changement_de_code(cx: psycopg.Connection, ancien: str, nouveau: str) -> None:
@@ -1068,6 +1104,38 @@ def wiki_supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connect
     if n == 0:
         raise HTTPException(404, "fiche inconnue")
     return Response(status_code=204)
+
+
+@router.post("/wiki/{ean}/signalement", status_code=201)
+def wiki_signaler(
+    ean: str, sig: Signalement, request: Request,
+    u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Signale une erreur sur une fiche. Le motif est gardé sans lien avec le compte (comme la fiche)."""
+    _limiter_ip(cx, request, "signalement", 20, int(time.time()))
+    with cx.transaction():
+        if not cx.execute("SELECT 1 FROM wiki WHERE ean = %s", (ean,)).fetchone():
+            raise HTTPException(404, "fiche inconnue")
+        cx.execute(
+            "INSERT INTO wiki_signalements (fiche, motif, cree) VALUES (%s, %s, %s)", (ean, sig.motif, maintenant()),
+        )
+    return {"ok": True}
+
+
+@router.post("/wiki/signalements/{ident}/traite")
+def wiki_signalement_traite(ident: int, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Le propriétaire classe un signalement (corrigé ou rejeté) ; renvoie la fiche à jour."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    with cx.transaction():
+        s = cx.execute(
+            "UPDATE wiki_signalements SET traite = %s WHERE id = %s AND traite IS NULL RETURNING fiche",
+            (maintenant(), ident),
+        ).fetchone()
+        if s is None:
+            raise HTTPException(404, "signalement inconnu ou déjà traité")
+        r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (s["fiche"],)).fetchone()
+    return _fiche(r, proprietaire=True)
 
 
 app = FastAPI(title="StackMonsters", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
