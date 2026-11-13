@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Sparkles, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
-import { CATEGORIES, libelleStatut, REGIONS, STATUTS_COLLECTION } from '../categories'
+import { CATEGORIES, categorieDuNom, libelleStatut, REGIONS, STATUTS_COLLECTION } from '../categories'
 import { normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
 import { CANETTE_VIDE, ETATS, type Canette, type FicheWiki } from '../types'
@@ -292,6 +292,8 @@ function Formulaire({
   const nomRequis = codeBarresLocal && !c.nom.trim()
   // Le message n'apparaît qu'après un passage dans le champ : rien de rouge à l'ouverture du formulaire.
   const [nomQuitte, setNomQuitte] = useState(false)
+  // Dernière catégorie remplie automatiquement depuis le nom (une catégorie choisie à la main n'est jamais écrasée).
+  const categorieAuto = useRef('')
   const choixFicheRequis =
     nouvelle && !!ficheCodeDisponible && ficheChoisie !== ficheCodeDisponible.ean
   const rechercheActive = c.nom.trim().length >= 2 || (c.ean.trim().length >= 2 && !c.ean.startsWith('LOCAL-'))
@@ -356,7 +358,16 @@ function Formulaire({
             value={c.nom}
             placeholder="Monster Mango Loco"
             disabled={texteVerrouille('nom')}
-            onChange={(e) => champ('nom', e.target.value)}
+            onChange={(e) => {
+              const nom = e.target.value
+              champ('nom', nom)
+              // Catégorie citée dans le nom : remplie seule, sauf si elle a été choisie à la main ou vient du Wiki.
+              if (nouvelle && !verrouille('categorie') && (!c.categorie || c.categorie === categorieAuto.current)) {
+                const detectee = categorieDuNom(nom)
+                categorieAuto.current = detectee
+                champ('categorie', detectee)
+              }
+            }}
             onBlur={() => setNomQuitte(true)}
           />
         </div>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Camera as CameraIcon, CheckCircle2, ImageOff, Loader2, Plus, Sparkles, X } from 'lucide-react'
+import { categorieDuNom } from '../categories'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
@@ -320,7 +321,7 @@ function CarteMini({
   )
 }
 
-type ChampsCreation = Pick<Canette, 'nom' | 'photo'>
+type ChampsCreation = Pick<Canette, 'nom' | 'photo'> & Partial<Pick<Canette, 'categorie'>>
 
 function CreationRapide({
   occupe,
@@ -340,12 +341,14 @@ function CreationRapide({
   const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
   const maj = <K extends keyof ChampsCreation>(k: K, v: ChampsCreation[K]) => setChamps((c) => ({ ...c, [k]: v }))
   const propositions = fichesCorrespondantes(fichesExistantes, champs.nom)
+  // Catégorie citée dans le nom (« … Ultra … ») : remplie automatiquement à la création de la fiche.
+  const categorie = categorieDuNom(champs.nom)
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        surValider({ ...champs, nom: champs.nom.trim() })
+        surValider({ ...champs, nom: champs.nom.trim(), ...(categorie ? { categorie } : {}) })
       }}
     >
       <div className="bandeau-info">
@@ -363,6 +366,11 @@ function CreationRapide({
             value={champs.nom}
             onChange={(e) => maj('nom', e.target.value)}
           />
+          {categorie && (
+            <p className="categorie-detectee" aria-live="polite">
+              Catégorie détectée : <b>{categorie}</b>
+            </p>
+          )}
         </div>
         {propositions.length > 0 && (
           <div className="suggestions-wiki" aria-live="polite">

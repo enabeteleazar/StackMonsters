@@ -752,6 +752,9 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .verdict .scan-inconnu svg{color:var(--acide);filter:drop-shadow(0 0 12px rgba(158,232,24,.6))}
 .verdict .scan-etat h3{font:700 italic 18px "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;text-transform:none}
 .verdict .scan-entete .ean{color:var(--acide);opacity:.85}
+/* Catégorie repérée dans le nom, sous le champ « Nom » de la création après un scan. */
+.verdict .categorie-detectee{margin:8px 2px 0;font-size:13px;color:var(--alu)}
+.verdict .categorie-detectee b{color:var(--acide)}
 .verdict .choix-etat button{border-radius:16px;border:1.5px solid rgba(158,232,24,.35);background:#0b0d08}
 
 .verdict .badge{border-radius:999px}
