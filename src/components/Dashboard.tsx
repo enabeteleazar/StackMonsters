@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { PlusCircle, ScanLine } from 'lucide-react'
+import { ArrowRight, PlusCircle, ScanLine } from 'lucide-react'
 import type { Canette } from '../types'
 import PhotoWiki from './PhotoWiki'
 
@@ -17,23 +17,8 @@ function estCeMois(iso: string) {
   return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth()
 }
 
-export default function Dashboard({
-  canettes,
-  nomUtilisateur,
-  surScanner,
-  surAjouter,
-  surOuvrir,
-}: Props) {
-
-  const rayures = useMemo(
-    () =>
-      Array.from({ length: 40 }, (_, i) => {
-        const d = ((i * 37 + 11) % 10) + 1
-        return { largeur: 1 + (d % 4), opacite: 0.3 + (d % 5) / 10 }
-      }),
-    [],
-  )
-
+/** Accueil de l'appli connectée, dans l'univers de la page d'accueil publique. */
+export default function Dashboard({ canettes, nomUtilisateur, surScanner, surAjouter, surOuvrir }: Props) {
   const stats = useMemo(() => {
     const references = canettes.length
     const ceMois = canettes.filter((c) => estCeMois(c.ajout)).length
@@ -42,74 +27,86 @@ export default function Dashboard({
     return { references, ceMois, palier, progres }
   }, [canettes])
 
-  const recentes = useMemo(
-    () => [...canettes].sort((a, b) => b.ajout.localeCompare(a.ajout)).slice(0, 3),
+  // Dernière canette ajoutée : sa photo remplace l'image fixe de la canette.
+  const derniere = useMemo(
+    () => canettes.reduce<Canette | undefined>((d, c) => (!d || c.ajout > d.ajout ? c : d), undefined),
     [canettes],
   )
 
   return (
-    <section className="tableau-bord">
-      <div className="zebre" aria-hidden="true">
-        {rayures.map((r, i) => (
-          <i key={i} style={{ width: r.largeur, opacity: r.opacite }} />
-        ))}
-      </div>
-      <span className="eyebrow">
-        StackMonsters · {nomUtilisateur ? `Bonjour, ${nomUtilisateur}` : 'Collection'}
-      </span>
-      <h1 className="tb-titre">
-        Ta collection
-        <span>en un coup d'œil</span>
-      </h1>
+    <section className="accueil-co">
+      <span className="accueil-co-lueur" aria-hidden="true" />
 
-      <div className="stats-grille">
-        <div className="stat-tuile accent">
-          <b>{stats.references}</b>
-          <span>Références</span>
+      <div className="accueil-co-hero">
+        <div className="accueil-co-texte">
+          <h1 className="accueil-co-titre">
+            {nomUtilisateur ? `Salut ${nomUtilisateur},` : 'Salut,'}
+            <span>
+              voici ta collection <b>Monster.</b>
+            </span>
+          </h1>
+          <span className="accueil-public-trait" aria-hidden="true" />
+
+          <dl className="accueil-co-stats">
+            <div className="accent">
+              <dt>Références</dt>
+              <dd>{stats.references}</dd>
+            </div>
+            <div>
+              <dt>Ce mois</dt>
+              <dd>+{stats.ceMois}</dd>
+            </div>
+          </dl>
         </div>
-        <div className="stat-tuile">
-          <b>+{stats.ceMois}</b>
-          <span>Ce mois</span>
-        </div>
+
+        {derniere?.photo_version ? (
+          // Photo de la dernière canette ajoutée, sur la même fumée verte ; un appui ouvre sa fiche.
+          <figure className="accueil-public-canette accueil-co-canette">
+            <span className="accueil-public-fumee" aria-hidden="true" />
+            <button
+              className="accueil-co-derniere"
+              onClick={() => surOuvrir(derniere.ean)}
+              aria-label={`Dernière canette ajoutée : ${derniere.nom || 'sans nom'}`}
+            >
+              <PhotoWiki source="collection" ean={derniere.ean} version={derniere.photo_version} taille={30} />
+            </button>
+            <span className="accueil-public-sol" aria-hidden="true" />
+          </figure>
+        ) : (
+          <figure className="accueil-public-canette accueil-co-canette" aria-hidden="true">
+            <span className="accueil-public-fumee" />
+            <span className="accueil-public-canette-cadre">
+              <img src="/images/monster-mega-detouree.webp" alt="" width={200} height={579} />
+            </span>
+            <span className="accueil-public-sol" />
+          </figure>
+        )}
       </div>
 
-      <div className="palier">
-        <div className="palier-tete">
-          <span>Prochain palier de références</span>
-          <span>{stats.references} / {stats.palier}</span>
+      <div className="accueil-co-palier">
+        <div className="accueil-co-palier-tete">
+          <span>Prochain palier</span>
+          <b>
+            {stats.references} / {stats.palier}
+          </b>
         </div>
-        <div className="barre-progres">
+        <div className="accueil-co-barre" role="progressbar" aria-valuemin={0} aria-valuemax={stats.palier} aria-valuenow={stats.references} aria-label="Prochain palier de références">
           <i style={{ width: `${stats.progres}%` }} />
         </div>
       </div>
 
-      <button className="scan-cta" onClick={surScanner}>
-        <ScanLine size={26} strokeWidth={2.4} />
-        Scan canette
-      </button>
-
-      <div className="raccourcis">
-        <button className="raccourci" onClick={surAjouter}>
-          <PlusCircle size={22} />
-          <span>Ajouter sans code-barres</span>
+      <div className="accueil-co-actions">
+        <button className="accueil-public-cta" onClick={surScanner}>
+          <ScanLine size={26} strokeWidth={2} />
+          <span className="accueil-public-cta-separateur" aria-hidden="true" />
+          Scan canette
+          <ArrowRight size={24} />
+        </button>
+        <button className="accueil-co-secondaire" onClick={surAjouter}>
+          <PlusCircle size={20} />
+          Ajouter sans code-barres
         </button>
       </div>
-
-      {recentes.length > 0 && (
-        <>
-          <div className="section-titre">
-            <h2>Ajoutées récemment</h2>
-          </div>
-          <div className="flux-recent">
-            {recentes.map((c) => (
-              <button key={c.ean} className="flux-carte" onClick={() => surOuvrir(c.ean)}>
-                <PhotoWiki source="collection" ean={c.ean} version={c.photo_version} taille={18} />
-                <b>{c.nom || 'Sans nom'}</b>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
     </section>
   )
 }
