@@ -1033,6 +1033,33 @@ def test_api_refuse_une_base_non_migree_sans_la_modifier(env, monkeypatch):
             assert ix.appliquer_migrations(cx) == [ix.MIGRATIONS[-1][0]]
 
 
+def test_une_preview_vercel_met_sa_base_a_jour_seule(env, monkeypatch):
+    c, codes = env
+    h = connecter(c, codes, A)
+    with ix.connecter() as cx:
+        cx.execute("DELETE FROM schema_migrations WHERE version = %s", (ix.MIGRATIONS[-1][0],))
+    monkeypatch.setattr(ix, "_schema_pret", False)
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    assert c.get("/api/cans", headers=h).status_code == 200
+    with ix.connecter() as cx:
+        v = cx.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()["v"]
+    assert v == ix.MIGRATIONS[-1][0]
+
+
+def test_la_production_ne_migre_jamais_seule(env, monkeypatch):
+    c, codes = env
+    h = connecter(c, codes, A)
+    with ix.connecter() as cx:
+        cx.execute("DELETE FROM schema_migrations WHERE version = %s", (ix.MIGRATIONS[-1][0],))
+    monkeypatch.setattr(ix, "_schema_pret", False)
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    try:
+        assert c.get("/api/cans", headers=h).status_code == 503
+    finally:
+        with ix.connecter() as cx:
+            assert ix.appliquer_migrations(cx) == [ix.MIGRATIONS[-1][0]]
+
+
 def test_une_seule_connexion_par_requete(env, monkeypatch):
     c, codes = env
     h = connecter(c, codes, A)

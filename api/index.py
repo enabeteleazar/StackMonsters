@@ -317,8 +317,15 @@ def _verifier_schema(cx: psycopg.Connection) -> None:
         version = cx.execute("SELECT COALESCE(MAX(version), 0) AS v FROM schema_migrations").fetchone()["v"]
     cx.commit()
     if version < MIGRATIONS[-1][0]:
-        logger.error("Schéma en version %d, attendu %d : lancer scripts/migrer_schema.py", version, MIGRATIONS[-1][0])
-        raise HTTPException(503, "Base de données à mettre à jour.")
+        # Déploiement Preview de Vercel (base de test) : l'API se met elle-même à jour, pour que chaque Preview
+        # soit utilisable sans migration manuelle. Jamais en production, où le schéma ne change que par le script.
+        if os.environ.get("VERCEL_ENV") == "preview":
+            with cx.transaction():
+                appliquees = appliquer_migrations(cx)
+            logger.warning("Preview : migrations appliquées automatiquement %s", appliquees)
+        else:
+            logger.error("Schéma en version %d, attendu %d : lancer scripts/migrer_schema.py", version, MIGRATIONS[-1][0])
+            raise HTTPException(503, "Base de données à mettre à jour.")
     _schema_pret = True
 
 

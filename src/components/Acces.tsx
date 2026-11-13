@@ -10,6 +10,24 @@ function messageLimite(err: ErreurAPI): string {
   return `Trop de tentatives. Réessaie dans ${minutes} minute${minutes > 1 ? 's' : ''}.`
 }
 
+/** Configuration d'envoi d'e-mail invalide côté serveur (clé Resend, expéditeur non vérifié). */
+const estConfigurationEmail = (err: ErreurAPI) =>
+  err.detail.includes('Resend') || err.detail.includes("d'e-mail non configuré")
+
+/**
+ * Message affiché quand le serveur ne peut pas traiter la demande : il décrit la vraie cause
+ * au lieu d'accuser l'adresse saisie (un 503 « Base de données à mettre à jour » n'a rien à voir avec elle).
+ */
+function messageIndisponible(err: unknown): string {
+  if (err instanceof NonAutorise)
+    return 'Accès refusé par l’hébergeur : ce site de test est protégé. Utilise l’adresse principale du site.'
+  if (!(err instanceof ErreurAPI)) return 'Service injoignable. Vérifie ta connexion internet et réessaie.'
+  if (err.status === 429) return messageLimite(err)
+  if (err.status === 503) return 'Service en maintenance, réessaie dans quelques minutes.'
+  if (err.status === 502) return 'L’envoi du code a échoué. Réessaie dans quelques minutes.'
+  return 'Une erreur est survenue. Réessaie dans quelques minutes.'
+}
+
 type Props = {
   /** Appelé après connexion : le parent recharge la collection. */
   surValider: (email: string) => void
@@ -35,20 +53,15 @@ export default function Acces({ surValider, surRetour, refuse }: Props) {
       setEmail(e)
       setEtape('code')
     } catch (err) {
-      if (err instanceof ErreurAPI && err.status === 429) {
-        setMessage(messageLimite(err))
-      } else if (
-        err instanceof ErreurAPI &&
-        err.status === 503 &&
-        (err.detail.includes('Resend') || err.detail.includes("d'e-mail non configuré"))
-      ) {
+      if (err instanceof ErreurAPI && err.status === 503 && estConfigurationEmail(err)) {
         setMessage(
           "L'envoi e-mail n'est pas configuré correctement. Le site doit utiliser un expéditeur vérifié ; onboarding@resend.dev ne livre qu'à l'adresse du compte Resend.",
         )
       } else if (err instanceof ErreurAPI && err.status === 422) {
+        // Seul cas où l'adresse elle-même est en cause.
         setMessage("Adresse e-mail refusée. Vérifie l'adresse et réessaie.")
       } else {
-        setMessage("Envoi impossible. Vérifie l’adresse et réessaie.")
+        setMessage(messageIndisponible(err))
       }
     } finally {
       setOccupe(false)
@@ -66,13 +79,8 @@ export default function Acces({ surValider, surRetour, refuse }: Props) {
       suivre('connection')
       surValider(r.email)
     } catch (err) {
-      setMessage(
-        err instanceof NonAutorise
-          ? 'Code invalide ou expiré.'
-          : err instanceof ErreurAPI && err.status === 429
-            ? messageLimite(err)
-            : 'Service injoignable.',
-      )
+      // 401 à cette étape : le code saisi est refusé (et non l'accès au site).
+      setMessage(err instanceof NonAutorise ? 'Code invalide ou expiré.' : messageIndisponible(err))
       setCode('')
     } finally {
       setOccupe(false)
