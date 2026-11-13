@@ -56,95 +56,100 @@ export default function Wiki({ surNonAutorise }: Props) {
   const fermer = useCallback(() => setOuverte(null), [])
 
   return (
-    <section>
-      <span className="eyebrow">Wiki</span>
+    <section className="collec wiki">
+      <span className="lueur-page" aria-hidden="true" />
 
-      {fiches && (
-        <>
-          <div className="stats">
-            <div className="stat">
-              <b>{fiches.length}</b>
-              <span>Canettes répertoriées</span>
-            </div>
-          </div>
+      <div className="collec-contenu wiki-contenu">
+        <div className="collec-tete">
+          <h1 className="collec-titre">
+            Le Wiki <b>Monster.</b>
+          </h1>
+          {fiches && (
+            <p className="collec-compte">
+              <b>{fiches.length}</b> Canettes répertoriées
+            </p>
+          )}
+        </div>
+        <span className="accueil-public-trait" aria-hidden="true" />
 
-          <div className="filtres">
-            <div className="recherche">
-              <Search size={16} />
+        {fiches && (
+          <>
+            <label className="collec-recherche wiki-recherche">
+              <Search size={18} />
               <input
                 value={q}
                 name="recherche-wiki"
+                type="search"
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Chercher une canette"
                 aria-label="Chercher dans le Wiki"
               />
-            </div>
-            <select
-              value={gamme}
-              name="gamme-wiki"
-              onChange={(e) => setGamme(e.target.value)}
-              aria-label="Filtrer par gamme"
-            >
-              <option value="">Toutes les gammes</option>
-              {CATEGORIES.map((categorie) => (
-                <option key={categorie} value={categorie}>{categorie}</option>
-              ))}
-            </select>
-          </div>
-        </>
-      )}
-
-      {fiches === null && !erreur && <p className="vide">Chargement du Wiki…</p>}
-
-      {erreur && (
-        <div className="vide">
-          <WifiOff size={30} />
-          Le Wiki a besoin de la connexion.
-          <button className="btn btn-fantome" onClick={() => void charger()}>
-            Réessayer
-          </button>
-        </div>
-      )}
-
-      {fiches &&
-        (vues.length ? (
-          <>
-            <p className="legende-codes" aria-hidden="true">
-              {(['reel', 'genere', 'autre'] as const).map((t) => (
-                <span key={t}>
-                  <span className={`point-code point-code-${t}`} />
-                  {LIBELLES_CODE[t]}
-                </span>
-              ))}
-            </p>
-            <div className="grille-collection grille-wiki">
-              {vues.map((f) => (
-                <button key={f.ean} className="carte-canette carte-wiki" onClick={() => setOuverte(f.ean)}>
-                  <div className="carte-photo">
-                    <PhotoWiki ean={f.ean} version={f.photo} />
-                    {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
-                    <span
-                      className={`point-code point-code-${typeCode(f.ean)}`}
-                      title={LIBELLES_CODE[typeCode(f.ean)]}
-                      role="img"
-                      aria-label={LIBELLES_CODE[typeCode(f.ean)]}
-                    />
-                  </div>
-                  <div className="carte-corps">
-                    <span className="nom">{f.nom || 'Sans nom'}</span>
-                  </div>
+            </label>
+            <div className="wiki-gammes" role="radiogroup" aria-label="Filtrer par gamme">
+              {['', ...CATEGORIES].map((categorie) => (
+                <button
+                  key={categorie || 'toutes'}
+                  role="radio"
+                  aria-checked={gamme === categorie}
+                  onClick={() => setGamme(categorie)}
+                >
+                  {categorie || 'Toutes'}
                 </button>
               ))}
             </div>
           </>
-        ) : (
-          <p className="vide">
-            <BookOpen size={30} />
-            {fiches.length
-              ? 'Aucune canette ne correspond à cette recherche.'
-              : "Le Wiki est vide pour l'instant : il se remplit avec les canettes ajoutées à l'application."}
-          </p>
-        ))}
+        )}
+
+        {fiches === null && !erreur && <p className="collec-vide">Chargement du Wiki…</p>}
+
+        {erreur && (
+          <div className="collec-vide">
+            <WifiOff size={34} />
+            Le Wiki a besoin de la connexion.
+            <button className="accueil-co-secondaire wiki-reessayer" onClick={() => void charger()}>
+              Réessayer
+            </button>
+          </div>
+        )}
+
+        {fiches &&
+          (vues.length ? (
+            <>
+              <p className="legende-codes" aria-hidden="true">
+                {(['reel', 'genere', 'autre'] as const).map((t) => (
+                  <span key={t}>
+                    <span className={`point-code point-code-${t}`} />
+                    {LIBELLES_CODE[t]}
+                  </span>
+                ))}
+              </p>
+              <div className="wiki-grille">
+                {vues.map((f) => (
+                  <button key={f.ean} className="carte-wiki wiki-carte" onClick={() => setOuverte(f.ean)}>
+                    <span className="wiki-photo">
+                      <PhotoWiki ean={f.ean} version={f.photo} />
+                      {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
+                      <span
+                        className={`point-code point-code-${typeCode(f.ean)}`}
+                        title={LIBELLES_CODE[typeCode(f.ean)]}
+                        role="img"
+                        aria-label={LIBELLES_CODE[typeCode(f.ean)]}
+                      />
+                    </span>
+                    <span className="wiki-nom">{f.nom || 'Sans nom'}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="collec-vide">
+              <BookOpen size={34} />
+              {fiches.length
+                ? 'Aucune canette ne correspond à cette recherche.'
+                : "Le Wiki est vide pour l'instant : il se remplit avec les canettes ajoutées à l'application."}
+            </p>
+          ))}
+      </div>
 
       {fiche && (
         <FicheWiki
