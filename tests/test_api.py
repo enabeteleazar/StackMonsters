@@ -448,7 +448,7 @@ def test_fiche_ancienne_au_code_non_conforme_reste_modifiable(env):
     assert [x["nom"] for x in c.get("/api/cans", headers=h).json()] == ["Corrigée"]
 
 
-@pytest.mark.parametrize("champ,taille", [("nom", 201), ("edition", 201), ("volume", 41), ("etat", 41)])
+@pytest.mark.parametrize("champ,taille", [("nom", 201), ("volume", 41), ("etat", 41)])
 def test_longueurs_refusees(env, champ, taille):
     c, codes = env
     h = connecter(c, codes, A)
@@ -486,7 +486,7 @@ def test_restauration_dans_un_compte_existant(env, monkeypatch, tmp_path):
     c.put("/api/cans", json=canette("2000000000022", nom="Hors sauvegarde"), headers=ha)
     c.put("/api/cans", json=canette(nom="Avant", photo=PNG_1PX), headers=ha)
     fiche_sauvee = {
-        "ean": "2000000000015", "nom": "Mango", "edition": "Ultra", "volume": "500 ml", "categorie": "Juiced",
+        "ean": "2000000000015", "nom": "Mango", "volume": "500 ml", "categorie": "Juiced",
         "flavor": "Mango", "status": "Active", "region": "Global", "etat": "Pleine", "nb": 4, "notes": "Rare",
         "photo": None, "ajout": "2025-01-01T00:00:00.000Z",
     }
@@ -753,11 +753,11 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
     )
     f = fiche(c, hb, "2000000000015")  # visible par un autre compte
     assert f["nom"] == "Mango Loco" and f["volume"] == "500 ml"
-    assert f["edition"] == "Juiced"
+    assert "edition" not in f  # champ retiré : un ancien client qui l'envoie est ignoré
     assert f["description"] == ""
     assert (f["categorie"], f["flavor"], f["status"], f["region"]) == ("", "", "", "")
     assert set(f) == {
-        "ean", "nom", "edition", "volume", "categorie", "flavor", "status", "region",
+        "ean", "nom", "volume", "categorie", "flavor", "status", "region",
         "description", "photo", "codes",
     }
     assert f["photo"]  # la fiche n'avait pas de photo : celle envoyée devient la sienne
@@ -774,12 +774,11 @@ def test_wiki_la_premiere_fiche_reste_et_se_complete(env):
     c.put("/api/cans", json=canette(nom="Original", volume=""), headers=ha)
     c.put(
         "/api/cans",
-        json=canette(nom="Vandale", edition="Ultra", volume="473 ml", photo=PNG_1PX),
+        json=canette(nom="Vandale", volume="473 ml", photo=PNG_1PX),
         headers=hb,
     )
     f = fiche(c, ha, "2000000000015")
     assert f["nom"] == "Original"  # pas d'écrasement
-    assert f["edition"] == "Ultra"
     assert f["volume"] == "473 ml"  # mais les champs vides sont complétés
     assert f["photo"]  # la fiche n'avait pas de photo : elle reçoit la première envoyée
 
@@ -875,7 +874,7 @@ def test_wiki_modification_reservee_au_proprietaire(env, monkeypatch):
     assert c.get("/api/wiki", headers=hb).json()["peut_editer"] is False
 
     corps = {
-        "nom": "Monster Mango Loco", "edition": "Ultra", "volume": "500 ml",
+        "nom": "Monster Mango Loco", "volume": "500 ml",
         "categorie": "Ultra", "flavor": "Mango Tropical", "status": "Active", "region": "Global",
         "description": "Boisson énergisante.",
     }
@@ -884,7 +883,7 @@ def test_wiki_modification_reservee_au_proprietaire(env, monkeypatch):
 
     r = c.put("/api/wiki/2000000000015", json=corps, headers=ha)
     assert r.status_code == 200 and r.json()["description"] == "Boisson énergisante."
-    assert r.json()["edition"] == "Ultra"
+    assert "edition" not in r.json()
     assert (r.json()["categorie"], r.json()["flavor"], r.json()["status"], r.json()["region"]) == (
         "Ultra", "Mango Tropical", "Active", "Global",
     )

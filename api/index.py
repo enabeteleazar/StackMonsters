@@ -47,7 +47,7 @@ def _version() -> str:
 
 VERSION = _version()
 logger = logging.getLogger(__name__)
-COLONNES = "ean, nom, edition, volume, etat, nb, notes, photo, ajout"
+COLONNES = "ean, nom, volume, etat, nb, notes, photo, ajout"
 DUREE_NOUVEAUTE = 30 * 86400
 
 
@@ -63,7 +63,7 @@ def _statut(prefixe: str) -> str:
 # description, photo...). Ses propres valeurs ne servent que lorsque le Wiki n'en a pas
 # (canette LOCAL-, fiche retirée, champ vide). État, quantité et notes restent personnels.
 COLONNES_COLLECTION = (
-    "c.ean, COALESCE(NULLIF(w.nom, ''), c.nom) AS nom, COALESCE(NULLIF(w.edition, ''), c.edition) AS edition, "
+    "c.ean, COALESCE(NULLIF(w.nom, ''), c.nom) AS nom, "
     "COALESCE(NULLIF(w.volume, ''), c.volume) AS volume, c.etat, c.nb, c.notes, c.ajout, "
     "CASE WHEN w.photo IS NOT NULL THEN 'wiki-' || w.maj WHEN c.photo IS NOT NULL THEN c.maj END AS photo_version, "
     "COALESCE(w.photo IS NOT NULL, false) AS photo_wiki, (w.ean IS NOT NULL) AS dans_wiki, "
@@ -138,8 +138,8 @@ CHAMPS = """ean TEXT NOT NULL, nom TEXT NOT NULL DEFAULT '', edition TEXT NOT NU
 # elles avaient été envoyées comme privées. Aucune ligne de collection n'est modifiée.
 FICHES_MANQUANTES = """
 DELETE FROM wiki_exclus x WHERE EXISTS (SELECT 1 FROM collection c WHERE c.ean = x.ean);
-INSERT INTO wiki (ean, nom, edition, volume, cree, maj)
-    SELECT DISTINCT ON (c.ean) c.ean, c.nom, c.edition, c.volume, c.ajout, c.maj FROM collection c
+INSERT INTO wiki (ean, nom, volume, cree, maj)
+    SELECT DISTINCT ON (c.ean) c.ean, c.nom, c.volume, c.ajout, c.maj FROM collection c
     WHERE NOT EXISTS (SELECT 1 FROM wiki w WHERE w.ean = c.ean)
       AND NOT EXISTS (SELECT 1 FROM wiki_codes k WHERE k.ean = c.ean)
     ORDER BY c.ean, (c.nom = ''), c.ajout
@@ -218,7 +218,6 @@ ON CONFLICT (ean) DO NOTHING;
 class Canette(BaseModel):
     ean: str = Field(min_length=1, max_length=64)
     nom: str = Field(default="", max_length=200)
-    edition: str = Field(default="", max_length=200)
     volume: str = Field(default="", max_length=40)
     categorie: str = Field(default="", max_length=80)
     flavor: str = Field(default="", max_length=200)
@@ -248,7 +247,6 @@ class FicheWiki(BaseModel):
 
     ean: str | None = Field(default=None, min_length=1, max_length=64)
     nom: str = Field(default="", max_length=200)
-    edition: str | None = Field(default=None, max_length=200)
     volume: str = Field(default="", max_length=40)
     categorie: str = Field(default="", max_length=80)
     flavor: str = Field(default="", max_length=200)
@@ -705,11 +703,10 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         fiche = (_fiche_de_la_ligne(cx, ean) if deja_la else None) or ean
         cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (fiche,))
         cx.execute(
-            """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (ean) DO UPDATE SET
                   nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
-                  edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
                   volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
                   categorie = CASE WHEN COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = ''
                                    THEN EXCLUDED.categorie ELSE wiki.categorie END,
@@ -719,14 +716,13 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                                           ELSE wiki.nouveaute_depuis END,
                   region = CASE WHEN wiki.region = '' THEN EXCLUDED.region ELSE wiki.region END,
                   maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
-                              OR (wiki.edition = '' AND EXCLUDED.edition <> '')
                               OR (wiki.volume = '' AND EXCLUDED.volume <> '')
                               OR (COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = '' AND EXCLUDED.categorie <> '')
                               OR (wiki.flavor = '' AND EXCLUDED.flavor <> '')
                               OR (wiki.status = '' AND EXCLUDED.status <> '')
                               OR (wiki.region = '' AND EXCLUDED.region <> '')
                              THEN EXCLUDED.maj ELSE wiki.maj END""",
-            (fiche, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
+            (fiche, c.nom.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
              statut, c.region.strip(),
              int(time.time()) if statut == "Nouveauté" else None, maintenant(), maintenant()),
         )
@@ -737,13 +733,13 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                 (c.photo, maintenant(), fiche),
             )
         cx.execute(
-            """INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO collection (user_id, ean, nom, volume, etat, nb, notes, photo, ajout, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, ean) DO UPDATE SET
-                  nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
+                  nom=EXCLUDED.nom, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
                   nb=EXCLUDED.nb, notes=EXCLUDED.notes, maj=EXCLUDED.maj,
                   photo = CASE WHEN %s THEN EXCLUDED.photo ELSE collection.photo END""",
-            (u["id"], ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
+            (u["id"], ean, c.nom, c.volume, c.etat, c.nb, c.notes, c.photo,
              c.ajout or maintenant(), maintenant(), "photo" in c.model_fields_set),  # champ absent : photo conservée
         )
         return _canette(cx, u["id"], ean)
@@ -773,7 +769,7 @@ def supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection =
 
 
 COLONNES_FICHE = (
-    "ean, nom, edition, volume, categorie, gamme, flavor, " + _statut("") + " AS status, region, description, "
+    "ean, nom, volume, categorie, gamme, flavor, " + _statut("") + " AS status, region, description, "
     "(photo IS NOT NULL) AS a_photo, maj, "
     "COALESCE((SELECT array_agg(k.ean ORDER BY k.ean) FROM wiki_codes k WHERE k.fiche = wiki.ean), '{}') AS codes"
 )
@@ -782,7 +778,7 @@ COLONNES_FICHE = (
 def _fiche(r: dict) -> dict:
     """Forme publique d'une fiche ; « photo » n'est qu'un marqueur de version."""
     return {
-        "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"],
+        "ean": r["ean"], "nom": r["nom"], "volume": r["volume"],
         "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
         "region": r["region"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
@@ -889,14 +885,14 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
             if _code_pris(cx, nouvel_ean):
                 raise HTTPException(409, "ce code-barres existe déjà dans le Wiki")
         r = cx.execute(
-            "UPDATE wiki SET ean = %s, nom = %s, edition = COALESCE(%s, edition), "
+            "UPDATE wiki SET ean = %s, nom = %s, "
             "volume = %s, categorie = %s, flavor = %s, status = %s, region = %s, "
             # Une Nouveauté encore en cours garde sa date ; sinon le délai de 30 jours (re)part maintenant.
             "nouveaute_depuis = CASE WHEN %s <> 'Nouveauté' THEN NULL "
             "WHEN status = 'Nouveauté' AND nouveaute_depuis >= %s THEN nouveaute_depuis ELSE %s END, "
             "description = %s, maj = %s "
             f"WHERE ean = %s RETURNING {COLONNES_FICHE}",
-            (nouvel_ean, f.nom.strip(), f.edition.strip() if f.edition is not None else None,
+            (nouvel_ean, f.nom.strip(),
              f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(), f.status, now - DUREE_NOUVEAUTE, now,
              f.description.strip(), maintenant(), ean),
         ).fetchone()

@@ -59,24 +59,23 @@ def restaurer_compte(cx, email: str, lignes: list[dict]) -> int:
         if not r.get("ean"):
             continue
         cx.execute(
-            """INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO collection (user_id, ean, nom, volume, etat, nb, notes, photo, ajout, maj)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (user_id, ean) DO UPDATE SET
-                 nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
+                 nom=EXCLUDED.nom, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
                  nb=EXCLUDED.nb, notes=EXCLUDED.notes, ajout=EXCLUDED.ajout, maj=EXCLUDED.maj,
                  photo=COALESCE(EXCLUDED.photo, collection.photo)""",
-            (compte["id"], r["ean"], r.get("nom") or "", r.get("edition") or "", r.get("volume") or "",
+            (compte["id"], r["ean"], r.get("nom") or "", r.get("volume") or "",
              r.get("etat") or "", max(1, int(r.get("nb") or 1)), r.get("notes") or "", r.get("photo"),
              r.get("ajout") or maintenant(), maintenant()),
         )
         # Le Wiki est le seul endroit où une canette existe : chaque canette restaurée a sa fiche.
         cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (r["ean"],))
         cx.execute(
-            """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (ean) DO UPDATE SET
                  nom=COALESCE(NULLIF(wiki.nom, ''), EXCLUDED.nom),
-                 edition=COALESCE(NULLIF(wiki.edition, ''), EXCLUDED.edition),
                  volume=COALESCE(NULLIF(wiki.volume, ''), EXCLUDED.volume),
                  categorie=COALESCE(NULLIF(wiki.categorie, ''), NULLIF(wiki.gamme, ''), EXCLUDED.categorie),
                  flavor=COALESCE(NULLIF(wiki.flavor, ''), EXCLUDED.flavor),
@@ -84,7 +83,7 @@ def restaurer_compte(cx, email: str, lignes: list[dict]) -> int:
                  nouveaute_depuis=CASE WHEN wiki.status = '' THEN EXCLUDED.nouveaute_depuis
                                        ELSE wiki.nouveaute_depuis END,
                  region=COALESCE(NULLIF(wiki.region, ''), EXCLUDED.region)""",
-            (r["ean"], r.get("nom") or "", r.get("edition") or "", r.get("volume") or "",
+            (r["ean"], r.get("nom") or "", r.get("volume") or "",
              r.get("categorie") or "", r.get("flavor") or "", r.get("status") or "", r.get("region") or "",
              int(time.time()) if r.get("status") == "Nouveauté" else None, maintenant(), maintenant()),
         )
@@ -115,15 +114,15 @@ def main() -> None:
             if not r.get("ean"):
                 continue
             valeurs = (
-                r["ean"], r.get("nom") or "", r.get("edition") or "", r.get("volume") or "",
+                r["ean"], r.get("nom") or "", r.get("volume") or "",
                 r.get("etat") or "", max(1, int(r.get("nb") or 1)), r.get("notes") or "",
                 r.get("photo"), r.get("ajout") or maintenant(), r.get("maj") or maintenant(),
             )
             cx.execute(
-                """INSERT INTO canettes (ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """INSERT INTO canettes (ean, nom, volume, etat, nb, notes, photo, ajout, maj)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (ean) DO UPDATE SET
-                     nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume,
+                     nom=EXCLUDED.nom, volume=EXCLUDED.volume,
                      etat=EXCLUDED.etat, nb=EXCLUDED.nb, notes=EXCLUDED.notes,
                      photo=EXCLUDED.photo, ajout=EXCLUDED.ajout, maj=EXCLUDED.maj""",
                 valeurs,

@@ -4,7 +4,7 @@ import type { FicheWiki } from './types'
 import { trouverFicheParCodeBarres } from './wiki'
 
 const fiche = (ean: string): FicheWiki => ({
-  ean, nom: 'Mango', edition: '', volume: 'x', categorie: 'Ultra', flavor: '', status: '', region: '',
+  ean, nom: 'Mango', volume: 'x', categorie: 'Ultra', flavor: '', status: '', region: '',
   description: '', photo: null, codes: [],
 })
 

@@ -4,7 +4,6 @@ import type { Canette } from './types'
 export const ficheSauvegarde = (c: Canette, photo: string | null) => ({
   ean: c.ean,
   nom: c.nom,
-  edition: c.edition,
   volume: c.volume,
   categorie: c.categorie,
   flavor: c.flavor,

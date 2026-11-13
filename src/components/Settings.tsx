@@ -103,7 +103,7 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
   }
 
   const exportCsv = () => {
-    const cols: (keyof Canette)[] = ['ean', 'nom', 'edition', 'volume', 'ajout']
+    const cols: (keyof Canette)[] = ['ean', 'nom', 'volume', 'ajout']
     const csv = [cols.join(';')]
       .concat(
         canettes.map((c) =>

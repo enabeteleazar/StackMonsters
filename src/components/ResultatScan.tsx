@@ -84,7 +84,6 @@ export default function ResultatScan(p: Props) {
     await ajouter({
       ...CANETTE_VIDE(fiche.ean),
       nom: fiche.nom,
-      edition: fiche.edition,
       volume: fiche.volume,
       categorie: fiche.categorie,
       flavor: fiche.flavor,
@@ -351,7 +350,7 @@ function CreationRapide({
     >
       <div className="bandeau-info">
         <h2>Nouvelle fiche</h2>
-        <p>Le nom rejoint le Wiki ; la photo reste dans ta collection.</p>
+        <p>Le nom rejoint le Wiki ; si la fiche n’a pas encore de photo, la tienne y sera publiée.</p>
       </div>
       <div className="champs">
         <div>

@@ -6,7 +6,6 @@ import { fichesCorrespondantes, filtrerFiches, suggererFiches, trouverFicheParCo
 const f = (ean: string, nom: string): FicheWiki => ({
   ean,
   nom,
-  edition: '',
   volume: '500 ml',
   categorie: '',
   flavor: '',

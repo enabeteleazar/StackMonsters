@@ -1,7 +1,6 @@
 export type Canette = {
   ean: string
   nom: string
-  edition: string
   volume: string
   categorie: string
   flavor: string
@@ -26,7 +25,6 @@ export type Canette = {
 export const CANETTE_VIDE = (ean: string): Canette => ({
   ean,
   nom: '',
-  edition: '',
   volume: '',
   categorie: '',
   flavor: '',
@@ -46,7 +44,6 @@ export const ETATS = ['Pleine', 'Vide', 'Ouverte proprement', 'Cabossée'] as co
 export type FicheWiki = {
   ean: string
   nom: string
-  edition: string
   volume: string
   categorie: string
   flavor: string
@@ -63,5 +60,5 @@ export type ReponseWiki = { peut_editer: boolean; fiches: FicheWiki[] }
 
 export type ModifFicheWiki = Pick<
   FicheWiki,
-  'ean' | 'nom' | 'edition' | 'volume' | 'categorie' | 'flavor' | 'status' | 'region' | 'description'
+  'ean' | 'nom' | 'volume' | 'categorie' | 'flavor' | 'status' | 'region' | 'description'
 >

@@ -124,26 +124,27 @@ export default function FicheWiki({
           />
         ) : (
           <>
+            {/* Même ordre que la fiche de collection (sans État ni Quantité, propres à chaque collection). */}
             <div className="meta-grille">
-              <div className="meta-item">
-                <span>Volume</span>
-                <b>{fiche.volume || '—'}</b>
+              <div className="meta-item meta-item-large">
+                <span>Saveur</span>
+                <b>{fiche.flavor || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>Catégorie</span>
                 <b>{fiche.categorie || '—'}</b>
               </div>
               <div className="meta-item">
-                <span>Flavor</span>
-                <b>{fiche.flavor || '—'}</b>
+                <span>Pays</span>
+                <b>{fiche.region || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Volume</span>
+                <b>{fiche.volume || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>Status</span>
                 <b>{fiche.status || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Region</span>
-                <b>{fiche.region || '—'}</b>
               </div>
             </div>
 
@@ -229,7 +230,6 @@ function Formulaire({
   const [f, setF] = useState<ModifFicheWiki>({
     ean: fiche.ean,
     nom: fiche.nom,
-    edition: fiche.edition,
     volume: fiche.volume,
     categorie: fiche.categorie,
     flavor: fiche.flavor,
@@ -294,7 +294,7 @@ function Formulaire({
           </select>
         </div>
         <div>
-          <label htmlFor="w-flavor">Flavor</label>
+          <label htmlFor="w-flavor">Saveur</label>
           <input
             id="w-flavor"
             value={f.flavor}
@@ -316,7 +316,7 @@ function Formulaire({
           </select>
         </div>
         <div>
-          <label htmlFor="w-region">Region</label>
+          <label htmlFor="w-region">Pays</label>
           <select
             id="w-region"
             value={f.region}

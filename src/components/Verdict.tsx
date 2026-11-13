@@ -114,30 +114,31 @@ export default function Verdict(p: Props) {
           />
         ) : (
           <>
+            {/* Ordre : Saveur (pleine largeur), Catégorie, Pays, État, Volume, puis Status et Quantité. */}
             <div className="meta-grille">
-              <div className="meta-item">
-                <span>Volume</span>
-                <b>{p.existante!.volume || '—'}</b>
+              <div className="meta-item meta-item-large">
+                <span>Saveur</span>
+                <b>{p.existante!.flavor || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>Catégorie</span>
                 <b>{p.existante!.categorie || '—'}</b>
               </div>
               <div className="meta-item">
-                <span>Flavor</span>
-                <b>{p.existante!.flavor || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Status</span>
-                <b>{p.existante!.status || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Region</span>
+                <span>Pays</span>
                 <b>{p.existante!.region || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>État</span>
                 <b>{p.existante!.etat || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Volume</span>
+                <b>{p.existante!.volume || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Status</span>
+                <b>{p.existante!.status || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>Quantité</span>
@@ -150,7 +151,11 @@ export default function Verdict(p: Props) {
                 <p>{p.existante!.description}</p>
               </div>
             )}
-            {p.existante!.notes && <p className="sous">Notes : {p.existante!.notes}</p>}
+            {/* Notes personnelles : masquées quand elles répètent la description du Wiki, déjà affichée. */}
+            {p.existante!.notes &&
+              p.existante!.notes.trim() !== (p.existante!.description ?? '').trim() && (
+                <p className="sous">Notes : {p.existante!.notes}</p>
+              )}
 
             <div className="actions">
               <input
@@ -300,7 +305,6 @@ function Formulaire({
         ...prec,
         ean: fiche.ean,
         nom: fiche.nom,
-        edition: fiche.edition,
         volume: fiche.volume,
         categorie: fiche.categorie,
         flavor: fiche.flavor,
@@ -430,7 +434,7 @@ function Formulaire({
               </select>
             </div>
             <div>
-              <label htmlFor="f-flavor">Flavor</label>
+              <label htmlFor="f-flavor">Saveur</label>
               <input
                 id="f-flavor"
                 value={c.flavor}
@@ -451,7 +455,7 @@ function Formulaire({
                 </select>
               </div>
               <div>
-                <label htmlFor="f-region">Region</label>
+                <label htmlFor="f-region">Pays</label>
                 <select id="f-region" value={c.region} disabled={verrouille('region')} onChange={(e) => champ('region', e.target.value)}>
                   <option value="">Non renseignée</option>
                   {REGIONS.map((region) => (

@@ -732,6 +732,78 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
+/* ============ fiches de canette (collection, Wiki, scan) dans l'univers de la landing ============ */
+/* Styles limités à .verdict : la logique et le balisage des fiches ne changent pas. */
+.verdict{background:
+    radial-gradient(70% 40% at 85% 12%,rgba(158,232,24,.18),transparent 70%),
+    radial-gradient(60% 35% at 15% 85%,rgba(158,232,24,.07),transparent 70%),
+    #000}
+/* Pleine largeur, sans la marge négative héritée (qui décalait la photo vers la gauche). */
+.verdict .photo-hero{margin:0;background:radial-gradient(80% 90% at 50% 30%,rgba(158,232,24,.22),transparent 70%),#050603}
+/* Courbe verte lumineuse sous la photo, comme le sol de la landing. */
+.verdict .photo-hero::after{content:"";position:absolute;left:-10%;right:-10%;bottom:-30px;height:60px;border-radius:50%;
+  border-top:2px solid var(--acide);box-shadow:0 -8px 26px -8px rgba(158,232,24,.75);pointer-events:none;z-index:1}
+/* La photo remplit tout son cadre, comme sur la fiche du Wiki. */
+.verdict .photo-hero img{object-fit:cover;padding:0}
+.verdict .photo-hero .fermer,.verdict > .fermer,.verdict .scan-entete .btn-icone{z-index:3;background:rgba(0,0,0,.6);border:1.5px solid rgba(158,232,24,.55);color:var(--blanc);
+  box-shadow:0 0 16px -4px rgba(158,232,24,.6)}
+.verdict .photo-hero .badge-etat{z-index:3}
+.verdict .ph-vide{color:var(--alu-sombre)}
+
+.verdict .bandeau-info{position:relative}
+.verdict .bandeau-info .ean{font-family:var(--mono);color:var(--acide);opacity:.85}
+.verdict .bandeau-info h2{margin:4px 0 0;font:700 italic clamp(24px,7vw,34px)/1.15 "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  text-transform:none;letter-spacing:0;color:var(--blanc);overflow-wrap:anywhere}
+/* Trait vert sous le nom, comme sur la landing. */
+.verdict .bandeau-info h2::after{content:"";display:block;width:70%;height:3px;margin:12px 0 4px;border-radius:3px;
+  background:linear-gradient(90deg,var(--acide),rgba(158,232,24,0));box-shadow:0 0 10px rgba(158,232,24,.6);
+  transform:rotate(-1.5deg);transform-origin:left}
+.verdict .bandeau-info p{font-style:italic}
+/* Titres de l'écran de scan (canette inconnue, état, nouvelle fiche) dans le même italique. */
+.verdict .scan-inconnu h2{font:700 italic clamp(26px,8vw,34px)/1.15 "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;text-transform:none}
+.verdict .scan-inconnu svg{color:var(--acide);filter:drop-shadow(0 0 12px rgba(158,232,24,.6))}
+.verdict .scan-etat h3{font:700 italic 18px "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;text-transform:none}
+.verdict .scan-entete .ean{color:var(--acide);opacity:.85}
+.verdict .choix-etat button{border-radius:16px;border:1.5px solid rgba(158,232,24,.35);background:#0b0d08}
+
+.verdict .badge{border-radius:999px}
+.verdict .badge-possede{background:var(--acide);color:#0A0C07;border-color:var(--acide);box-shadow:0 0 14px rgba(158,232,24,.5)}
+
+/* Toutes les cases ont la même taille : deux colonnes égales, toutes les lignes à la hauteur de la plus haute. */
+.verdict .meta-grille{gap:10px;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr}
+.verdict .meta-item{display:flex;flex-direction:column;justify-content:center;min-width:0}
+.verdict .meta-item b{overflow-wrap:anywhere}
+/* Case Saveur : en premier, sur toute la largeur. */
+.verdict .meta-item-large{grid-column:1/-1}
+.verdict .meta-item,.verdict .fiche-description,.verdict .carte-scan,.verdict .suggestions-wiki{
+  border:1px solid rgba(158,232,24,.22);border-radius:16px;
+  background:linear-gradient(170deg,rgba(23,26,20,.92),rgba(8,9,6,.92));box-shadow:0 0 22px -12px rgba(158,232,24,.55)}
+.verdict .meta-item span{font:600 10.5px var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--alu)}
+.verdict .meta-item b{font:700 italic 16px var(--display);color:var(--blanc)}
+.verdict .fiche-description{padding:14px 16px}
+.verdict .fiche-description .etiquette{color:var(--acide)}
+
+/* Champs des formulaires d'ajout et de modification. */
+.verdict .champs label,.verdict label{font:600 11px var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--alu)}
+.verdict .champs input,.verdict .champs select,.verdict .champs textarea{min-height:50px;border-radius:14px;background:#0b0d08;
+  border:1.5px solid rgba(158,232,24,.3);font-size:16px}
+.verdict .champs textarea{min-height:96px}
+.verdict .champs input:focus,.verdict .champs select:focus,.verdict .champs textarea:focus{outline:none;border-color:var(--acide);
+  box-shadow:0 0 0 3px rgba(158,232,24,.18)}
+.verdict .photo-zone{border:1.5px dashed rgba(158,232,24,.5);border-radius:16px;background:rgba(158,232,24,.04)}
+
+/* Boutons en pilules : vert lumineux pour l'action principale, contour vert pour les autres. */
+.verdict .btn{border-radius:999px;font-family:var(--display);text-transform:uppercase;letter-spacing:.06em}
+.verdict .btn-primaire{background:var(--acide);color:#0A0C07;font-weight:700;font-size:17px;box-shadow:0 0 30px rgba(158,232,24,.45)}
+.verdict .btn-primaire:hover{background:var(--acide-vif)}
+.verdict .btn-primaire[disabled]{opacity:.45;box-shadow:none}
+.verdict .btn-fantome{background:transparent;color:var(--blanc);border:1.5px solid rgba(158,232,24,.5)}
+.verdict .btn-fantome:hover{background:rgba(158,232,24,.08)}
+.verdict .btn-fantome svg{color:var(--acide)}
+.verdict .btn-danger{color:#ff8a8a;border-color:rgba(255,77,77,.5)}
+.verdict .btn-danger svg{color:#ff8a8a}
+.verdict .btn-danger:hover{background:rgba(255,77,77,.08)}
+
 /* ============ ordinateur : appli réservée au mobile et à la tablette ============ */
 /* Grand écran piloté à la souris : l'appli est masquée et un message s'affiche au centre.
    Les tablettes (écran tactile) et les fenêtres étroites gardent l'appli. */
