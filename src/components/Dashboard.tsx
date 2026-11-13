@@ -66,7 +66,7 @@ export default function Dashboard({ canettes, nomUtilisateur, surScanner, surAjo
             <button
               className="accueil-co-derniere"
               onClick={() => surOuvrir(derniere.ean)}
-              aria-label={`Dernière canette ajoutée : ${derniere.nom || 'sans nom'}`}
+              aria-label={`Dernière canette ajoutée : ${derniere.nom || 'sans nom'}`}
             >
               <PhotoWiki source="collection" ean={derniere.ean} version={derniere.photo_version} taille={30} />
             </button>

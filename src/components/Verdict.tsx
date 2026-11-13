@@ -154,7 +154,7 @@ export default function Verdict(p: Props) {
             {/* Notes personnelles : masquées quand elles répètent la description du Wiki, déjà affichée. */}
             {p.existante!.notes &&
               p.existante!.notes.trim() !== (p.existante!.description ?? '').trim() && (
-                <p className="sous">Notes : {p.existante!.notes}</p>
+                <p className="sous">Notes : {p.existante!.notes}</p>
               )}
 
             <div className="actions">
@@ -290,6 +290,8 @@ function Formulaire({
   const quantiteInvalide = !Number.isInteger(c.nb) || c.nb < 1 || c.nb > 9999
   // Sans code-barres, le code de la fiche est tiré du nom : il est obligatoire.
   const nomRequis = codeBarresLocal && !c.nom.trim()
+  // Le message n'apparaît qu'après un passage dans le champ : rien de rouge à l'ouverture du formulaire.
+  const [nomQuitte, setNomQuitte] = useState(false)
   const choixFicheRequis =
     nouvelle && !!ficheCodeDisponible && ficheChoisie !== ficheCodeDisponible.ean
   const rechercheActive = c.nom.trim().length >= 2 || (c.ean.trim().length >= 2 && !c.ean.startsWith('LOCAL-'))
@@ -355,6 +357,7 @@ function Formulaire({
             placeholder="Monster Mango Loco"
             disabled={texteVerrouille('nom')}
             onChange={(e) => champ('nom', e.target.value)}
+            onBlur={() => setNomQuitte(true)}
           />
         </div>
         {nouvelle && rechercheActive && (
@@ -517,10 +520,10 @@ function Formulaire({
       </div>
       {codeBarresInvalide && (
         <p className="suggestions-wiki-erreur" role="alert">
-          Code-barres invalide : il doit compter 8, 12 ou 13 chiffres, clé de contrôle comprise.
+          Code-barres invalide : il doit compter 8, 12 ou 13 chiffres, clé de contrôle comprise.
         </p>
       )}
-      {nomRequis && (
+      {nomRequis && nomQuitte && (
         <p className="suggestions-wiki-erreur" role="alert">
           Donne un nom à la canette, c’est lui qui identifie sa fiche dans le Wiki.
         </p>

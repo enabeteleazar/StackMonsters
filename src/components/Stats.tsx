@@ -60,8 +60,8 @@ export default function Stats({ surRetour }: Props) {
         </div>
 
         <p className="page-note">
-          Références : fiches distinctes par utilisateur. Les connexions uniques comptent les adresses IP
-          ayant validé au moins une connexion depuis l’activation du suivi ; seule une empreinte HMAC est
+          Références : fiches distinctes par utilisateur. Les connexions uniques comptent les adresses IP
+          ayant validé au moins une connexion depuis l’activation du suivi ; seule une empreinte HMAC est
           conservée. Plusieurs personnes partageant une IP comptent une fois, tandis qu’une IP dynamique
           peut compter plusieurs fois.
         </p>

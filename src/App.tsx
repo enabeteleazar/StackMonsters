@@ -8,14 +8,12 @@ import Camera from './components/Camera'
 import Collection from './components/Collection'
 import Confidentialite from './components/Confidentialite'
 import Dashboard from './components/Dashboard'
-import Logo from './components/Logo'
 import ResultatScan from './components/ResultatScan'
 import { viderPhotos } from './components/PhotoWiki'
 import Settings from './components/Settings'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
 import Wiki from './components/Wiki'
-import { moteurNatif } from './scanner'
 import { suivre } from './suivi'
 import type { Canette } from './types'
 
@@ -188,7 +186,9 @@ export default function App() {
       <>
         <header>
           <div className="logo">
-            <Logo />
+            <span className="accueil-public-marque">
+              <img src="/favicon.svg" alt="" />
+            </span>
             <div className="logo-marque">
               Stack<em>Monsters</em>
             </div>
@@ -224,7 +224,9 @@ export default function App() {
     <>
       <header>
         <div className="logo">
-          <Logo />
+          <span className="accueil-public-marque">
+            <img src="/favicon.svg" alt="" />
+          </span>
           <div className="logo-marque">
             Stack<em>Monsters</em>
           </div>
@@ -258,11 +260,6 @@ export default function App() {
         {!joignable && vue === 'accueil' && (
           <p className="sous" style={{ marginTop: 18 }}>
             Le service ne répond pas. Vérifie ta connexion, puis recharge la page.
-          </p>
-        )}
-        {!moteurNatif() && vue === 'accueil' && (
-          <p className="sous" style={{ marginTop: 18 }}>
-            Lecteur ZXing chargé au premier scan.
           </p>
         )}
       </main>

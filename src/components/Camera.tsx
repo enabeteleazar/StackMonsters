@@ -86,7 +86,7 @@ export default function Camera({ surCode, surFermeture, surErreur }: Props) {
         }}
       >
         <span className="camera-manuel-titre">
-          {indisponible ? 'Caméra indisponible : saisis le code' : 'Code illisible ? Saisis-le'}
+          {indisponible ? 'Caméra indisponible : saisis le code' : 'Code illisible ? Saisis-le'}
         </span>
         <div className="camera-manuel-ligne">
           <input

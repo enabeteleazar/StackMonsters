@@ -142,7 +142,8 @@ test('la suppression du compte exige l’adresse et efface la collection', async
 test('la politique de confidentialité est accessible sans compte', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('link', { name: 'Confidentialité' }).click()
-  await expect(page.getByText('NABET Eleazar')).toBeVisible()
+  // Le nom figure deux fois (responsable du traitement, mentions légales) : on vérifie le premier.
+  await expect(page.getByText('NABET Eleazar').first()).toBeVisible()
   await page.getByRole('button', { name: 'Retour' }).click()
   await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
 })

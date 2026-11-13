@@ -43,7 +43,7 @@ export default function Acces({ surValider, surRetour, refuse }: Props) {
         (err.detail.includes('Resend') || err.detail.includes("d'e-mail non configuré"))
       ) {
         setMessage(
-          "L'envoi e-mail n'est pas configuré correctement. Le site doit utiliser un expéditeur vérifié ; onboarding@resend.dev ne livre qu'à l'adresse du compte Resend.",
+          "L'envoi e-mail n'est pas configuré correctement. Le site doit utiliser un expéditeur vérifié ; onboarding@resend.dev ne livre qu'à l'adresse du compte Resend.",
         )
       } else if (err instanceof ErreurAPI && err.status === 422) {
         setMessage("Adresse e-mail refusée. Vérifie l'adresse et réessaie.")
