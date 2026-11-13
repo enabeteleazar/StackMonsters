@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Cpu, Database, Download, FileJson, Lock, Radio, Server, ShieldCheck, Trash2, UserRound } from 'lucide-react'
-import { api, jeton, NonAutorise } from '../api'
-import { ficheSauvegarde } from '../sauvegarde'
+import { BarChart3, Cpu, Database, Lock, Radio, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
 import { moteurNatif } from '../scanner'
 import LienInstagram from './LienInstagram'
@@ -19,9 +18,9 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
   const [sante, setSante] = useState<{ status: string; version: string; references: number } | null>(null)
 
   // Seul le propriétaire (OWNER_EMAIL) obtient une réponse : sinon l'API répond 403 et le bouton reste caché.
-  const [proprietaire, setProprietaire] = useState(false)
-  const [sauvegardeEnCours, setSauvegardeEnCours] = useState(false)
-  const [erreurSauvegarde, setErreurSauvegarde] = useState<string | null>(null)
+  // null tant que le serveur n'a pas répondu : le bouton de suppression n'apparaît qu'une fois la réponse connue
+  // (sinon il s'affichait puis disparaissait pour le propriétaire, dont le compte ne peut pas être supprimé).
+  const [proprietaire, setProprietaire] = useState<boolean | null>(null)
   const [erreurCompte, setErreurCompte] = useState<string | null>(null)
   const [mesure, setMesure] = useState(consentement)
 
@@ -36,21 +35,9 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
     surVerrouiller()
   }
 
-  const deconnecterPartout = async () => {
-    if (!confirm('Déconnecter tous tes appareils, celui-ci compris ?')) return
-    setErreurCompte(null)
-    try {
-      await api.deconnexionPartout()
-      quitter()
-    } catch (e) {
-      if (e instanceof NonAutorise) surVerrouiller()
-      else setErreurCompte('Déconnexion impossible, réessaie avec le réseau.')
-    }
-  }
-
   const supprimerCompte = async () => {
     const saisie = prompt(
-      `Suppression définitive du compte et de toute ta collection. Pense à faire une sauvegarde.\n\nPour confirmer, saisis ${emailUtilisateur} :`,
+      `Suppression définitive du compte et de toute ta collection.\n\nPour confirmer, saisis ${emailUtilisateur} :`,
     )
     if (saisie === null) return
     if (saisie.trim().toLowerCase() !== emailUtilisateur.toLowerCase()) {
@@ -69,162 +56,111 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
 
   useEffect(() => {
     api.sante().then(setSante).catch(() => setSante(null))
-    api.stats().then(() => setProprietaire(true)).catch(() => setProprietaire(false))
+    api
+      .stats()
+      .then(() => setProprietaire(true))
+      // 403 : compte ordinaire. Autre erreur (hors ligne…) : on ne sait pas, rien n'est affiché.
+      .catch((e) => setProprietaire(e instanceof ErreurAPI && e.status === 403 ? false : null))
   }, [joignable])
 
-  const telecharger = (nom: string, contenu: string, type: string) => {
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([contenu], { type }))
-    a.download = nom
-    a.click()
-    URL.revokeObjectURL(a.href)
-  }
-
-  // Une photo illisible annule tout : une sauvegarde ne doit jamais être incomplète sans le dire.
-  const exportJson = async () => {
-    setSauvegardeEnCours(true)
-    setErreurSauvegarde(null)
-    try {
-      const fiches = []
-      for (const c of canettes) {
-        fiches.push(ficheSauvegarde(c, c.photo_version ? await api.photoData(c.ean, c.photo_version) : null))
-      }
-      telecharger(
-        `stackmonsters-${new Date().toISOString().slice(0, 10)}.json`,
-        JSON.stringify(fiches, null, 2),
-        'application/json',
-      )
-    } catch (e) {
-      if (e instanceof NonAutorise) surVerrouiller()
-      else setErreurSauvegarde('Sauvegarde annulée : une photo n’a pas pu être lue. Aucun fichier n’a été créé.')
-    } finally {
-      setSauvegardeEnCours(false)
-    }
-  }
-
-  const exportCsv = () => {
-    const cols: (keyof Canette)[] = ['ean', 'nom', 'volume', 'ajout']
-    const csv = [cols.join(';')]
-      .concat(
-        canettes.map((c) =>
-          cols.map((k) => `"${String(c[k] ?? '').replace(/"/g, '""')}"`).join(';'),
-        ),
-      )
-      .join('\n')
-    telecharger('stackmonsters.csv', '﻿' + csv, 'text/csv')
-  }
-
   return (
-    <section>
-      <span className="eyebrow">StackMonsters</span>
-      <h1 className="tb-titre" style={{ fontSize: 'clamp(26px,7vw,34px)' }}>
-        Réglages
-      </h1>
+    <section className="collec reglages">
+      <span className="lueur-page" aria-hidden="true" />
 
-      <div className="reglages-groupe">
-        <div className="section-titre">
-          <h2>Service</h2>
+      <div className="collec-contenu">
+        <div className="collec-tete">
+          <h1 className="collec-titre">
+            Mes <b>réglages.</b>
+          </h1>
         </div>
-        <div className="reglages-ligne">
-          <span className="libelle">
-            <Server size={17} />
-            Connexion au service
-          </span>
-          <span className={`valeur ${joignable ? 'ok' : 'ko'}`}>
-            {joignable ? 'En ligne' : 'Injoignable'}
-          </span>
-        </div>
-        <div className="reglages-ligne">
-          <span className="libelle">
-            <UserRound size={17} />
-            Compte
-          </span>
-          <span className="valeur">{emailUtilisateur || '—'}</span>
-        </div>
-        <div className="reglages-ligne">
-          <span className="libelle">
-            <Database size={17} />
-            Fiches en base
-          </span>
-          <span className="valeur">{sante ? sante.references : '—'}</span>
-        </div>
-        <div className="reglages-ligne">
-          <span className="libelle">
-            <Radio size={17} />
-            Version
-          </span>
-          <span className="valeur">
-            {/* Une version d'API différente signale un déploiement incomplet ou un cache périmé. */}
-            {!sante || sante.version === __VERSION_APP__ ? __VERSION_APP__ : `${__VERSION_APP__} · service ${sante.version}`}
-          </span>
-        </div>
-        <div className="reglages-ligne">
-          <span className="libelle">
-            <Cpu size={17} />
-            Lecteur de code-barres
-          </span>
-          <span className="valeur">{moteurNatif() ? 'Natif (BarcodeDetector)' : 'ZXing (polyfill wasm)'}</span>
-        </div>
-      </div>
+        <span className="accueil-public-trait" aria-hidden="true" />
 
-      <div className="reglages-groupe">
-        <div className="section-titre">
-          <h2>Données</h2>
+        {/* Compte : adresse du compte connecté, en tête. */}
+        <div className="reglages-carte reglages-compte">
+          <span className="reglages-avatar" aria-hidden="true">
+            <UserRound size={24} />
+          </span>
+          <div className="reglages-compte-texte">
+            <span className="reglages-etiquette">Compte</span>
+            <b>{emailUtilisateur || '—'}</b>
+          </div>
         </div>
-        <div className="outils">
-          <button disabled={sauvegardeEnCours} onClick={() => void exportJson()}>
-            <FileJson size={15} />
-            {sauvegardeEnCours ? 'Sauvegarde…' : 'Sauvegarde JSON'}
-          </button>
-          <button onClick={exportCsv}>
-            <Download size={15} />
-            Export CSV
-          </button>
-          {proprietaire && (
-            <button onClick={surStats}>
-              <BarChart3 size={15} />
-              Statistiques
-            </button>
-          )}
+
+        <h2 className="reglages-titre">Service</h2>
+        <div className="reglages-carte">
+          <div className="reglages-info">
+            <span className="libelle">
+              <Database size={17} />
+              Fiches en base
+            </span>
+            <span className="valeur">{sante ? sante.references : '—'}</span>
+          </div>
+          <div className="reglages-info">
+            <span className="libelle">
+              <Radio size={17} />
+              Version
+            </span>
+            <span className="valeur">
+              {/* Une version d'API différente signale un déploiement incomplet ou un cache périmé. */}
+              {!sante || sante.version === __VERSION_APP__ ? __VERSION_APP__ : `${__VERSION_APP__} · service ${sante.version}`}
+            </span>
+          </div>
+          <div className="reglages-info">
+            <span className="libelle">
+              <Cpu size={17} />
+              Lecteur de code-barres
+            </span>
+            <span className="valeur">{moteurNatif() ? 'Natif' : 'ZXing'}</span>
+          </div>
+        </div>
+
+        {/* Statistiques du service : réservées au propriétaire (OWNER_EMAIL). */}
+        {proprietaire === true && (
+          <>
+            <h2 className="reglages-titre">Administration</h2>
+            <div className="reglages-actions">
+              <button className="accueil-co-secondaire" onClick={surStats}>
+                <BarChart3 size={18} />
+                Statistiques
+              </button>
+            </div>
+          </>
+        )}
+
+        <h2 className="reglages-titre">Compte et confidentialité</h2>
+        <div className="reglages-actions">
           <button
+            className="accueil-co-secondaire"
             onClick={() => {
               void api.deconnexion().catch(() => {})
               jeton.effacer()
               surVerrouiller()
             }}
           >
-            <Lock size={15} />
+            <Lock size={18} />
             Se déconnecter
           </button>
-          <button onClick={() => void deconnecterPartout()}>
-            <Lock size={15} />
-            Se déconnecter partout
-          </button>
-          <button onClick={() => { window.location.hash = 'confidentialite' }}>
-            <ShieldCheck size={15} />
+          <button className="accueil-co-secondaire" onClick={() => { window.location.hash = 'confidentialite' }}>
+            <ShieldCheck size={18} />
             Confidentialité
           </button>
           {import.meta.env.PROD && (
-            <button onClick={() => definirConsentement(mesure === 'oui' ? 'non' : 'oui')}>
-              <Radio size={15} />
+            <button className="accueil-co-secondaire" onClick={() => definirConsentement(mesure === 'oui' ? 'non' : 'oui')}>
+              <Radio size={18} />
               {mesure === 'oui' ? 'Refuser la mesure d’audience' : 'Accepter la mesure d’audience'}
             </button>
           )}
-          {!proprietaire && (
-            <button onClick={() => void supprimerCompte()}>
-              <Trash2 size={15} />
+          {proprietaire === false && (
+            <button className="accueil-co-secondaire reglages-danger" onClick={() => void supprimerCompte()}>
+              <Trash2 size={18} />
               Supprimer mon compte
             </button>
           )}
         </div>
-        {erreurSauvegarde && <p className="sous" role="alert">{erreurSauvegarde}</p>}
-        {erreurCompte && <p className="sous" role="alert">{erreurCompte}</p>}
-        <p className="sous" style={{ marginTop: 14 }}>
-          La collection vit dans la base en ligne, pas sur ce téléphone. Ces exports sont une copie locale,
-          pas une sauvegarde de remplacement.
-        </p>
+        {erreurCompte && <p className="reglages-alerte" role="alert">{erreurCompte}</p>}
+
+        <LienInstagram />
       </div>
-      <LienInstagram />
     </section>
   )
 }

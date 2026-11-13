@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, RefreshCw } from 'lucide-react'
+import { ArrowLeft, RefreshCw, ScanLine, UserRound, Wifi } from 'lucide-react'
 import { api } from '../api'
 
 type Chiffres = { utilisateurs: number; references: number; connexions_uniques: number }
@@ -27,48 +27,55 @@ export default function Stats({ surRetour }: Props) {
 
   useEffect(charger, [])
 
+  const tuiles = [
+    { libelle: 'Utilisateurs', valeur: chiffres?.utilisateurs, Icone: UserRound },
+    { libelle: 'Références', valeur: chiffres?.references, Icone: ScanLine },
+    { libelle: 'Connexions uniques', valeur: chiffres?.connexions_uniques, Icone: Wifi },
+  ]
+
   return (
-    <section>
-      <span className="eyebrow">StackMonsters</span>
-      <h1 className="tb-titre" style={{ fontSize: 'clamp(26px,7vw,34px)' }}>
-        Statistiques
-      </h1>
+    <section className="collec stats-page">
+      <span className="lueur-page" aria-hidden="true" />
 
-      {erreur && (
-        <p className="sous">Impossible de charger les statistiques (accès réservé au propriétaire).</p>
-      )}
-
-      <div className="stats">
-        <div className="stat">
-          <b>{chiffres ? chiffres.utilisateurs : '—'}</b>
-          <span>Utilisateurs</span>
+      <div className="collec-contenu">
+        <div className="collec-tete">
+          <h1 className="collec-titre">
+            Statistiques <b>du service.</b>
+          </h1>
         </div>
-        <div className="stat">
-          <b>{chiffres ? chiffres.references : '—'}</b>
-          <span>Références</span>
-        </div>
-        <div className="stat">
-          <b>{chiffres ? chiffres.connexions_uniques : '—'}</b>
-          <span>Connexions uniques</span>
-        </div>
-      </div>
+        <span className="accueil-public-trait" aria-hidden="true" />
 
-      <p className="sous">
-        Références : fiches distinctes par utilisateur. Les connexions uniques comptent les adresses IP
-        ayant validé au moins une connexion depuis l’activation du suivi ; seule une empreinte HMAC est
-        conservée. Plusieurs personnes partageant une IP comptent une fois, tandis qu’une IP dynamique
-        peut compter plusieurs fois.
-      </p>
+        {erreur && (
+          <p className="reglages-alerte">Impossible de charger les statistiques (accès réservé au propriétaire).</p>
+        )}
 
-      <div className="outils">
-        <button onClick={surRetour}>
-          <ArrowLeft size={15} />
-          Retour
-        </button>
-        <button onClick={charger} disabled={charge}>
-          <RefreshCw size={15} />
-          Actualiser
-        </button>
+        <div className="stats-tuiles">
+          {tuiles.map(({ libelle, valeur, Icone }) => (
+            <div key={libelle} className="reglages-carte stats-tuile">
+              <Icone size={20} />
+              <b>{valeur ?? '—'}</b>
+              <span>{libelle}</span>
+            </div>
+          ))}
+        </div>
+
+        <p className="page-note">
+          Références : fiches distinctes par utilisateur. Les connexions uniques comptent les adresses IP
+          ayant validé au moins une connexion depuis l’activation du suivi ; seule une empreinte HMAC est
+          conservée. Plusieurs personnes partageant une IP comptent une fois, tandis qu’une IP dynamique
+          peut compter plusieurs fois.
+        </p>
+
+        <div className="reglages-actions stats-actions">
+          <button className="accueil-co-secondaire" onClick={charger} disabled={charge}>
+            <RefreshCw size={18} />
+            Actualiser
+          </button>
+          <button className="accueil-co-secondaire" onClick={surRetour}>
+            <ArrowLeft size={18} />
+            Retour
+          </button>
+        </div>
       </div>
     </section>
   )

@@ -33,8 +33,6 @@ Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id`
   le scanner. Une fiche déjà en base reste modifiable même si son code est ancien.
 - `GET /api/cans` ne transporte pas les photos, seulement `photo_version` ; l'image se charge à la demande
   (`GET /api/cans/{ean}/photo`). Un `PUT /api/cans` sans champ `photo` conserve la photo existante.
-- « Sauvegarde JSON » contient toutes les données de collection et les photos ; elle s'annule si une photo
-  ne peut pas être lue.
 
 ## Wiki (catalogue partagé)
 Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comptes confondus. Une vignette
@@ -121,7 +119,7 @@ retiré avant livraison (une base de développement a pu l'enregistrer). `./dev.
 
 Import d'anciennes données : `scripts/migrer.py` écrit dans `canettes` ; fais-le **avant** la
 première connexion du propriétaire.
-Restauration d'une « Sauvegarde JSON » dans un compte existant :
+Restauration d'une ancienne « Sauvegarde JSON » (export retiré de l'appli) dans un compte existant :
 `python scripts/migrer.py sauvegarde.json --email moi@exemple.fr`.
 
 ## Développer

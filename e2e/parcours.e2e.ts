@@ -119,20 +119,6 @@ test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async
   await expect(page.locator('.photo-hero img')).toHaveCount(0)
 })
 
-test('« Se déconnecter partout » ferme les autres appareils', async ({ page, browser }) => {
-  const adresse = email()
-  page.on('dialog', (d) => d.accept())
-  await connecter(page, adresse)
-  const autre = await nouvellePage(browser)
-  await connecter(autre, adresse)
-
-  await nav(page, 'Réglages').click()
-  await page.getByRole('button', { name: 'Se déconnecter partout' }).click()
-  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
-  await autre.reload()
-  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
-})
-
 test('la suppression du compte exige l’adresse et efface la collection', async ({ page }) => {
   const adresse = email()
   const nom = `À effacer ${unique()}`

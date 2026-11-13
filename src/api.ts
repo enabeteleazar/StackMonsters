@@ -101,7 +101,6 @@ export const api = {
     }),
   moi: () => requete<{ email: string }>('/auth/moi'),
   deconnexion: () => requete<void>('/auth/deconnexion', { method: 'POST' }),
-  deconnexionPartout: () => requete<void>('/auth/deconnexion-partout', { method: 'POST' }),
   supprimerCompte: () => requete<void>('/auth/compte', { method: 'DELETE' }),
   stats: () =>
     requete<{ utilisateurs: number; references: number; connexions_uniques: number }>('/stats'),
@@ -126,7 +125,6 @@ export const api = {
   wikiPhoto: (ean: string, version: string) => photoLocale('wiki', ean, version),
   wikiPhotoData: (ean: string, version: string) => photoEnDataUrl('wiki', ean, version),
   photo: (ean: string, version: string) => photoLocale('cans', ean, version),
-  photoData: (ean: string, version: string) => photoEnDataUrl('cans', ean, version),
 }
 
 async function photoBlob(espace: 'wiki' | 'cans', ean: string, version: string): Promise<Blob> {
