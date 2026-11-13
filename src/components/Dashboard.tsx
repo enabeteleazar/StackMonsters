@@ -35,7 +35,7 @@ export default function Dashboard({ canettes, nomUtilisateur, surScanner, surAjo
 
   return (
     <section className="accueil-co">
-      <span className="accueil-co-lueur" aria-hidden="true" />
+      <span className="lueur-page" aria-hidden="true" />
 
       <div className="accueil-co-hero">
         <div className="accueil-co-texte">

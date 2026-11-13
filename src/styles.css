@@ -229,12 +229,13 @@ html:has(.connexion),html:has(.connexion) body{height:100%;overflow:hidden;overs
   .accueil-public-canette{position:absolute;top:0;right:-10px;width:52%;height:100%;min-height:0;z-index:1}
 }
 /* ============ accueil connecté (même univers que l'accueil public) ============ */
-/* Occupe toute la largeur de l'écran (marges de <main> compensées) : la lueur va d'un bord à l'autre. */
-.accueil-co{position:relative;margin:0 -18px;padding:6px 18px 0}
+/* Pages connectées dans l'univers de la landing (accueil, collection) : pleine largeur de l'écran
+   (marges de <main> compensées), la lueur va d'un bord à l'autre. */
+.accueil-co,.collec{position:relative;margin:0 -18px;padding:6px 18px 0}
 /* Rien ne doit élargir la page sur mobile (le navigateur dézoomerait). */
-html:has(.accueil-co),html:has(.accueil-co) body{overflow-x:clip}
+html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.collec) body{overflow-x:clip}
 /* Lueur de la largeur exacte de l'écran, centrée : elle ne s'arrête pas aux bords de la colonne (tablette). */
-.accueil-co-lueur{position:absolute;z-index:-1;top:-120px;left:50%;width:100vw;transform:translateX(-50%);height:620px;
+.lueur-page{position:absolute;z-index:-1;top:-120px;left:50%;width:100vw;transform:translateX(-50%);height:620px;
   pointer-events:none;
   background:
     radial-gradient(55% 45% at 80% 30%,rgba(158,232,24,.20),transparent 70%),
@@ -282,6 +283,49 @@ html:has(.accueil-co),html:has(.accueil-co) body{overflow-x:clip}
   .accueil-co-canette{position:relative;top:auto;right:auto;width:auto;height:min(270px,62vw)}
   .accueil-co-stats{gap:16px}
 }
+
+/* ============ collection (même univers que la landing) ============ */
+/* Titre, recherche et liste alignés sur une même colonne, centrée sur grand écran. */
+.collec-contenu{position:relative;max-width:720px;margin:0 auto}
+.collec-tete{position:relative;display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.collec-titre{margin:0;font:700 italic clamp(24px,7vw,34px)/1.15 "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:var(--blanc)}
+.collec-titre b{color:var(--acide);font-weight:800;text-shadow:0 0 22px rgba(158,232,24,.35)}
+.collec-compte{margin:0;font:600 11px var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--alu)}
+.collec-compte b{margin-right:6px;font:700 italic 30px/1 var(--display);letter-spacing:0;color:var(--acide);
+  text-shadow:0 0 18px rgba(158,232,24,.45)}
+.collec .accueil-public-trait{margin:12px 0 20px}
+
+.collec-outils{position:relative;display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+.collec-recherche{position:relative;flex:1 1 200px;display:flex;align-items:center}
+.collec-recherche svg{position:absolute;left:16px;color:var(--acide);pointer-events:none}
+.collec-recherche input{min-height:48px;padding:0 16px 0 44px;border-radius:999px;background:#0b0d08;
+  border:1.5px solid rgba(158,232,24,.35);font-size:15px}
+.collec-recherche input:focus,.collec-recherche input:focus-visible{outline:none;border-color:var(--acide);
+  box-shadow:0 0 0 3px rgba(158,232,24,.18)}
+/* Croix d'effacement de la recherche en vert (bleue par défaut sur Chrome). */
+.collec-recherche input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none;width:18px;height:18px;
+  cursor:pointer;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239EE818' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E") center/contain no-repeat}
+.collec-tri{display:inline-flex;padding:4px;border-radius:999px;border:1.5px solid rgba(158,232,24,.35);background:#0b0d08}
+.collec-tri button{min-height:38px;padding:0 14px;border-radius:999px;color:var(--alu);
+  font:600 12px var(--display);text-transform:uppercase;letter-spacing:.08em}
+.collec-tri button[aria-checked="true"]{background:var(--acide);color:#0A0C07;box-shadow:0 0 14px rgba(158,232,24,.45)}
+
+.collec-liste{position:relative;list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.collec-ligne{display:flex;align-items:center;gap:14px;width:100%;padding:8px 14px 8px 8px;border-radius:18px;text-align:left;
+  border:1px solid rgba(158,232,24,.22);background:linear-gradient(170deg,rgba(23,26,20,.92),rgba(8,9,6,.92));
+  box-shadow:0 0 22px -12px rgba(158,232,24,.55);transition:border-color .15s var(--ease), transform .15s var(--ease)}
+.collec-ligne:hover{border-color:rgba(158,232,24,.6)}
+.collec-ligne:active{transform:scale(.985)}
+.collec-photo{position:relative;flex:0 0 64px;width:64px;height:64px;border-radius:12px;overflow:hidden;
+  background:var(--graphite-clair);display:flex}
+.collec-photo .photo-wiki img{width:100%;height:100%;object-fit:cover}
+.collec-photo .ph-vide{color:var(--alu-sombre)}
+.collec-nom{flex:1;min-width:0;font:600 15px var(--display);text-transform:uppercase;letter-spacing:.04em;
+  overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.collec-chevron{flex:0 0 auto;color:var(--acide)}
+.collec-vide{position:relative;display:flex;flex-direction:column;align-items:center;gap:12px;margin:40px auto 0;max-width:300px;
+  text-align:center;color:var(--alu);font-size:15px;font-style:italic}
+.collec-vide svg{color:var(--acide);filter:drop-shadow(0 0 10px rgba(158,232,24,.5))}
 
 /* ============ connexion (même univers que l'accueil public) ============ */
 /* Écran fixe : en-tête en haut ; seule la zone du formulaire défile au besoin (petit écran, clavier ouvert). */
@@ -569,13 +613,6 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 }
 @media (min-width:560px){.grille-collection{grid-template-columns:repeat(3,1fr)}}
 @media (min-width:900px){.grille-collection{grid-template-columns:repeat(4,1fr)}}
-/* Collection en liste : petite photo à gauche, nom à droite. */
-.liste-collection{display:flex;flex-direction:column;gap:8px}
-.carte-canette.carte-ligne{flex-direction:row;align-items:center;padding:0;border-radius:var(--r-md);min-height:72px}
-.carte-canette.carte-ligne .carte-photo{flex:0 0 72px;width:72px;height:72px;aspect-ratio:auto;align-self:stretch}
-.carte-ligne .carte-corps{flex:1;min-width:0;padding:10px 14px}
-.carte-ligne .carte-corps .nom{font-size:15px}
-.carte-canette.carte-ligne:hover{transform:none}
 /* Wiki : 3 fiches par ligne, quelle que soit la largeur d'écran. */
 .grille-collection.grille-wiki{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .grille-wiki .carte-wiki .carte-corps{padding:7px 8px 9px}
