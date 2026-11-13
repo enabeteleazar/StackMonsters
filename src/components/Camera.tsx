@@ -52,31 +52,55 @@ export default function Camera({ surCode, surFermeture, surErreur }: Props) {
   return (
     <div className="camera">
       <video ref={video} playsInline muted autoPlay />
+      <header className="camera-entete">
+        <div className="logo">
+          <span className="accueil-public-marque">
+            <img src="/favicon.svg" alt="" />
+          </span>
+          <div className="logo-marque">
+            Stack<em>Monsters</em>
+          </div>
+        </div>
+      </header>
       <div className="viseur">
-        <div className="fenetre" />
+        <p className="camera-titre">
+          Scanne ta <b>canette.</b>
+        </p>
+        <div className="fenetre">
+          {/* Coins lumineux du cadre de visée. */}
+          <span className="coin coin-hg" />
+          <span className="coin coin-hd" />
+          <span className="coin coin-bg" />
+          <span className="coin coin-bd" />
+        </div>
         <div className="etat-scan">
           {preparation ? <Loader2 size={15} className="anim-tourne" /> : <ScanLine size={15} />}
           <p className="indice">{indice}</p>
         </div>
       </div>
       <form
-        className="manuel camera-manuel"
+        className="camera-manuel"
         onSubmit={(e) => {
           e.preventDefault()
           if (codeManuel) surCode(codeManuel)
         }}
       >
-        <input
-          value={saisie}
-          name="code-manuel"
-          inputMode="numeric"
-          placeholder={indisponible ? 'Saisir le code-barres' : 'Illisible ? Saisir le code'}
-          aria-label="Code saisi à la main"
-          onChange={(e) => setSaisie(e.target.value)}
-        />
-        <button type="submit" disabled={!codeManuel}>
-          OK
-        </button>
+        <span className="camera-manuel-titre">
+          {indisponible ? 'Caméra indisponible : saisis le code' : 'Code illisible ? Saisis-le'}
+        </span>
+        <div className="camera-manuel-ligne">
+          <input
+            value={saisie}
+            name="code-manuel"
+            inputMode="numeric"
+            placeholder="13 chiffres"
+            aria-label="Code saisi à la main"
+            onChange={(e) => setSaisie(e.target.value)}
+          />
+          <button type="submit" disabled={!codeManuel}>
+            OK
+          </button>
+        </div>
       </form>
       <button className="btn-icone fermer" onClick={surFermeture} aria-label="Fermer le scanner">
         <X size={20} />

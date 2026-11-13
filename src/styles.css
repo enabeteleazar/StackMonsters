@@ -539,13 +539,6 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 .accroche span{display:block;color:var(--alu)}
 .sous{color:var(--alu);font-size:14px;margin:0 0 22px;max-width:38ch;line-height:1.5}
 
-.manuel{margin-top:18px;display:flex;gap:8px}
-.manuel input{font-family:var(--mono);letter-spacing:.08em}
-.manuel button{
-  background:var(--graphite-clair);border-radius:var(--r-sm);padding:0 18px;
-  font-family:var(--display);text-transform:uppercase;font-size:13px;letter-spacing:.08em;
-  border:1px solid var(--ligne);
-}
 
 /* ============ caméra / scanner ============ */
 .camera{position:fixed;inset:0;z-index:40;background:#000;display:flex;flex-direction:column}
@@ -571,10 +564,6 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
 .indice{font-family:var(--display);text-transform:uppercase;letter-spacing:.1em;
   font-size:12.5px;text-shadow:0 1px 6px #000}
 .fermer{position:absolute;top:calc(14px + env(safe-area-inset-top));right:16px;z-index:2}
-/* Saisie du code à la main, en bas de l'écran caméra (code illisible ou caméra indisponible). */
-.camera-manuel{position:absolute;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:2;
-  margin:0;max-width:480px;margin-inline:auto}
-.camera-manuel input{flex:1;min-width:0}
 
 /* ============ verdict / fiche produit ============ */
 .verdict{position:fixed;inset:0;z-index:50;background:var(--abysse);display:flex;
@@ -800,6 +789,42 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .verdict .btn-danger{color:#ff8a8a;border-color:rgba(255,77,77,.5)}
 .verdict .btn-danger svg{color:#ff8a8a}
 .verdict .btn-danger:hover{background:rgba(255,77,77,.08)}
+
+/* ============ scanner (même univers que la landing) ============ */
+.camera{background:radial-gradient(70% 45% at 80% 15%,rgba(158,232,24,.2),transparent 70%),#000}
+.camera video{position:absolute;inset:0}
+.camera-entete{position:absolute;top:0;left:0;right:0;z-index:2;padding:calc(16px + env(safe-area-inset-top)) 20px 10px;
+  background:linear-gradient(rgba(0,0,0,.75),transparent)}
+.camera-entete .logo-marque{font-size:19px;letter-spacing:.14em}
+.camera-entete .accueil-public-marque{width:40px;height:40px}
+.camera-entete .accueil-public-marque img{width:26px;height:26px}
+.camera .fermer{top:calc(16px + env(safe-area-inset-top));right:18px;z-index:3;background:rgba(0,0,0,.6);
+  border:1.5px solid rgba(158,232,24,.55);color:var(--blanc);box-shadow:0 0 16px -4px rgba(158,232,24,.6)}
+/* Au-dessus du voile sombre qui entoure le cadre de visée. */
+.camera-titre{position:relative;z-index:1;margin:0;font:700 italic clamp(22px,6.5vw,30px)/1.2 "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  color:var(--blanc);text-shadow:0 2px 10px #000}
+.camera-titre b{color:var(--acide);text-shadow:0 0 22px rgba(158,232,24,.55)}
+/* Cadre de visée : bord discret et quatre coins lumineux. */
+.camera .fenetre{border:1.5px solid rgba(158,232,24,.35);border-radius:22px}
+.camera .coin{position:absolute;width:30px;height:30px;border:4px solid var(--acide);filter:drop-shadow(0 0 8px rgba(158,232,24,.8))}
+.camera .coin-hg{top:-3px;left:-3px;border-right:0;border-bottom:0;border-top-left-radius:22px}
+.camera .coin-hd{top:-3px;right:-3px;border-left:0;border-bottom:0;border-top-right-radius:22px}
+.camera .coin-bg{bottom:-3px;left:-3px;border-right:0;border-top:0;border-bottom-left-radius:22px}
+.camera .coin-bd{bottom:-3px;right:-3px;border-left:0;border-top:0;border-bottom-right-radius:22px}
+.camera .etat-scan{border:1px solid rgba(158,232,24,.35)}
+/* Saisie manuelle : carte en bas de l'écran, champ et bouton en pilules. */
+.camera-manuel{position:absolute;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:2;
+  max-width:480px;margin:0 auto;display:grid;gap:10px;padding:14px;border-radius:20px;
+  border:1px solid rgba(158,232,24,.3);background:linear-gradient(170deg,rgba(23,26,20,.94),rgba(8,9,6,.94));
+  box-shadow:0 0 24px -10px rgba(158,232,24,.6);backdrop-filter:blur(6px)}
+.camera-manuel-titre{font:600 11px var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--alu)}
+.camera-manuel-ligne{display:flex;gap:8px}
+.camera-manuel input{flex:1;min-width:0;min-height:50px;padding:0 18px;border-radius:999px;background:#0b0d08;
+  border:1.5px solid rgba(158,232,24,.35);font-family:var(--mono);font-size:16px;letter-spacing:.08em}
+.camera-manuel input:focus{outline:none;border-color:var(--acide);box-shadow:0 0 0 3px rgba(158,232,24,.18)}
+.camera-manuel button{flex:0 0 auto;min-width:76px;border-radius:999px;background:var(--acide);color:#0A0C07;
+  font:700 16px var(--display);text-transform:uppercase;letter-spacing:.06em;box-shadow:0 0 18px rgba(158,232,24,.45)}
+.camera-manuel button:disabled{opacity:.4;box-shadow:none}
 
 /* ============ ordinateur : appli réservée au mobile et à la tablette ============ */
 /* Grand écran piloté à la souris : l'appli est masquée et un message s'affiche au centre.
