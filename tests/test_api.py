@@ -1152,3 +1152,28 @@ def test_un_ancien_code_mene_a_la_fiche_qui_l_a_remplace(env, monkeypatch):
         with ix.base() as cx:
             cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (interne,))
         _oublier_codes_reels()
+
+
+def test_le_mail_du_code_a_une_version_html_et_texte(monkeypatch):
+    envoye = {}
+
+    class Reponse:
+        def close(self):
+            pass
+
+    def faux_urlopen(req, timeout):
+        envoye.update(json.loads(req.data))
+        return Reponse()
+
+    monkeypatch.setenv("RESEND_API_KEY", "cle-de-test")
+    monkeypatch.setenv("SITE_URL", "https://exemple.test/")
+    monkeypatch.setattr(ix.urllib.request, "urlopen", faux_urlopen)
+    ix.envoyer_code("test-a@example.com", "482913")
+
+    assert envoye["to"] == ["test-a@example.com"] and "482913" in envoye["subject"]
+    assert "482913" in envoye["text"] and "10 minutes" in envoye["text"]
+    html = envoye["html"]
+    # Le code est affiché chiffre par chiffre ; le logo et le lien pointent vers le site, sans double barre.
+    assert all(f">{c}</div>" in html for c in "482913")
+    assert 'src="https://exemple.test/images/logo-mail.png"' in html and "//images" not in html
+    assert "<style" not in html  # styles sur chaque balise : Gmail ignore les feuilles de style

@@ -419,6 +419,60 @@ def _trop_de_tentatives(attente: int) -> HTTPException:
     return HTTPException(429, "trop de tentatives", headers={"Retry-After": str(max(1, attente))})
 
 
+def _url_site() -> str:
+    """Adresse publique du site, pour les liens et images du mail (une image de mail doit être en ligne)."""
+    return (os.environ.get("SITE_URL") or "https://canstackmonsters.vercel.app").rstrip("/")
+
+
+def mail_code_html(code: str) -> str:
+    """Mail du code de connexion, dans le style du site : fond noir, vert lumineux, code en grand.
+
+    HTML d'e-mail : mise en page en tableaux et styles sur chaque balise (Gmail et Outlook ignorent
+    les feuilles de style), polices de repli, image PNG en ligne (le SVG n'est pas affiché par Gmail).
+    """
+    site = _url_site()
+    chiffres = "".join(
+        f'<td style="padding:0 2px"><div style="width:34px;height:50px;line-height:50px;border:2px solid #9EE818;'
+        f'border-radius:11px;background:#050603;color:#C6FF4D;font:700 28px/50px Arial,Helvetica,sans-serif;'
+        f'text-align:center">{c}</div></td>'
+        for c in code
+    )
+    return f"""<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light"><meta name="supported-color-schemes" content="dark light">
+<title>Ton code StackMonsters</title></head>
+<body style="margin:0;padding:0;background:#000000">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">Ton code {code} est valable 10 minutes.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#000000">
+<tr><td align="center" style="padding:24px 8px">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="max-width:480px;background:#0B0D08;border:1px solid #2E3A12;border-radius:22px">
+    <tr><td align="center" style="padding:28px 12px 8px">
+      <img src="{site}/images/logo-mail.png" width="64" height="64" alt="" style="display:block;border:0">
+      <div style="margin-top:12px;font:700 20px Arial,Helvetica,sans-serif;letter-spacing:3px;color:#F2F4EC">
+        STACK<span style="color:#9EE818">MONSTERS</span></div>
+    </td></tr>
+    <tr><td align="center" style="padding:20px 12px 4px">
+      <div style="font:italic 700 24px Arial,Helvetica,sans-serif;color:#F2F4EC">Ton code de
+        <span style="color:#9EE818">connexion.</span></div>
+      <div style="width:160px;height:3px;margin:14px auto 0;background:#9EE818;border-radius:3px"></div>
+    </td></tr>
+    <tr><td align="center" style="padding:24px 4px 8px">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>{chiffres}</tr></table>
+    </td></tr>
+    <tr><td align="center" style="padding:12px 28px 28px;font:15px/1.5 Arial,Helvetica,sans-serif;color:#9AA394">
+      Saisis-le dans l'application. Il est valable <b style="color:#F2F4EC">10&nbsp;minutes</b>.
+    </td></tr>
+    <tr><td style="padding:0 28px"><div style="height:1px;background:#2E3A12"></div></td></tr>
+    <tr><td align="center" style="padding:18px 28px 28px;font:12px/1.6 Arial,Helvetica,sans-serif;color:#9AA394">
+      Si tu n'es pas à l'origine de cette demande, ignore ce message&nbsp;: personne ne peut se connecter sans ce code.<br>
+      <a href="{site}" style="color:#9EE818;text-decoration:none">{site.removeprefix("https://")}</a>
+    </td></tr>
+  </table>
+</td></tr></table>
+</body></html>"""
+
+
 def envoyer_code(email: str, code: str) -> None:
     cle = os.environ.get("RESEND_API_KEY")
     if not cle:
@@ -431,6 +485,7 @@ def envoyer_code(email: str, code: str) -> None:
         "to": [email],
         "subject": f"Ton code StackMonsters : {code}",
         "text": f"Ton code de connexion : {code}\nIl est valable 10 minutes. Si tu n'es pas à l'origine de cette demande, ignore ce message.",
+        "html": mail_code_html(code),
     }
     req = urllib.request.Request(
         "https://api.resend.com/emails", data=json.dumps(corps).encode(), method="POST",
