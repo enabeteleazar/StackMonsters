@@ -24,7 +24,7 @@ export default function Consentement() {
   return (
     <aside className="consentement" aria-label="Consentement à la mesure d'audience">
       <p>
-        StackMonster aimerait mesurer son audience (visites, type d’appareil, provenance). Rien n’est envoyé sans ton
+        StackMonsters aimerait mesurer son audience (visites, type d’appareil, provenance). Rien n’est envoyé sans ton
         accord. <a href="#confidentialite">En savoir plus</a>
       </p>
       <div>

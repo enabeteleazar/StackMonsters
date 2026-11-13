@@ -1,4 +1,4 @@
-"""API StackMonster (Vercel) : connexion par e-mail + code, collection par utilisateur.
+"""API StackMonsters (Vercel) : connexion par e-mail + code, collection par utilisateur.
 
 Flux : POST /auth/demande {email} envoie un code à 6 chiffres ; POST /auth/verification
 {email, code} renvoie un jeton de session (30 jours). Toutes les autres routes exigent
@@ -11,6 +11,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import importlib.util
 import ipaddress
 import json
 import logging
@@ -28,6 +29,11 @@ import psycopg
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
+
+# convert.py (à la racine du dépôt) fabrique les codes internes « 20… » à partir d'un nom.
+_spec = importlib.util.spec_from_file_location("convert", Path(__file__).resolve().parent.parent / "convert.py")
+convert = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(convert)
 
 
 def _version() -> str:
@@ -53,16 +59,23 @@ def _statut(prefixe: str) -> str:
     )
 
 
+# Une canette de la collection affiche les informations de sa fiche du Wiki (nom, édition, volume,
+# description, photo...). Ses propres valeurs ne servent que lorsque le Wiki n'en a pas
+# (canette LOCAL-, fiche retirée, champ vide). État, quantité et notes restent personnels.
 COLONNES_COLLECTION = (
-    "c.ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.ajout, "
-    "CASE WHEN c.photo IS NULL THEN NULL ELSE c.maj END AS photo_version, "
+    "c.ean, COALESCE(NULLIF(w.nom, ''), c.nom) AS nom, COALESCE(NULLIF(w.edition, ''), c.edition) AS edition, "
+    "COALESCE(NULLIF(w.volume, ''), c.volume) AS volume, c.etat, c.nb, c.notes, c.ajout, "
+    "CASE WHEN w.photo IS NOT NULL THEN 'wiki-' || w.maj WHEN c.photo IS NOT NULL THEN c.maj END AS photo_version, "
+    "COALESCE(w.photo IS NOT NULL, false) AS photo_wiki, (w.ean IS NOT NULL) AS dans_wiki, "
+    "COALESCE(w.description, '') AS description, "
     "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
     "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region"
 )
-# Réponses de l'API : les octets des photos sont servis à part (/cans/{ean}/photo).
-COLONNES_REPONSE = (
-    "ean, nom, edition, volume, etat, nb, notes, ajout, "
-    "CASE WHEN photo IS NULL THEN NULL ELSE maj END AS photo_version"
+# Fiche du Wiki d'une ligne de collection : par son code, par la fiche dont c'est un code secondaire,
+# ou par celle qui a remplacé ce code (wiki_exclus.vers).
+JOINTURE_WIKI = (
+    "LEFT JOIN wiki w ON w.ean = COALESCE((SELECT k.fiche FROM wiki_codes k WHERE k.ean = c.ean), "
+    "(SELECT x.vers FROM wiki_exclus x WHERE x.ean = c.ean), c.ean)"
 )
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
 FENETRE_DEMANDES = 3600
@@ -88,6 +101,19 @@ def _photo_valide(photo: str) -> bool:
     return True
 
 
+# Début de mot : début du nom, ou lettre précédée d'un espace, tiret, barre, point ou parenthèse.
+DEBUT_MOT_RE = re.compile(r"(^|[\s\-/.(\[])(\w)")
+
+
+def formater_nom(nom: str) -> str:
+    """Nom d'un produit : espaces superflus retirés et majuscule à chaque mot.
+
+    Seule la première lettre de chaque mot change : « vr46 » devient « Vr46 », mais « USA » reste « USA ».
+    """
+    nom = " ".join(nom.split())
+    return DEBUT_MOT_RE.sub(lambda m: m.group(1) + m.group(2).upper(), nom)
+
+
 def _normaliser_code(code: str) -> str | None:
     """Forme canonique d'un code-barres : UPC-A complété à 13 chiffres, EAN-8 inchangé ; None si invalide."""
     if CODE_LOCAL_RE.match(code):
@@ -105,6 +131,21 @@ CHAMPS = """ean TEXT NOT NULL, nom TEXT NOT NULL DEFAULT '', edition TEXT NOT NU
 
 # Migrations versionnées, appliquées uniquement par scripts/migrer_schema.py : à ajouter à la fin, sans jamais
 # modifier une version déjà déployée. Chacune tourne une seule fois, dans la transaction du script.
+
+# Le Wiki est le seul endroit où une canette existe : chaque ligne de collection pointe vers une fiche.
+# Crée la fiche des lignes qui n'en ont pas (code inchangé, nom/édition/volume de la ligne la plus
+# ancienne qui a un nom) ; une fiche possédée n'est plus « retirée ». Les photos ne sont pas copiées :
+# elles avaient été envoyées comme privées. Aucune ligne de collection n'est modifiée.
+FICHES_MANQUANTES = """
+DELETE FROM wiki_exclus x WHERE EXISTS (SELECT 1 FROM collection c WHERE c.ean = x.ean);
+INSERT INTO wiki (ean, nom, edition, volume, cree, maj)
+    SELECT DISTINCT ON (c.ean) c.ean, c.nom, c.edition, c.volume, c.ajout, c.maj FROM collection c
+    WHERE NOT EXISTS (SELECT 1 FROM wiki w WHERE w.ean = c.ean)
+      AND NOT EXISTS (SELECT 1 FROM wiki_codes k WHERE k.ean = c.ean)
+    ORDER BY c.ean, (c.nom = ''), c.ajout
+ON CONFLICT (ean) DO NOTHING;
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, f"""
 CREATE TABLE IF NOT EXISTS canettes (ean TEXT PRIMARY KEY, nom TEXT NOT NULL DEFAULT '',
@@ -152,6 +193,20 @@ INSERT INTO wiki (ean, nom, edition, volume, cree, maj)
     (6, """CREATE TABLE IF NOT EXISTS wiki_codes (ean TEXT PRIMARY KEY,
         fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE, ajout TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS wiki_codes_fiche ON wiki_codes (fiche);"""),
+    # Plus aucune canette hors du Wiki (LOCAL-, fiches retirées) : voir FICHES_MANQUANTES. Le texte est
+    # recopié ici pour que la migration ne change jamais, même si la constante évolue.
+    (7, """
+DELETE FROM wiki_exclus x WHERE EXISTS (SELECT 1 FROM collection c WHERE c.ean = x.ean);
+INSERT INTO wiki (ean, nom, edition, volume, cree, maj)
+    SELECT DISTINCT ON (c.ean) c.ean, c.nom, c.edition, c.volume, c.ajout, c.maj FROM collection c
+    WHERE NOT EXISTS (SELECT 1 FROM wiki w WHERE w.ean = c.ean)
+      AND NOT EXISTS (SELECT 1 FROM wiki_codes k WHERE k.ean = c.ean)
+    ORDER BY c.ean, (c.nom = ''), c.ajout
+ON CONFLICT (ean) DO NOTHING;
+"""),
+    # Code remplacé (code interne → vrai code, correction) : « vers » mène à la fiche qui le porte désormais.
+    # Vide pour une fiche supprimée par le propriétaire.
+    (8, "ALTER TABLE wiki_exclus ADD COLUMN IF NOT EXISTS vers TEXT;"),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -182,6 +237,11 @@ class Canette(BaseModel):
             raise ValueError("format de photo refusé")
         return photo
 
+    @field_validator("nom")
+    @classmethod
+    def formater(cls, nom: str) -> str:
+        return formater_nom(nom)
+
 
 class FicheWiki(BaseModel):
     """Champs d'une fiche du Wiki modifiables par le propriétaire."""
@@ -195,6 +255,11 @@ class FicheWiki(BaseModel):
     status: Literal["", "Active", "Stop", "Nouveauté"] = ""
     region: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=4000)
+
+    @field_validator("nom")
+    @classmethod
+    def formater(cls, nom: str) -> str:
+        return formater_nom(nom)
 
 
 class CodeBarres(BaseModel):
@@ -357,9 +422,9 @@ def envoyer_code(email: str, code: str) -> None:
             return
         raise HTTPException(503, "envoi d'e-mail non configuré")
     corps = {
-        "from": os.environ.get("MAIL_FROM", "StackMonster <onboarding@resend.dev>"),
+        "from": os.environ.get("MAIL_FROM", "StackMonsters <onboarding@resend.dev>"),
         "to": [email],
-        "subject": f"Ton code StackMonster : {code}",
+        "subject": f"Ton code StackMonsters : {code}",
         "text": f"Ton code de connexion : {code}\nIl est valable 10 minutes. Si tu n'es pas à l'origine de cette demande, ignore ce message.",
     }
     req = urllib.request.Request(
@@ -479,6 +544,7 @@ def verification(v: Verification, request: Request) -> dict:
                 cx.execute(
                     f"INSERT INTO collection (user_id, {COLONNES}, maj) SELECT %s, {COLONNES}, maj FROM canettes ON CONFLICT DO NOTHING",
                     (u["id"],))
+                cx.execute(FICHES_MANQUANTES)
         else:
             u = cx.execute("SELECT id FROM users WHERE email = %s", (email,)).fetchone()
         adresse = _adresse_ip(request)
@@ -546,18 +612,14 @@ def statistiques(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depend
     return {"utilisateurs": n_users, "references": t["refs"], "connexions_uniques": n_connexions}
 
 
-def _avec_infos_wiki(cx: psycopg.Connection, canette: dict) -> dict:
-    """Ajoute les champs descriptifs du Wiki ; une canette peut ne pas y figurer (LOCAL-, fiche retirée)."""
-    w = cx.execute(
-        f"SELECT categorie, gamme, flavor, {_statut('')} AS status, region FROM wiki WHERE ean = %s", (canette["ean"],),
-    ).fetchone() or {}
-    return {
-        **canette,
-        "categorie": w.get("categorie") or w.get("gamme") or "",
-        "flavor": w.get("flavor", ""),
-        "status": w.get("status", ""),
-        "region": w.get("region", ""),
-    }
+def _canette(cx: psycopg.Connection, user_id: int, ean: str) -> dict | None:
+    """Canette de la collection d'un compte, complétée par sa fiche du Wiki."""
+    return cx.execute(
+        f"SELECT {COLONNES_COLLECTION} "
+        f"FROM collection c {JOINTURE_WIKI} "
+        "WHERE c.user_id = %s AND c.ean = %s",
+        (user_id, ean),
+    ).fetchone()
 
 
 @router.get("/cans")
@@ -565,7 +627,7 @@ def liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(conne
     with cx.transaction():
         return cx.execute(
             f"SELECT {COLONNES_COLLECTION} "
-            "FROM collection c LEFT JOIN wiki w ON w.ean = c.ean "
+            f"FROM collection c {JOINTURE_WIKI} "
             "WHERE c.user_id = %s ORDER BY c.ajout DESC",
             (u["id"],),
         ).fetchall()
@@ -574,12 +636,7 @@ def liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(conne
 @router.get("/cans/{ean}")
 def lire(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     with cx.transaction():
-        r = cx.execute(
-            f"SELECT {COLONNES_COLLECTION} "
-            "FROM collection c LEFT JOIN wiki w ON w.ean = c.ean "
-            "WHERE c.user_id = %s AND c.ean = %s",
-            (u["id"], ean),
-        ).fetchone()
+        r = _canette(cx, u["id"], ean)
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
@@ -587,9 +644,13 @@ def lire(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depe
 
 @router.get("/cans/{ean}/photo")
 def photo_canette(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> Response:
-    """Photo d'une canette de sa propre collection, chargée à la demande."""
+    """Photo d'une canette de sa propre collection, chargée à la demande : celle du Wiki en priorité."""
     with cx.transaction():
-        r = cx.execute("SELECT photo FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).fetchone()
+        r = cx.execute(
+            f"SELECT COALESCE(w.photo, c.photo) AS photo FROM collection c {JOINTURE_WIKI} "
+            "WHERE c.user_id = %s AND c.ean = %s",
+            (u["id"], ean),
+        ).fetchone()
     m = PHOTO_RE.match(r["photo"]) if r and r["photo"] else None
     if not m:
         raise HTTPException(404, "photo inconnue")
@@ -613,6 +674,22 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         ean = c.ean if deja_la else _normaliser_code(c.ean)
         if ean is None:
             raise HTTPException(422, "code-barres invalide")
+        # Nouvelle canette sans code-barres : code interne tiré du nom (convert.py). Le même nom donne
+        # toujours le même code, donc la canette rejoint la fiche du Wiki déjà créée sous ce nom.
+        if not deja_la and ean.startswith("LOCAL-"):
+            if not c.nom:
+                raise HTTPException(422, "un nom est obligatoire pour une canette sans code-barres")
+            ean = convert.nom_en_13_chiffres(c.nom)
+            if cx.execute("SELECT 1 FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).fetchone():
+                raise HTTPException(409, "une canette du même nom est déjà dans ta collection")
+        if not deja_la:
+            retiree = cx.execute("SELECT vers FROM wiki_exclus WHERE ean = %s", (ean,)).fetchone()
+            if retiree and retiree["vers"]:  # ancien code : la canette est la fiche qui l'a remplacé
+                ean = retiree["vers"]
+                if cx.execute("SELECT 1 FROM collection WHERE user_id = %s AND ean = %s", (u["id"], ean)).fetchone():
+                    raise HTTPException(409, "cette canette est déjà dans ta collection, sous un autre code-barres")
+            elif retiree:
+                raise HTTPException(409, "cette canette a été retirée du Wiki")
         principal = None if deja_la else _fiche_du_code(cx, ean)
         if principal:  # un code supplémentaire désigne la fiche existante : pas de doublon
             if cx.execute(
@@ -620,61 +697,65 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
             ).fetchone():
                 raise HTTPException(409, "cette canette est déjà dans ta collection, sous un autre code-barres")
             ean = principal
-        exclue = cx.execute("SELECT 1 FROM wiki_exclus WHERE ean = %s", (ean,)).fetchone()
         # Seul le propriétaire valide une « Nouveauté » ; venue d'un autre compte, elle est ignorée.
         statut = c.status if c.status != "Nouveauté" or _est_proprietaire(u["email"]) else ""
-        # Le Wiki reçoit les champs descriptifs fournis, sans écraser une fiche existante.
-        # Il ne reçoit ni les canettes sans code-barres (LOCAL-), ni les photos : elles restent privées.
-        # Une fiche retirée par le propriétaire (wiki_exclus) n'est pas recréée.
-        if not ean.startswith("LOCAL-") and not exclue:
+        # Le Wiki est le seul endroit où une canette existe : ajouter une canette crée sa fiche si besoin,
+        # sans écraser les champs déjà remplis.
+        # Ancienne ligne enregistrée sous un code devenu secondaire ou remplacé : sa fiche existe déjà.
+        fiche = (_fiche_de_la_ligne(cx, ean) if deja_la else None) or ean
+        cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (fiche,))
+        cx.execute(
+            """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (ean) DO UPDATE SET
+                  nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
+                  edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
+                  volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
+                  categorie = CASE WHEN COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = ''
+                                   THEN EXCLUDED.categorie ELSE wiki.categorie END,
+                  flavor = CASE WHEN wiki.flavor = '' THEN EXCLUDED.flavor ELSE wiki.flavor END,
+                  status = CASE WHEN wiki.status = '' THEN EXCLUDED.status ELSE wiki.status END,
+                  nouveaute_depuis = CASE WHEN wiki.status = '' THEN EXCLUDED.nouveaute_depuis
+                                          ELSE wiki.nouveaute_depuis END,
+                  region = CASE WHEN wiki.region = '' THEN EXCLUDED.region ELSE wiki.region END,
+                  maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
+                              OR (wiki.edition = '' AND EXCLUDED.edition <> '')
+                              OR (wiki.volume = '' AND EXCLUDED.volume <> '')
+                              OR (COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = '' AND EXCLUDED.categorie <> '')
+                              OR (wiki.flavor = '' AND EXCLUDED.flavor <> '')
+                              OR (wiki.status = '' AND EXCLUDED.status <> '')
+                              OR (wiki.region = '' AND EXCLUDED.region <> '')
+                             THEN EXCLUDED.maj ELSE wiki.maj END""",
+            (fiche, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
+             statut, c.region.strip(),
+             int(time.time()) if statut == "Nouveauté" else None, maintenant(), maintenant()),
+        )
+        # Une photo envoyée devient celle de la fiche du Wiki si elle n'en a pas encore (visible par tous).
+        if c.photo:
             cx.execute(
-                """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (ean) DO UPDATE SET
-                      nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
-                      edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
-                      volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
-                      categorie = CASE WHEN COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = ''
-                                       THEN EXCLUDED.categorie ELSE wiki.categorie END,
-                      flavor = CASE WHEN wiki.flavor = '' THEN EXCLUDED.flavor ELSE wiki.flavor END,
-                      status = CASE WHEN wiki.status = '' THEN EXCLUDED.status ELSE wiki.status END,
-                      nouveaute_depuis = CASE WHEN wiki.status = '' THEN EXCLUDED.nouveaute_depuis
-                                              ELSE wiki.nouveaute_depuis END,
-                      region = CASE WHEN wiki.region = '' THEN EXCLUDED.region ELSE wiki.region END,
-                      maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
-                                  OR (wiki.edition = '' AND EXCLUDED.edition <> '')
-                                  OR (wiki.volume = '' AND EXCLUDED.volume <> '')
-                                  OR (COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = '' AND EXCLUDED.categorie <> '')
-                                  OR (wiki.flavor = '' AND EXCLUDED.flavor <> '')
-                                  OR (wiki.status = '' AND EXCLUDED.status <> '')
-                                  OR (wiki.region = '' AND EXCLUDED.region <> '')
-                                 THEN EXCLUDED.maj ELSE wiki.maj END""",
-                (ean, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
-                 statut, c.region.strip(),
-                 int(time.time()) if statut == "Nouveauté" else None, maintenant(), maintenant()),
+                "UPDATE wiki SET photo = %s, maj = %s WHERE ean = %s AND photo IS NULL",
+                (c.photo, maintenant(), fiche),
             )
-        enregistrement = cx.execute(
-            f"""INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
+        cx.execute(
+            """INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, ean) DO UPDATE SET
                   nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
                   nb=EXCLUDED.nb, notes=EXCLUDED.notes, maj=EXCLUDED.maj,
-                  photo = CASE WHEN %s THEN EXCLUDED.photo ELSE collection.photo END
-                RETURNING {COLONNES_REPONSE}""",
+                  photo = CASE WHEN %s THEN EXCLUDED.photo ELSE collection.photo END""",
             (u["id"], ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
              c.ajout or maintenant(), maintenant(), "photo" in c.model_fields_set),  # champ absent : photo conservée
-        ).fetchone()
-        return _avec_infos_wiki(cx, enregistrement)
+        )
+        return _canette(cx, u["id"], ean)
 
 
 @router.patch("/cans/{ean}/nb")
 def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     with cx.transaction():
-        r = cx.execute(
-            f"UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s RETURNING {COLONNES_REPONSE}",
-            (d.delta, maintenant(), u["id"], ean)).fetchone()
-        if r is not None:
-            r = _avec_infos_wiki(cx, r)
+        n = cx.execute(
+            "UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s",
+            (d.delta, maintenant(), u["id"], ean)).rowcount
+        r = _canette(cx, u["id"], ean) if n else None
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
@@ -713,6 +794,15 @@ def _fiche_du_code(cx: psycopg.Connection, code: str) -> str | None:
     """Code principal de la fiche dont « code » est un code-barres supplémentaire."""
     r = cx.execute("SELECT fiche FROM wiki_codes WHERE ean = %s", (code,)).fetchone()
     return r["fiche"] if r else None
+
+
+def _fiche_de_la_ligne(cx: psycopg.Connection, code: str) -> str | None:
+    """Fiche d'une ligne de collection dont le code est secondaire ou a été remplacé (même règle que JOINTURE_WIKI)."""
+    r = cx.execute(
+        "SELECT COALESCE((SELECT fiche FROM wiki_codes WHERE ean = %s), (SELECT vers FROM wiki_exclus WHERE ean = %s)) AS f",
+        (code, code),
+    ).fetchone()
+    return r["f"]
 
 
 def _code_pris(cx: psycopg.Connection, code: str) -> bool:
@@ -829,9 +919,11 @@ def _suivre_changement_de_code(cx: psycopg.Connection, ancien: str, nouveau: str
     )
     cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (nouveau,))
     cx.execute(
-        "INSERT INTO wiki_exclus (ean, exclu) VALUES (%s, %s) ON CONFLICT (ean) DO NOTHING",
-        (ancien, maintenant()),
+        "INSERT INTO wiki_exclus (ean, exclu, vers) VALUES (%s, %s, %s) "
+        "ON CONFLICT (ean) DO UPDATE SET vers = EXCLUDED.vers",
+        (ancien, maintenant(), nouveau),
     )
+    cx.execute("UPDATE wiki_exclus SET vers = %s WHERE vers = %s", (nouveau, ancien))  # redirections en chaîne
 
 
 @router.post("/wiki/{ean}/code-barres")
@@ -895,6 +987,13 @@ def wiki_supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connect
     if not _est_proprietaire(u["email"]):
         raise HTTPException(403, "réservé au propriétaire")
     with cx.transaction():
+        # Une canette n'existe que dans le Wiki : une fiche encore dans une collection ne se supprime pas.
+        if cx.execute(
+            "SELECT 1 FROM collection WHERE ean = %s OR ean IN (SELECT ean FROM wiki_codes WHERE fiche = %s) "
+            "OR ean IN (SELECT ean FROM wiki_exclus WHERE vers = %s) LIMIT 1",
+            (ean, ean, ean),
+        ).fetchone():
+            raise HTTPException(409, "cette canette est dans au moins une collection : suppression impossible")
         # Ses codes supplémentaires disparaissent avec elle et ne doivent pas la recréer non plus.
         cx.execute(
             "INSERT INTO wiki_exclus (ean, exclu) SELECT ean, %s FROM wiki_codes WHERE fiche = %s "
@@ -903,6 +1002,7 @@ def wiki_supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connect
         )
         n = cx.execute("DELETE FROM wiki WHERE ean = %s", (ean,)).rowcount
         if n:
+            cx.execute("UPDATE wiki_exclus SET vers = NULL WHERE vers = %s", (ean,))  # plus de redirection
             cx.execute(
                 "INSERT INTO wiki_exclus (ean, exclu) VALUES (%s, %s) ON CONFLICT (ean) DO NOTHING",
                 (ean, maintenant()),
@@ -912,7 +1012,7 @@ def wiki_supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connect
     return Response(status_code=204)
 
 
-app = FastAPI(title="StackMonster", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="StackMonsters", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
 for r in (auth, router):  # avec et sans le préfixe /api (selon ce que Vercel transmet)
     app.include_router(r)
     app.include_router(r, prefix="/api")

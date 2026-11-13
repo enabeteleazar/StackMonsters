@@ -59,7 +59,7 @@ export default function FicheWiki({
   }
 
   const supprimer = async () => {
-    if (!confirm(`Supprimer la fiche « ${fiche.nom || fiche.ean} » du Wiki ? Les canettes des collections sont conservées, et la fiche ne sera plus recréée automatiquement.`)) return
+    if (!confirm(`Supprimer la fiche « ${fiche.nom || fiche.ean} » du Wiki ? Ce n’est possible que si aucune collection ne la contient.`)) return
     setSuppressionOccupe(true)
     setErreurSuppression(null)
     try {
@@ -84,7 +84,7 @@ export default function FicheWiki({
 
   return (
     <div className="verdict" role="dialog" aria-modal="true" aria-label={fiche.nom || 'Fiche de canette'}>
-      <div className="photo-hero">
+      <div className="photo-hero photo-hero-plein">
         <PhotoWiki ean={fiche.ean} version={fiche.photo} taille={34} legende="Pas de photo" />
         {fiche.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
         <button className="btn-icone fermer" onClick={surFermeture} aria-label="Fermer">

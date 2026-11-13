@@ -53,36 +53,45 @@ export default function Verdict(p: Props) {
   }
 
   return (
-    <div className="verdict">
-      <div className="photo-hero">
-        {!edition && p.existante?.photo_version ? (
-          <PhotoWiki
-            source="collection"
-            ean={p.existante.ean}
-            version={p.existante.photo_version}
-            taille={34}
-            legende="Pas de photo"
-          />
-        ) : (
-          <div className="ph-vide">
-            <ImageOff size={34} />
-            <span>Pas de photo</span>
-          </div>
-        )}
+    <div className={`verdict${connue ? '' : ' verdict-sans-photo'}`}>
+      {/* Nouvelle canette : pas d'espace photo en haut, seulement le bouton de fermeture. */}
+      {!connue && (
         <button className="btn-icone fermer" onClick={p.surFermeture} aria-label="Fermer">
           <X size={20} />
         </button>
-        {!edition && (
-          <span className={`badge ${connue ? 'badge-possede' : 'badge-nouveau'} badge-etat`}>
-            {connue ? <CheckCircle2 size={13} /> : <Sparkles size={13} />}
-            {connue ? 'Possédée' : 'Nouvelle'}
-          </span>
-        )}
-      </div>
+      )}
+      {connue && (
+        <div className="photo-hero">
+          {!edition && p.existante?.photo_version ? (
+            <PhotoWiki
+              source="collection"
+              ean={p.existante.ean}
+              version={p.existante.photo_version}
+              taille={34}
+              legende="Pas de photo"
+            />
+          ) : (
+            <div className="ph-vide">
+              <ImageOff size={34} />
+              <span>Pas de photo</span>
+            </div>
+          )}
+          <button className="btn-icone fermer" onClick={p.surFermeture} aria-label="Fermer">
+            <X size={20} />
+          </button>
+          {!edition && (
+            <span className={`badge ${connue ? 'badge-possede' : 'badge-nouveau'} badge-etat`}>
+              {connue ? <CheckCircle2 size={13} /> : <Sparkles size={13} />}
+              {connue ? 'Possédée' : 'Nouvelle'}
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="verdict-scroll">
         <div className="bandeau-info">
-          <div className="ean">{eanAffiche}</div>
+          {/* Un code LOCAL- n'est qu'un identifiant technique : il n'est jamais montré. */}
+          {!eanAffiche.startsWith('LOCAL-') && <div className="ean">{eanAffiche}</div>}
           <h2>{titre}</h2>
           {!edition && (
             <p>
@@ -106,10 +115,6 @@ export default function Verdict(p: Props) {
         ) : (
           <>
             <div className="meta-grille">
-              <div className="meta-item">
-                <span>Version</span>
-                <b>{p.existante!.edition || '—'}</b>
-              </div>
               <div className="meta-item">
                 <span>Volume</span>
                 <b>{p.existante!.volume || '—'}</b>
@@ -139,6 +144,12 @@ export default function Verdict(p: Props) {
                 <b>{p.existante!.nb}</b>
               </div>
             </div>
+            {p.existante!.description && (
+              <div className="fiche-description">
+                <span className="etiquette">Description</span>
+                <p>{p.existante!.description}</p>
+              </div>
+            )}
             {p.existante!.notes && <p className="sous">Notes : {p.existante!.notes}</p>}
 
             <div className="actions">
@@ -156,14 +167,20 @@ export default function Verdict(p: Props) {
                   if (fichier) void remplacerPhoto(fichier)
                 }}
               />
-              <button
-                className="btn btn-fantome"
-                disabled={occupe}
-                onClick={() => photoInput.current?.click()}
-              >
-                <ImagePlus size={18} />
-                {p.existante!.photo_version ? 'Remplacer la photo' : 'Ajouter une photo'}
-              </button>
+              {/* La photo du Wiki prime : une photo personnelle ne serait pas affichée. */}
+              {!p.existante!.photo_wiki && (
+                <button
+                  className="btn btn-fantome"
+                  disabled={occupe}
+                  onClick={() => photoInput.current?.click()}
+                >
+                  <ImagePlus size={18} />
+                  {p.existante!.photo_version ? 'Remplacer la photo' : 'Ajouter une photo'}
+                </button>
+              )}
+              {!p.existante!.photo_wiki && (
+                <p className="sous">Ta photo deviendra celle de la fiche du Wiki, visible par tous.</p>
+              )}
               {erreurPhoto && <p className="sous" role="alert">{erreurPhoto}</p>}
               <button className="btn btn-fantome" onClick={() => setEdition(true)}>
                 Modifier la fiche
@@ -252,17 +269,22 @@ function Formulaire({
   const codeBarresDejaUtilise = canettes.find(
     (canette) => canette.ean === codeCanonique && canette.ean !== depart.ean,
   )
-  // Une canette sans code-barres reste hors du Wiki, qui porte ces champs descriptifs.
-  const champsWiki = !c.ean.startsWith('LOCAL-')
+  const codeBarresLocal = nouvelle && c.ean.startsWith('LOCAL-')
+  // À sa création, une canette sans code-barres reçoit un code tiré de son nom et rejoint le Wiki,
+  // qui porte ces champs descriptifs ; une ancienne canette LOCAL- reste hors du Wiki.
+  const champsWiki = codeBarresLocal || !c.ean.startsWith('LOCAL-')
   // Le Wiki garde la première valeur saisie : un champ déjà rempli ne se modifie pas depuis une collection.
   const valeursWiki = nouvelle ? fiches?.find((fiche) => fiche.ean === ficheChoisie) : depart
   const verrouille = (k: 'categorie' | 'flavor' | 'status' | 'region') => !!valeursWiki?.[k]
   const champsVerrouilles = (['categorie', 'flavor', 'status', 'region'] as const).some(verrouille)
-  const codeBarresLocal = nouvelle && c.ean.startsWith('LOCAL-')
+  // Nom et volume affichés viennent du Wiki : les modifier ici n'aurait aucun effet visible.
+  const texteVerrouille = (k: 'nom' | 'volume') => !nouvelle && !!depart.dans_wiki && !!depart[k]
   // Le code n'est contrôlé qu'à la création : une fiche existante reste toujours modifiable.
   const codeBarresValide = !nouvelle || codeBarresLocal || normaliserCodeBarres(c.ean) !== null
   const codeBarresInvalide = nouvelle && !!c.ean && !codeBarresValide
   const quantiteInvalide = !Number.isInteger(c.nb) || c.nb < 1 || c.nb > 9999
+  // Sans code-barres, le code de la fiche est tiré du nom : il est obligatoire.
+  const nomRequis = codeBarresLocal && !c.nom.trim()
   const choixFicheRequis =
     nouvelle && !!ficheCodeDisponible && ficheChoisie !== ficheCodeDisponible.ean
   const rechercheActive = c.nom.trim().length >= 2 || (c.ean.trim().length >= 2 && !c.ean.startsWith('LOCAL-'))
@@ -301,29 +323,33 @@ function Formulaire({
   return (
     <>
       <div className="champs">
-        <div>
-          <label htmlFor="f-code-barres">Code-barres</label>
-          <input
-            id="f-code-barres"
-            value={c.ean}
-            readOnly={!nouvelle}
-            inputMode="numeric"
-            maxLength={64}
-            aria-label="Code-barres de la canette"
-            onChange={(e) => {
-              const ean = e.target.value.trim()
-              champ('ean', ean)
-              setFicheChoisie(null)
-              surSelectionFiche(ean)
-            }}
-          />
-        </div>
+        {/* Canette sans code-barres : pas de champ, le code est tiré du nom à l'enregistrement. */}
+        {!c.ean.startsWith('LOCAL-') && (
+          <div>
+            <label htmlFor="f-code-barres">Code-barres</label>
+            <input
+              id="f-code-barres"
+              value={c.ean}
+              readOnly={!nouvelle}
+              inputMode="numeric"
+              maxLength={64}
+              aria-label="Code-barres de la canette"
+              onChange={(e) => {
+                const ean = e.target.value.trim()
+                champ('ean', ean)
+                setFicheChoisie(null)
+                surSelectionFiche(ean)
+              }}
+            />
+          </div>
+        )}
         <div>
           <label htmlFor="f-nom">Nom</label>
           <input
             id="f-nom"
             value={c.nom}
             placeholder="Monster Mango Loco"
+            disabled={texteVerrouille('nom')}
             onChange={(e) => champ('nom', e.target.value)}
           />
         </div>
@@ -350,7 +376,7 @@ function Formulaire({
                   return (
                     <div className="suggestion-wiki" key={fiche.ean}>
                       <span>
-                        <b>{fiche.nom}{fiche.edition ? ` - ${fiche.edition}` : ''}</b>
+                        <b>{fiche.nom}</b>
                         {fiche.volume && <small>{fiche.volume}</small>}
                       </span>
                       <button
@@ -371,34 +397,22 @@ function Formulaire({
             {erreurFiche && <p className="suggestions-wiki-erreur" role="alert">{erreurFiche}</p>}
           </div>
         )}
-        <div className={nouvelle ? '' : 'duo'}>
-          {!nouvelle && (
-            <div>
-              <label htmlFor="f-edition">Version</label>
-              <input
-                id="f-edition"
-                value={c.edition}
-                placeholder="Ultra White"
-                onChange={(e) => champ('edition', e.target.value)}
-              />
-            </div>
-          )}
-          <div>
-            <label htmlFor="f-volume">Volume</label>
-            <input
-              id="f-volume"
-              value={c.volume}
-              placeholder="500 ml"
-              onChange={(e) => champ('volume', e.target.value)}
-            />
-          </div>
+        <div>
+          <label htmlFor="f-volume">Volume</label>
+          <input
+            id="f-volume"
+            value={c.volume}
+            placeholder="500 ml"
+            disabled={texteVerrouille('volume')}
+            onChange={(e) => champ('volume', e.target.value)}
+          />
         </div>
         {champsWiki && (
           <>
-            {champsVerrouilles && (
+            {(champsVerrouilles || texteVerrouille('nom')) && (
               <p className="sous">
-                Catégorie, saveur, statut et région viennent du Wiki partagé : seuls les champs encore vides
-                peuvent être complétés ici.
+                Nom, volume, catégorie, saveur, statut et région viennent du Wiki partagé : seuls les champs
+                encore vides peuvent être complétés ici.
               </p>
             )}
             <div>
@@ -483,7 +497,7 @@ function Formulaire({
         </div>
         <div className="photo-zone">
           <CameraIcon size={22} />
-          Photo de la canette (facultatif)
+          Photo de la canette (facultatif — si la fiche du Wiki n’a pas encore de photo, celle-ci y sera publiée)
           <input
             type="file"
             accept="image/*"
@@ -500,6 +514,11 @@ function Formulaire({
       {codeBarresInvalide && (
         <p className="suggestions-wiki-erreur" role="alert">
           Code-barres invalide : il doit compter 8, 12 ou 13 chiffres, clé de contrôle comprise.
+        </p>
+      )}
+      {nomRequis && (
+        <p className="suggestions-wiki-erreur" role="alert">
+          Donne un nom à la canette, c’est lui qui identifie sa fiche dans le Wiki.
         </p>
       )}
       {quantiteInvalide && (
@@ -522,7 +541,7 @@ function Formulaire({
           className="btn btn-primaire actions-principal"
           disabled={
             occupe || !c.ean.trim() || !codeBarresValide || !!codeBarresDejaUtilise ||
-            choixFicheRequis || wikiEnChargement || quantiteInvalide
+            choixFicheRequis || wikiEnChargement || quantiteInvalide || nomRequis
           }
           onClick={() => surValider({ ...c, ean: codeCanonique })}
         >

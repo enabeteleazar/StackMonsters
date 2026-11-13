@@ -2,8 +2,8 @@
 """Reprend une collection existante dans la base Postgres (Neon).
 
     DATABASE_URL=postgresql://... python scripts/migrer.py /var/lib/canstack/canstack.db
-    DATABASE_URL=postgresql://... python scripts/migrer.py stackmonster-2026-11-01.json
-    DATABASE_URL=postgresql://... python scripts/migrer.py stackmonster-2026-11-01.json --email moi@exemple.fr
+    DATABASE_URL=postgresql://... python scripts/migrer.py stackmonsters-2026-11-01.json
+    DATABASE_URL=postgresql://... python scripts/migrer.py stackmonsters-2026-11-01.json --email moi@exemple.fr
 
 - un fichier .db : la base SQLite de l'ancienne version auto-hébergée (fidèle, photos et dates comprises) ;
 - un fichier .json : la « Sauvegarde JSON » de l'écran Réglages.
@@ -69,25 +69,25 @@ def restaurer_compte(cx, email: str, lignes: list[dict]) -> int:
              r.get("etat") or "", max(1, int(r.get("nb") or 1)), r.get("notes") or "", r.get("photo"),
              r.get("ajout") or maintenant(), maintenant()),
         )
-        exclue = cx.execute("SELECT 1 FROM wiki_exclus WHERE ean = %s", (r["ean"],)).fetchone()
-        if not str(r["ean"]).startswith("LOCAL-") and not exclue:
-            cx.execute(
-                """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                   ON CONFLICT (ean) DO UPDATE SET
-                     nom=COALESCE(NULLIF(wiki.nom, ''), EXCLUDED.nom),
-                     edition=COALESCE(NULLIF(wiki.edition, ''), EXCLUDED.edition),
-                     volume=COALESCE(NULLIF(wiki.volume, ''), EXCLUDED.volume),
-                     categorie=COALESCE(NULLIF(wiki.categorie, ''), NULLIF(wiki.gamme, ''), EXCLUDED.categorie),
-                     flavor=COALESCE(NULLIF(wiki.flavor, ''), EXCLUDED.flavor),
-                     status=COALESCE(NULLIF(wiki.status, ''), EXCLUDED.status),
-                     nouveaute_depuis=CASE WHEN wiki.status = '' THEN EXCLUDED.nouveaute_depuis
-                                           ELSE wiki.nouveaute_depuis END,
-                     region=COALESCE(NULLIF(wiki.region, ''), EXCLUDED.region)""",
-                (r["ean"], r.get("nom") or "", r.get("edition") or "", r.get("volume") or "",
-                 r.get("categorie") or "", r.get("flavor") or "", r.get("status") or "", r.get("region") or "",
-                 int(time.time()) if r.get("status") == "Nouveauté" else None, maintenant(), maintenant()),
-            )
+        # Le Wiki est le seul endroit où une canette existe : chaque canette restaurée a sa fiche.
+        cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (r["ean"],))
+        cx.execute(
+            """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (ean) DO UPDATE SET
+                 nom=COALESCE(NULLIF(wiki.nom, ''), EXCLUDED.nom),
+                 edition=COALESCE(NULLIF(wiki.edition, ''), EXCLUDED.edition),
+                 volume=COALESCE(NULLIF(wiki.volume, ''), EXCLUDED.volume),
+                 categorie=COALESCE(NULLIF(wiki.categorie, ''), NULLIF(wiki.gamme, ''), EXCLUDED.categorie),
+                 flavor=COALESCE(NULLIF(wiki.flavor, ''), EXCLUDED.flavor),
+                 status=COALESCE(NULLIF(wiki.status, ''), EXCLUDED.status),
+                 nouveaute_depuis=CASE WHEN wiki.status = '' THEN EXCLUDED.nouveaute_depuis
+                                       ELSE wiki.nouveaute_depuis END,
+                 region=COALESCE(NULLIF(wiki.region, ''), EXCLUDED.region)""",
+            (r["ean"], r.get("nom") or "", r.get("edition") or "", r.get("volume") or "",
+             r.get("categorie") or "", r.get("flavor") or "", r.get("status") or "", r.get("region") or "",
+             int(time.time()) if r.get("status") == "Nouveauté" else None, maintenant(), maintenant()),
+        )
         ecrites += 1
     return ecrites
 

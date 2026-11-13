@@ -190,7 +190,7 @@ export default function App() {
           <div className="logo">
             <Logo />
             <div className="logo-marque">
-              Stack<em>Monster</em>
+              Stack<em>Monsters</em>
             </div>
           </div>
         </header>
@@ -212,23 +212,11 @@ export default function App() {
 
   if (etatAcces === 'connexion') {
     return (
-      <>
-        <header>
-          <div className="logo">
-            <Logo />
-            <div className="logo-marque">
-              Stack<em>Monster</em>
-            </div>
-          </div>
-        </header>
-        <main>
-          <Acces
-            refuse={refuse}
-            surValider={apresConnexion}
-            surRetour={() => setEtatAcces('accueil')}
-          />
-        </main>
-      </>
+      <Acces
+        refuse={refuse}
+        surValider={apresConnexion}
+        surRetour={() => setEtatAcces('accueil')}
+      />
     )
   }
 
@@ -238,7 +226,7 @@ export default function App() {
         <div className="logo">
           <Logo />
           <div className="logo-marque">
-            Stack<em>Monster</em>
+            Stack<em>Monsters</em>
           </div>
         </div>
       </header>
@@ -252,7 +240,6 @@ export default function App() {
             surScanner={() => setCamera(true)}
             surAjouter={ajouterSansCode}
             surOuvrir={ouvrirFiche}
-            surCodeManuel={ouvrirScan}
           />
         )}
         {vue === 'collec' && <Collection canettes={canettes} surOuvrir={ouvrirFiche} />}
@@ -299,7 +286,6 @@ export default function App() {
           <span className="nav-scan-rond">
             <ScanLine size={22} strokeWidth={2.4} />
           </span>
-          Scan
         </button>
         <button aria-current={vue === 'wiki'} onClick={() => setVue('wiki')}>
           <BookOpen size={19} />

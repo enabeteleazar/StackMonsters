@@ -1,6 +1,6 @@
-# STACKMONSTER — Roadmap officielle
+# STACKMONSTERS — Roadmap officielle
 
-> Feuille de route produit proposée pour STACKMONSTER. Les versions représentent des étapes de livraison et non des dates garanties. L'ordre pourra évoluer selon les retours, les contraintes techniques et les priorités de sécurité.
+> Feuille de route produit proposée pour STACKMONSTERS. Les versions représentent des étapes de livraison et non des dates garanties. L'ordre pourra évoluer selon les retours, les contraintes techniques et les priorités de sécurité.
 
 ## Vision du produit
 
@@ -149,6 +149,6 @@ Ces jalons sont des objectifs de regroupement. Ils ne sont pas des milestones Gi
 
 ## Liens utiles
 
-- [Dépôt STACKMONSTER](https://github.com/enabeteleazar/StockMonsters)
+- [Dépôt STACKMONSTERS](https://github.com/enabeteleazar/StockMonsters)
 - [Toutes les issues](https://github.com/enabeteleazar/StockMonsters/issues)
 - [Tableau de suivi](https://github.com/enabeteleazar/StockMonsters/blob/develop/PROJECT-BOARD.md)

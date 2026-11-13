@@ -29,7 +29,7 @@ export default function Stats({ surRetour }: Props) {
 
   return (
     <section>
-      <span className="eyebrow">StackMonster</span>
+      <span className="eyebrow">StackMonsters</span>
       <h1 className="tb-titre" style={{ fontSize: 'clamp(26px,7vw,34px)' }}>
         Statistiques
       </h1>

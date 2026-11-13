@@ -20,13 +20,13 @@ export default function Confidentialite() {
         <div className="logo">
           <Logo />
           <div className="logo-marque">
-            Stack<em>Monster</em>
+            Stack<em>Monsters</em>
           </div>
         </div>
       </header>
       <main>
         <section>
-          <span className="eyebrow">StackMonster</span>
+          <span className="eyebrow">StackMonsters</span>
           <h1 className="tb-titre" style={{ fontSize: 'clamp(26px,7vw,34px)' }}>
             Confidentialité
           </h1>
@@ -34,7 +34,7 @@ export default function Confidentialite() {
 
           <Bloc titre="Qui est responsable ?">
             <p>
-              Le responsable du traitement est {RESPONSABLE}, éditeur de StackMonster à titre personnel. Pour toute
+              Le responsable du traitement est {RESPONSABLE}, éditeur de StackMonsters à titre personnel. Pour toute
               question sur tes données ou pour exercer tes droits : <Contact />.
             </p>
           </Bloc>
@@ -47,7 +47,7 @@ export default function Confidentialite() {
                 un compte.
               </li>
               <li>
-                <b>Collection</b> — canettes, quantités, états, notes et photos. But : gérer ta collection privée,
+                <b>Collection</b> — canettes, quantités, états, notes et photos. But : gérer ta collection,
                 visible de toi seul. Base : exécution du service. Les photos sont réduites et leurs métadonnées
                 (position, appareil) supprimées avant l’envoi.
               </li>
@@ -67,9 +67,11 @@ export default function Confidentialite() {
 
           <Bloc titre="Le Wiki partagé">
             <p>
-              Le nom, la version, le volume, la catégorie, la saveur, le statut et la région d’une canette avec
-              code-barres alimentent un catalogue visible des comptes connectés, sans aucun lien avec ton compte. Tes
-              photos, notes, quantités, états et canettes sans code-barres n’y sont jamais envoyés.
+              Chaque canette existe sous forme de fiche dans ce catalogue, visible des comptes connectés, sans
+              aucun lien avec ton compte : ajouter une canette crée sa fiche si elle n’existe pas (nom, version,
+              volume, catégorie, saveur, statut, région). Une photo que tu envoies devient celle de la fiche si elle
+              n’en a pas encore ; les photos envoyées auparavant restent privées. Tes notes, quantités et états n’y
+              sont jamais envoyés.
             </p>
           </Bloc>
 
@@ -85,7 +87,7 @@ export default function Confidentialite() {
           </Bloc>
 
           <Bloc titre="Ce qui est enregistré sur ton appareil">
-            <p>StackMonster n’utilise pas de cookie. Il conserve dans le stockage de ton navigateur :</p>
+            <p>StackMonsters n’utilise pas de cookie. Il conserve dans le stockage de ton navigateur :</p>
             <ul>
               <li>ton jeton de session — indispensable pour rester connecté ;</li>
               <li>une copie de ta collection et des photos déjà affichées — pour l’usage hors ligne ;</li>
@@ -132,7 +134,7 @@ export default function Confidentialite() {
               <li>Hébergeur : Vercel Inc., 440 N Barranca Ave #4133, Covina, CA 91723, États-Unis.</li>
             </ul>
             <p>
-              StackMonster est un projet indépendant, non affilié à Monster Energy. Les marques citées appartiennent à
+              StackMonsters est un projet indépendant, non affilié à Monster Energy. Les marques citées appartiennent à
               leurs propriétaires.
             </p>
           </Bloc>

@@ -81,12 +81,12 @@ describe('filtrerFiches', () => {
   })
 
   describe('options du catalogue', () => {
-    it('contient les 10 catégories et 6 régions extraites du fichier fourni', () => {
+    it('contient les 10 catégories et les 7 régions proposées', () => {
       expect(CATEGORIES).toEqual([
         'Original', 'Ultra', 'Juiced', 'Reserve', 'Special',
         'Java', 'Rehab', 'Nitro', 'Water', 'Asia',
       ])
-      expect(REGIONS).toEqual(['Global', 'US', 'Europe', 'Europe/Aus', 'US/Global', 'Japan'])
+      expect(REGIONS).toEqual(['Global', 'US', 'Canada', 'Europe', 'Europe/Aus', 'US/Global', 'Japan'])
       expect(STATUTS).toEqual(['Active', 'Stop', 'Nouveauté'])
     })
   })

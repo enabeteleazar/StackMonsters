@@ -196,7 +196,7 @@ export default function ResultatScan(p: Props) {
             </span>
             <CarteMini
               titre={connue.nom || 'Sans nom'}
-              detail={[connue.edition, connue.volume].filter(Boolean).join(' · ')}
+              detail={connue.volume}
               photo={<PhotoWiki source="collection" ean={connue.ean} version={connue.photo_version} />}
             >
               <span key={ajouts} className={`scan-quantite${ajouts ? ' scan-quantite-plus' : ''}`}>
@@ -222,7 +222,7 @@ export default function ResultatScan(p: Props) {
             <CarteMini
               succes
               titre={etape.canette.nom || 'Nouvelle canette'}
-              detail={[etape.canette.edition, etape.canette.volume].filter(Boolean).join(' · ')}
+              detail={etape.canette.volume}
               photo={etape.apercu ? <img src={etape.apercu} alt="" /> : <ImageOff size={26} />}
             />
             <div className="scan-etat" role="group" aria-labelledby="titre-etat">
@@ -375,7 +375,7 @@ function CreationRapide({
               {propositions.map((fiche) => (
                 <div className="suggestion-wiki" key={fiche.ean}>
                   <span>
-                    <b>{fiche.nom}{fiche.edition ? ` - ${fiche.edition}` : ''}</b>
+                    <b>{fiche.nom}</b>
                     <small>
                       {[fiche.volume, estCodeInterne(fiche.ean) ? 'sans code-barres' : null].filter(Boolean).join(' · ')}
                     </small>

@@ -59,12 +59,14 @@ function confirmateur(surCode: (ean: string) => void) {
 }
 
 export async function demarrerScanner(o: Options): Promise<Scanner> {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    o.surErreur('Caméra indisponible sur ce navigateur')
-    return { arreter: () => {} }
-  }
+  // D'abord le contexte : en http:// (hors localhost), le navigateur masque navigator.mediaDevices,
+  // et le message « indisponible sur ce navigateur » induirait en erreur.
   if (!window.isSecureContext) {
     o.surErreur('La caméra exige une adresse https://')
+    return { arreter: () => {} }
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    o.surErreur('Caméra indisponible sur ce navigateur')
     return { arreter: () => {} }
   }
 

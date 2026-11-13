@@ -4,6 +4,7 @@ import { api, jeton, NonAutorise } from '../api'
 import { ficheSauvegarde } from '../sauvegarde'
 import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
 import { moteurNatif } from '../scanner'
+import LienInstagram from './LienInstagram'
 import type { Canette } from '../types'
 
 type Props = {
@@ -89,7 +90,7 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
         fiches.push(ficheSauvegarde(c, c.photo_version ? await api.photoData(c.ean, c.photo_version) : null))
       }
       telecharger(
-        `stackmonster-${new Date().toISOString().slice(0, 10)}.json`,
+        `stackmonsters-${new Date().toISOString().slice(0, 10)}.json`,
         JSON.stringify(fiches, null, 2),
         'application/json',
       )
@@ -110,12 +111,12 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
         ),
       )
       .join('\n')
-    telecharger('stackmonster.csv', '﻿' + csv, 'text/csv')
+    telecharger('stackmonsters.csv', '﻿' + csv, 'text/csv')
   }
 
   return (
     <section>
-      <span className="eyebrow">StackMonster</span>
+      <span className="eyebrow">StackMonsters</span>
       <h1 className="tb-titre" style={{ fontSize: 'clamp(26px,7vw,34px)' }}>
         Réglages
       </h1>
@@ -223,6 +224,7 @@ export default function Settings({ canettes, emailUtilisateur, joignable, surVer
           pas une sauvegarde de remplacement.
         </p>
       </div>
+      <LienInstagram />
     </section>
   )
 }

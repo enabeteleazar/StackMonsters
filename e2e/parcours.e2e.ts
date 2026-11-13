@@ -23,7 +23,7 @@ const codes = (adresse: string) =>
 async function connecter(page: Page, adresse: string) {
   const avant = codes(adresse).length
   await page.goto('/')
-  await page.getByRole('button', { name: 'Se connecter' }).first().click()
+  await page.getByRole('button', { name: 'Entrez' }).click()
   await page.fill('#f-email', adresse)
   await page.getByRole('button', { name: 'Recevoir le code' }).click()
   await page.waitForSelector('#f-code')
@@ -37,6 +37,7 @@ const nav = (page: Page, nom: string) => page.locator('nav.nav-bas').getByRole('
 
 async function saisirCode(page: Page, code: string) {
   await nav(page, 'Accueil').click()
+  await page.getByRole('button', { name: 'Scan canette' }).click()
   await page.getByLabel('Code saisi à la main').fill(code)
   await page.getByRole('button', { name: 'OK', exact: true }).click()
 }
@@ -79,27 +80,28 @@ test('une collection reste privée, ses champs descriptifs alimentent le Wiki', 
   await expect(autre.getByText(nom)).toBeVisible()
 })
 
-test('une canette sans code-barres reste hors du Wiki et se modifie', async ({ page }) => {
+test('une canette sans code-barres reçoit un code tiré de son nom et rejoint le Wiki', async ({ page }) => {
   const nom = `Perso ${unique()}`
   await connecter(page, email())
   await page.getByRole('button', { name: 'Ajouter sans code-barres' }).click()
   await page.waitForSelector('#f-nom')
-  await expect(page.locator('#f-categorie')).toHaveCount(0)
+  await expect(page.locator('#f-categorie')).toHaveCount(1)
   await page.fill('#f-nom', nom)
   await page.getByRole('button', { name: 'Ajouter à la collection' }).click()
   await expect(page.getByText('Fiche enregistrée')).toBeVisible()
 
   await nav(page, 'Wiki').click()
   await expect(page.getByText('Canettes répertoriées')).toBeVisible()
-  await expect(page.getByText(nom)).toHaveCount(0)
+  await expect(page.getByText(nom).first()).toBeVisible()
 
   await nav(page, 'Collection').click()
   await page.getByText(nom).click()
   await page.getByRole('button', { name: 'Modifier la fiche' }).click()
-  await page.fill('#f-nom', `${nom} modifiée`)
+  // Le nom vient désormais du Wiki : il ne se modifie plus depuis la collection.
+  await expect(page.locator('#f-nom')).toBeDisabled()
+  await page.fill('#f-volume', '500 ml')
   await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await expect(page.getByText('Fiche enregistrée')).toBeVisible()
-  await expect(page.getByText(`${nom} modifiée`).first()).toBeVisible()
 })
 
 test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async ({ page }) => {
@@ -126,9 +128,9 @@ test('« Se déconnecter partout » ferme les autres appareils', async ({ page, 
 
   await nav(page, 'Réglages').click()
   await page.getByRole('button', { name: 'Se déconnecter partout' }).click()
-  await expect(page.getByRole('button', { name: 'Se connecter' }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
   await autre.reload()
-  await expect(autre.getByRole('button', { name: 'Se connecter' }).first()).toBeVisible()
+  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
 })
 
 test('la suppression du compte exige l’adresse et efface la collection', async ({ page }) => {
@@ -144,7 +146,7 @@ test('la suppression du compte exige l’adresse et efface la collection', async
 
   page.once('dialog', (d) => d.accept(adresse))
   await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
-  await expect(page.getByRole('button', { name: 'Se connecter' }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
 
   await connecter(page, adresse)
   await nav(page, 'Collection').click()
@@ -156,7 +158,7 @@ test('la politique de confidentialité est accessible sans compte', async ({ pag
   await page.getByRole('link', { name: 'Confidentialité' }).click()
   await expect(page.getByText('NABET Eleazar')).toBeVisible()
   await page.getByRole('button', { name: 'Retour' }).click()
-  await expect(page.getByRole('button', { name: 'Se connecter' }).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
 })
 
 test('scan : canette inconnue, puis présente dans le Wiki, puis déjà possédée', async ({ page, browser }) => {

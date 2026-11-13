@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BookOpen, Search, WifiOff } from 'lucide-react'
 import { api, NonAutorise } from '../api'
 import { CATEGORIES } from '../categories'
+import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
 import type { FicheWiki as Fiche } from '../types'
 import { filtrerFiches } from '../wiki'
 import FicheWiki from './FicheWiki'
@@ -9,6 +10,20 @@ import PhotoWiki from './PhotoWiki'
 
 type Props = {
   surNonAutorise: () => void
+}
+
+type TypeCode = 'reel' | 'genere' | 'autre'
+
+const LIBELLES_CODE: Record<TypeCode, string> = {
+  reel: 'Code-barres réel',
+  genere: 'Code-barres généré',
+  autre: 'Autre texte',
+}
+
+/** Vert : vrai code-barres ; orange : code interne « 20… » tiré du nom ; rouge : tout autre texte. */
+function typeCode(ean: string): TypeCode {
+  if (estCodeInterne(ean)) return 'genere'
+  return normaliserCodeBarres(ean) ? 'reel' : 'autre'
 }
 
 /** Catalogue global : toutes les canettes répertoriées dans l'application, tous comptes confondus. */
@@ -93,19 +108,35 @@ export default function Wiki({ surNonAutorise }: Props) {
 
       {fiches &&
         (vues.length ? (
-          <div className="grille-collection">
-            {vues.map((f) => (
-              <button key={f.ean} className="carte-canette carte-wiki" onClick={() => setOuverte(f.ean)}>
-                <div className="carte-photo">
-                  <PhotoWiki ean={f.ean} version={f.photo} />
-                  {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
-                </div>
-                <div className="carte-corps">
-                  <span className="nom">{f.nom || 'Sans nom'}{f.edition ? ` - ${f.edition}` : ''}</span>
-                </div>
-              </button>
-            ))}
-          </div>
+          <>
+            <p className="legende-codes" aria-hidden="true">
+              {(['reel', 'genere', 'autre'] as const).map((t) => (
+                <span key={t}>
+                  <span className={`point-code point-code-${t}`} />
+                  {LIBELLES_CODE[t]}
+                </span>
+              ))}
+            </p>
+            <div className="grille-collection grille-wiki">
+              {vues.map((f) => (
+                <button key={f.ean} className="carte-canette carte-wiki" onClick={() => setOuverte(f.ean)}>
+                  <div className="carte-photo">
+                    <PhotoWiki ean={f.ean} version={f.photo} />
+                    {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
+                    <span
+                      className={`point-code point-code-${typeCode(f.ean)}`}
+                      title={LIBELLES_CODE[typeCode(f.ean)]}
+                      role="img"
+                      aria-label={LIBELLES_CODE[typeCode(f.ean)]}
+                    />
+                  </div>
+                  <div className="carte-corps">
+                    <span className="nom">{f.nom || 'Sans nom'}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </>
         ) : (
           <p className="vide">
             <BookOpen size={30} />

@@ -1,4 +1,4 @@
-// Service worker StackMonster : coquille de l'appli + dernière liste et photos vues.
+// Service worker StackMonsters : coquille de l'appli + dernière liste et photos vues.
 // Le build (voir vite.config.ts) remplace les deux lignes suivantes : version et fichiers à précharger.
 const V = 'sm-dev'
 const FICHIERS_BUILD = []
