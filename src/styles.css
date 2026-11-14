@@ -890,20 +890,25 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .camera-manuel button:disabled{opacity:.4;box-shadow:none}
 
 /* ============ ordinateur : appli réservée au mobile et à la tablette ============ */
-/* Grand écran piloté à la souris : l'appli est masquée et un message s'affiche au centre.
-   Les tablettes (écran tactile) et les fenêtres étroites gardent l'appli. */
+/* Grand écran piloté à la souris : l'appli est masquée et l'écran « Site développé pour mobile » s'affiche,
+   dans l'univers de l'accueil public. Les tablettes (écran tactile) et les fenêtres étroites gardent l'appli.
+   Seule exception : la politique de confidentialité, ouverte depuis le pied de page. */
 @media (min-width:1025px) and (hover:hover) and (pointer:fine){
-  #racine{display:none}
-  .seulement-mobile[hidden]{display:flex}
+  html:not(.voir-confidentialite) #racine{display:none}
+  html:not(.voir-confidentialite) .seulement-mobile[hidden]{display:block}
 }
-.seulement-mobile{position:fixed;inset:0;z-index:100;flex-direction:column;align-items:center;justify-content:center;
-  gap:14px;padding:24px;text-align:center;color:var(--blanc);
-  background:radial-gradient(60% 50% at 50% 40%,rgba(158,232,24,.16),transparent 70%),#000}
-.seulement-mobile img{width:64px;height:64px;padding:12px;border:2px solid var(--acide);border-radius:16px;
-  box-shadow:0 0 22px rgba(158,232,24,.45)}
-.seulement-mobile-marque{margin:0;font:700 22px var(--display);text-transform:uppercase;letter-spacing:.16em}
-.seulement-mobile-marque em{font-style:normal;color:var(--acide)}
-.seulement-mobile h1{margin:8px 0 0;font:600 italic clamp(26px,3vw,40px)/1.2 "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
-.seulement-mobile-conseil{margin:0;color:var(--alu);font-size:15px}
-.seulement-mobile .pied-instagram{margin-top:18px;padding-top:18px}
-.seulement-mobile .pied-instagram p{font-size:14px}
+.seulement-mobile{position:fixed;inset:0;z-index:100}
+.ordinateur{height:100%;overflow:hidden;position:relative;display:flex;flex-direction:column;color:var(--blanc);
+  background:
+    radial-gradient(55% 60% at 78% 40%,rgba(158,232,24,.22),transparent 70%),
+    radial-gradient(60% 40% at 50% 100%,rgba(158,232,24,.10),transparent 70%),
+    #000}
+.ordinateur .accueil-public-contenu{max-width:1100px;padding-bottom:min(24px,3vh)}
+.ordinateur .accueil-public-hero{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);column-gap:40px}
+.ordinateur .accueil-public-description{font-size:clamp(34px,min(4vw,7vh),60px);line-height:1.15}
+.ordinateur .accueil-public-trait{width:70%;margin:min(26px,3vh) 0 min(30px,3.4vh)}
+.ordinateur .accueil-public-fonctions{gap:min(20px,2.4vh)}
+.ordinateur .accueil-public-fonctions li{font-size:clamp(16px,1.4vw,20px)}
+.ordinateur .accueil-public-fonctions b{color:var(--acide);font-weight:700}
+.ordinateur .accueil-public-pied .pied-instagram p{font-size:13px}
+.ordinateur .accueil-public-independance{font-size:11px}

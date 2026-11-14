@@ -7,7 +7,7 @@ import '@fontsource/oswald/latin-700.css'
 import '@fontsource/bebas-neue/latin-400.css'
 import App from './App'
 import Consentement from './components/Consentement'
-import LienInstagram from './components/LienInstagram'
+import SeulementMobile from './components/SeulementMobile'
 import './styles.css'
 import { initSuivi } from './suivi'
 
@@ -18,9 +18,16 @@ createRoot(document.getElementById('racine')!).render(
   </StrictMode>,
 )
 
-// Écran réservé aux ordinateurs (index.html) : même phrase Instagram que sur l'accueil.
-const instagramOrdinateur = document.getElementById('instagram-ordinateur')
-if (instagramOrdinateur) createRoot(instagramOrdinateur).render(<LienInstagram />)
+// Écran réservé aux ordinateurs (index.html), dans l'univers de l'accueil public.
+const ordinateur = document.getElementById('seulement-mobile')
+if (ordinateur) createRoot(ordinateur).render(<SeulementMobile />)
+
+// Sur ordinateur, la politique de confidentialité (lien du pied de page) reste lisible : elle seule
+// remplace l'écran « Site développé pour mobile » (voir styles.css).
+const suivreConfidentialite = () =>
+  document.documentElement.classList.toggle('voir-confidentialite', window.location.hash === '#confidentialite')
+suivreConfidentialite()
+window.addEventListener('hashchange', suivreConfidentialite)
 
 initSuivi()
 
