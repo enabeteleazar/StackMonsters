@@ -33,7 +33,7 @@ export default function SeulementMobile() {
               <li>
                 <Smartphone size={30} strokeWidth={1.8} />
                 <span>
-                  Ouvre <b>{adresse}</b> sur ton téléphone ou ta tablette
+                  Ouvre <b>{adresse}</b> sur ton téléphone
                 </span>
               </li>
               <li>
