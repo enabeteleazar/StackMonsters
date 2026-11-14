@@ -29,8 +29,10 @@ export default defineConfig({
         RESEND_API_KEY: '',
         SESSION_SECRET: 'e2e-session-secret',
         OWNER_EMAIL: 'proprietaire-e2e@example.com',
-        // Tous les comptes de test viennent de 127.0.0.1 : la limite par IP les bloquerait.
+        // Tous les comptes de test viennent de 127.0.0.1 : les limites par IP les bloqueraient.
         SM_COMPTES_MAX_IP_JOUR: '1000',
+        SM_DEMANDES_MAX_IP: '1000',
+        SM_DEMANDES_MAX_IP_JOUR: '1000',
       },
     },
     {

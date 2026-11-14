@@ -131,6 +131,8 @@ export const api = {
     page?: number
     signalees?: boolean
     a_verifier?: boolean
+    sans_categorie?: boolean
+    nouveautes?: boolean
   }) => {
     const params = new URLSearchParams()
     for (const [cle, valeur] of Object.entries(p)) if (valeur) params.set(cle, String(valeur))

@@ -88,7 +88,7 @@ FENETRE_DEMANDES = 3600
 DEMANDES_MAX_IP, VERIFICATIONS_MAX_IP = 20, 60
 # Limites complémentaires (issue #2). Voir « Limites anti-abus » dans le README pour les seuils et le déblocage.
 FENETRE_JOUR = 86400
-DEMANDES_MAX_IP_JOUR = 60  # demandes de code par IP sur 24 h
+DEMANDES_MAX_IP_JOUR = 60  # demandes de code par IP sur 24 h ; SM_DEMANDES_MAX_IP(_JOUR) pour l'heure et le jour
 COMPTES_MAX_IP_JOUR = 5  # nouveaux comptes par IP sur 24 h ; SM_COMPTES_MAX_IP_JOUR
 DEMANDES_MAX_HEURE, COMPTES_MAX_HEURE = 300, 30  # tous visiteurs confondus ; SM_DEMANDES_MAX_HEURE, SM_COMPTES_MAX_HEURE
 INSCRIPTIONS_LIMITEES = "inscriptions limitées"
@@ -730,8 +730,8 @@ def demande(d: Demande, request: Request) -> dict:
     code = f"{secrets.randbelow(10**6):06d}"
     with base() as cx:
         # Mêmes limites que l'adresse ait un compte ou non : la réponse ne révèle rien.
-        _limiter_ip(cx, request, "demande", DEMANDES_MAX_IP, now)
-        _limiter_ip(cx, request, "demande-jour", DEMANDES_MAX_IP_JOUR, now, FENETRE_JOUR)
+        _limiter_ip(cx, request, "demande", _seuil("SM_DEMANDES_MAX_IP", DEMANDES_MAX_IP), now)
+        _limiter_ip(cx, request, "demande-jour", _seuil("SM_DEMANDES_MAX_IP_JOUR", DEMANDES_MAX_IP_JOUR), now, FENETRE_JOUR)
         _compter(cx, _cle_limite("demande"), _seuil("SM_DEMANDES_MAX_HEURE", DEMANDES_MAX_HEURE), FENETRE_DEMANDES, now)
         cx.execute("DELETE FROM limites_ip WHERE debut <= %s", (now - FENETRE_JOUR,))
         # Un code expiré compte encore dans la limite : il n'est purgé qu'une fois la fenêtre passée.
@@ -1124,6 +1124,8 @@ def wiki_recherche(
     par_page: int = Query(default=24, ge=1, le=PAR_PAGE_MAX),
     signalees: bool = False,
     a_verifier: bool = False,
+    sans_categorie: bool = False,
+    nouveautes: bool = False,
     u: dict = Depends(utilisateur),
     cx: psycopg.Connection = Depends(connexion),
 ) -> dict:
@@ -1144,6 +1146,10 @@ def wiki_recherche(
     if categorie:
         conditions.append("COALESCE(NULLIF(categorie, ''), gamme) = %s")
         params.append(categorie)
+    if nouveautes:  # statut « Nouveauté » encore affiché (30 jours), quelle que soit la catégorie
+        conditions.append(f"{_statut('')} = 'Nouveauté'")
+    if sans_categorie and proprio:  # fiches à compléter (ni catégorie, ni ancienne « gamme ») ; ignoré pour un membre
+        conditions.append("COALESCE(NULLIF(categorie, ''), gamme, '') = ''")
     if region:
         conditions.append("region = %s")
         params.append(region)

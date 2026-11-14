@@ -61,7 +61,7 @@ purgées après 24 h). Au-delà : réponse `429` avec `Retry-After` (secondes av
 | --- | --- | --- |
 | Demandes de code par adresse e-mail | 5 | 1 h |
 | Essais par code | 5 | durée du code (10 min) |
-| Demandes de code par IP | 20 / 60 | 1 h / 24 h |
+| Demandes de code par IP | 20 / 60 (`SM_DEMANDES_MAX_IP`, `SM_DEMANDES_MAX_IP_JOUR`) | 1 h / 24 h |
 | Vérifications de code par IP | 60 | 1 h |
 | Nouveaux comptes par IP | 5 (`SM_COMPTES_MAX_IP_JOUR`) | 24 h |
 | Nouveaux comptes, tous visiteurs | 30 (`SM_COMPTES_MAX_HEURE`) | 1 h |
@@ -84,7 +84,8 @@ pas le code, utilisable depuis une autre IP ou plus tard tant qu'il n'a pas expi
   python scripts/debloquer.py --inscriptions --demandes --appliquer   # limites globales
   ```
   Le script n'efface que des compteurs et des codes, jamais un compte ;
-- ou relever un seuil dans Vercel (`SM_COMPTES_MAX_IP_JOUR`, `SM_COMPTES_MAX_HEURE`, `SM_DEMANDES_MAX_HEURE`),
+- ou relever un seuil dans Vercel (`SM_DEMANDES_MAX_IP`, `SM_DEMANDES_MAX_IP_JOUR`, `SM_COMPTES_MAX_IP_JOUR`,
+  `SM_COMPTES_MAX_HEURE`, `SM_DEMANDES_MAX_HEURE`),
   puis redéployer.
   Les autres seuils sont des constantes de `api/index.py`.
 

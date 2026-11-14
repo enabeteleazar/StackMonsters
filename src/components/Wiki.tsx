@@ -32,6 +32,11 @@ const TRIS: { valeur: TriWiki; libelle: string }[] = [
   { valeur: 'recent', libelle: 'Plus récentes' },
 ]
 
+/** Valeur du filtre de gamme pour les fiches sans catégorie (aucune catégorie ne porte ce nom). */
+const SANS_CATEGORIE = '__sans__'
+/** Valeur du filtre de gamme pour les fiches au statut Nouveauté (30 jours), toutes catégories confondues. */
+const NOUVEAUTES = '__nouveautes__'
+
 /**
  * Catalogue global : toutes les canettes répertoriées, tous comptes confondus. La recherche, les filtres,
  * le tri et la pagination se font côté serveur (le catalogue peut compter beaucoup de fiches).
@@ -67,7 +72,13 @@ export default function Wiki({ surNonAutorise }: Props) {
       setErreur(false)
       try {
         const r = await api.wikiRecherche({
-          q: qEnvoyee, categorie: gamme, region, tri, page, signalees: signaleesSeules, a_verifier: aVerifierSeules,
+          q: qEnvoyee,
+          ...(gamme === SANS_CATEGORIE
+            ? { sans_categorie: true }
+            : gamme === NOUVEAUTES
+              ? { nouveautes: true }
+              : { categorie: gamme }),
+          region, tri, page, signalees: signaleesSeules, a_verifier: aVerifierSeules,
         })
         if (numero !== requeteEnCours.current) return // une recherche plus récente a pris le relais
         setResultat(r)
@@ -133,14 +144,14 @@ export default function Wiki({ surNonAutorise }: Props) {
           />
         </label>
         <div className="wiki-gammes" role="radiogroup" aria-label="Filtrer par gamme">
-          {['', ...CATEGORIES].map((categorie) => (
+          {['', NOUVEAUTES, ...CATEGORIES, ...(peutEditer ? [SANS_CATEGORIE] : [])].map((categorie) => (
             <button
               key={categorie || 'toutes'}
               role="radio"
               aria-checked={gamme === categorie}
               onClick={() => setGamme(categorie)}
             >
-              {categorie || 'Toutes'}
+              {categorie === SANS_CATEGORIE ? 'Sans catégorie' : categorie === NOUVEAUTES ? 'Nouveautés' : categorie || 'Toutes'}
             </button>
           ))}
         </div>

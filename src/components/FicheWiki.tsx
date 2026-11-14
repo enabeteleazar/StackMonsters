@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Ban, CheckCircle2, Flag, ImageOff, ImagePlus, ShieldQuestion, Trash2, X } from 'lucide-react'
+import { Ban, CheckCircle2, EyeOff, Flag, ImageOff, ImagePlus, ShieldQuestion, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
 import { reduirePhoto } from '../photo'
@@ -35,6 +35,8 @@ export default function FicheWiki({
   const [edition, setEdition] = useState(false)
   const [suppressionOccupe, setSuppressionOccupe] = useState(false)
   const [erreurSuppression, setErreurSuppression] = useState<string | null>(null)
+  // Suppression refusée (canette encore dans une collection) : la fiche peut être masquée à la place.
+  const [masquable, setMasquable] = useState(false)
   const [codeOccupe, setCodeOccupe] = useState(false)
   const [photoOccupee, setPhotoOccupee] = useState(false)
   const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
@@ -124,14 +126,37 @@ export default function FicheWiki({
     if (!confirm(`Supprimer la fiche « ${fiche.nom || fiche.ean} » du Wiki ? Ce n’est possible que si aucune collection ne la contient.`)) return
     setSuppressionOccupe(true)
     setErreurSuppression(null)
+    setMasquable(false)
     try {
       await api.wikiSupprimer(fiche.ean)
       surSupprimee(fiche.ean)
     } catch (e) {
       if (e instanceof NonAutorise) surNonAutorise()
-      else setErreurSuppression(
+      else if (e instanceof ErreurAPI && e.status === 409) {
+        setMasquable(true)
+        setErreurSuppression(
+          fiche.moderation === 'refusee'
+            ? 'Suppression impossible : cette canette est dans au moins une collection. La fiche est déjà masquée du Wiki des membres.'
+            : 'Suppression impossible : cette canette est dans au moins une collection. Tu peux la masquer du Wiki : les membres ne la verront plus, mais la gardent dans leur collection.',
+        )
+      } else setErreurSuppression(
         e instanceof ErreurAPI ? `Suppression refusée — ${e.detail}` : 'Suppression impossible, réessaie.',
       )
+      setSuppressionOccupe(false)
+    }
+  }
+
+  /** Masquer = refuser la fiche : elle disparaît du Wiki des membres ; « Accepter la fiche » la fait revenir. */
+  const masquer = async () => {
+    setSuppressionOccupe(true)
+    try {
+      surEnregistree(fiche.ean, await api.wikiModerer(fiche.ean, 'refusee', 'Masquée : encore dans une collection'))
+      setMasquable(false)
+      setErreurSuppression(null)
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+      else setErreurSuppression('Masquage impossible, réessaie avec le réseau.')
+    } finally {
       setSuppressionOccupe(false)
     }
   }
@@ -223,7 +248,7 @@ export default function FicheWiki({
                 <span>
                   {fiche.moderation === 'en_attente'
                     ? 'Fiche à vérifier : ajoutée par un membre, pas encore validée.'
-                    : 'Fiche refusée : elle n’apparaît plus dans le Wiki des membres.'}
+                    : 'Fiche refusée ou masquée : elle n’apparaît plus dans le Wiki des membres. « Accepter la fiche » la fait revenir.'}
                 </span>
               </div>
             )}
@@ -354,6 +379,12 @@ export default function FicheWiki({
                   {suppressionOccupe ? 'Suppression…' : 'Supprimer la fiche du Wiki'}
                 </button>
                 {erreurSuppression && <p className="sous" role="alert">{erreurSuppression}</p>}
+                {masquable && fiche.moderation !== 'refusee' && (
+                  <button className="btn btn-fantome btn-danger" disabled={suppressionOccupe} onClick={() => void masquer()}>
+                    <EyeOff size={17} />
+                    Masquer du Wiki
+                  </button>
+                )}
               </div>
             )}
 

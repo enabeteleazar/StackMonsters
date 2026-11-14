@@ -51,7 +51,7 @@ describe('options du catalogue', () => {
   it('contient les 11 catégories et les 7 régions proposées', () => {
     expect(CATEGORIES).toEqual([
       'Original', 'Ultra', 'Juiced', 'Reserve', 'Special',
-      'Java', 'Rehab', 'Nitro', 'Water', 'Asia', 'Killer Brew',
+      'Java', 'Killer Brew', 'Rehab', 'Nitro', 'Water', 'Asia',
     ])
     expect(REGIONS).toEqual(['Global', 'US', 'Canada', 'Europe', 'Europe/Aus', 'US/Global', 'Japan'])
     expect(STATUTS).toEqual(['Active', 'Stop', 'Nouveauté'])

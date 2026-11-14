@@ -119,6 +119,34 @@ test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async
   await expect(page.locator('.photo-hero img')).toHaveCount(0)
 })
 
+test('une fiche encore dans une collection se masque du Wiki au lieu d’être supprimée', async ({ page, browser }) => {
+  const nom = `Masquee ${unique()}`
+  const membre = await nouvellePage(browser)
+  await connecter(membre, email())
+  await ajouterParCode(membre, ean13(), nom)
+  await nav(membre, 'Wiki').click()
+  await expect(membre.getByRole('radio', { name: 'Sans catégorie' })).toHaveCount(0) // filtre du propriétaire
+
+  page.on('dialog', (d) => d.accept())
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Wiki').click()
+  await expect(page.getByRole('radio', { name: 'Sans catégorie' })).toBeVisible()
+  await page.getByLabel('Chercher dans le Wiki').fill(nom)
+  await page.getByText(nom).click()
+  await page.getByRole('button', { name: 'Supprimer la fiche du Wiki' }).click()
+  await expect(page.getByText('Suppression impossible')).toBeVisible()
+  await page.getByRole('button', { name: 'Masquer du Wiki' }).click()
+  await expect(page.getByText('Fiche refusée ou masquée')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Masquer du Wiki' })).toHaveCount(0)
+
+  await membre.reload()
+  await nav(membre, 'Wiki').click()
+  await membre.getByLabel('Chercher dans le Wiki').fill(nom)
+  await expect(membre.locator('.wiki-grille').getByText(nom)).toHaveCount(0)
+  await nav(membre, 'Collection').click()
+  await expect(membre.getByText(nom)).toBeVisible() // gardée dans sa collection
+})
+
 test('la suppression du compte exige l’adresse et efface la collection', async ({ page, browser }) => {
   const adresse = email()
   const nom = `À effacer ${unique()}`

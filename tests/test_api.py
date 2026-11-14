@@ -866,11 +866,15 @@ def test_nouveaute_redevient_active_apres_30_jours(env, monkeypatch):
     assert c.put("/api/wiki/2000000000015", json=corps, headers=ha).json()["status"] == "Nouveauté"
     assert c.get("/api/cans/2000000000015", headers=hb).json()["status"] == "Nouveauté"
 
+    c.put("/api/cans", json=canette("2000000000022", nom="Ancienne"), headers=hb)
+    nouveautes = lambda: [f["ean"] for f in _rechercher(c, hb, nouveautes="true", par_page=60)["fiches"]]
     _vieillir_nouveaute("2000000000015", 29)
     assert fiche(c, hb, "2000000000015")["status"] == "Nouveauté"
+    assert "2000000000015" in nouveautes() and "2000000000022" not in nouveautes()  # filtre « Nouveautés »
     _vieillir_nouveaute("2000000000015", 31)
     assert fiche(c, hb, "2000000000015")["status"] == "Active"
-    assert c.get("/api/cans", headers=hb).json()[0]["status"] == "Active"
+    assert "2000000000015" not in nouveautes()
+    assert next(x for x in c.get("/api/cans", headers=hb).json() if x["ean"] == "2000000000015")["status"] == "Active"
     assert c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=hb).json()["status"] == "Active"
 
     # Choisie de nouveau après expiration : 30 nouveaux jours.
@@ -1023,6 +1027,22 @@ PNG_1PX = (
 def fiche(c, h, ean):
     fiches = c.get("/api/wiki", headers=h).json()["fiches"]
     return next((f for f in fiches if f["ean"] == ean), None)
+
+
+def test_fiche_encore_possedee_masquee_au_lieu_d_etre_supprimee(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango"), headers=hb)
+    assert c.delete("/api/wiki/2000000000015", headers=ha).status_code == 409
+    r = c.post("/api/wiki/2000000000015/moderation",
+               json={"decision": "refusee", "motif": "Masquée : encore dans une collection"}, headers=ha)
+    assert r.status_code == 200 and r.json()["moderation"] == "refusee"
+    assert fiche(c, hb, "2000000000015") is None  # masquée du Wiki des membres…
+    assert [x["nom"] for x in c.get("/api/cans", headers=hb).json()] == ["Mango"]  # … mais gardée dans sa collection
+    assert fiche(c, ha, "2000000000015")["moderation"] == "refusee"  # toujours visible du propriétaire
+    c.post("/api/wiki/2000000000015/moderation", json={"decision": "acceptee"}, headers=ha)
+    assert fiche(c, hb, "2000000000015")["nom"] == "Mango"  # « Accepter la fiche » la fait revenir
 
 
 def test_wiki_exige_une_session(env):
@@ -1563,6 +1583,12 @@ def test_recherche_catalogue_par_nom_saveur_pays_gamme_et_code(env, monkeypatch)
     assert noms(_rechercher(c, hb, q="juiced us")) == ["Pipeline Punch"]  # chaque mot doit correspondre
     assert noms(_rechercher(c, hb, categorie="Juiced", tri="nom")) == ["Mango Loco", "Pipeline Punch"]
     assert noms(_rechercher(c, hb, region="US", categorie="Ultra")) == ["Ultra Rosà"]
+    c.put("/api/cans", json=canette("2000000000046", nom="Sans Gamme"), headers=ha)
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    sans = noms(_rechercher(c, ha, sans_categorie="true", par_page=60))
+    assert "Sans Gamme" in sans and not {"Mango Loco", "Ultra Rosà", "Pipeline Punch"} & set(sans)
+    tout = noms(_rechercher(c, hb, sans_categorie="true", par_page=60))  # ignoré pour un membre
+    assert {"Mango Loco", "Ultra Rosà", "Pipeline Punch", "Sans Gamme"} <= set(tout)
     assert noms(_rechercher(c, hb, q="100%_")) == []  # % et _ ne sont pas des jokers
 
     r = _rechercher(c, hb, q="mango")
