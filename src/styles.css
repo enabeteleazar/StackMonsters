@@ -386,6 +386,17 @@ html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.col
 .reglages-danger svg{color:#ff8a8a!important}
 .reglages-danger:hover{background:rgba(255,77,77,.08)!important}
 .reglages-alerte{position:relative;margin:12px 4px 0;color:#ff8a8a;font-size:13.5px}
+.reglages-suppression{position:relative;margin-top:12px;padding:16px;border:1px solid rgba(255,77,77,.55);border-radius:14px;background:rgba(255,77,77,.05);display:grid;gap:10px;font-size:14px;line-height:1.45}
+.reglages-suppression h3{display:flex;align-items:center;gap:8px;margin:0;color:#ff8a8a;font-size:16px}
+.reglages-suppression p,.reglages-suppression ul{margin:0}
+.reglages-suppression ul{padding-left:18px}
+.reglages-suppression a{color:inherit}
+.reglages-suppression label{font:inherit;font-size:13.5px;text-transform:none;letter-spacing:normal;color:inherit}
+.reglages-suppression label b{overflow-wrap:anywhere}
+.reglages-suppression input{width:100%;box-sizing:border-box;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(0,0,0,.35);color:inherit;font:inherit}
+.reglages-suppression-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.reglages-suppression-actions .accueil-co-secondaire{max-width:none}
+.reglages-suppression-actions .accueil-co-secondaire:disabled{opacity:.45;cursor:not-allowed}
 .reglages .pied-instagram{border-top-color:rgba(158,232,24,.15);margin-top:30px}
 
 /* ============ statistiques et confidentialité (même univers ; reprennent les cartes des réglages) ============ */

@@ -782,31 +782,57 @@ def test_migration_12_garde_l_echeance_des_sessions_existantes(env):
     assert c.get("/api/auth/moi", headers=h).status_code == 200
 
 
+def supprimer(c, h, confirmation):
+    return c.request("DELETE", "/api/auth/compte", json={"confirmation": confirmation}, headers=h)
+
+
 def test_suppression_de_compte_efface_ses_donnees_seulement(env):
     c, codes = env
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    ha2 = connecter(c, codes, A)  # un second appareil
     c.put("/api/cans", json=canette(nom="Mango", photo=PNG_1PX, notes="privé"), headers=ha)
     c.put("/api/cans", json=canette(nom="De B"), headers=hb)
+    assert c.get("/api/cans/2000000000015/photo", headers=ha).status_code == 200
     c.post("/api/auth/demande", json={"email": A})
 
-    assert c.delete("/api/auth/compte").status_code == 401
-    assert c.delete("/api/auth/compte", headers=ha).status_code == 204
-    assert c.get("/api/auth/moi", headers=ha).status_code == 401
+    assert supprimer(c, {}, A).status_code == 401
+    assert supprimer(c, ha, " TEST-A@example.com ").status_code == 204  # casse et espaces ignorés
+    for h in (ha, ha2):  # accès révoqué sur tous les appareils
+        assert c.get("/api/auth/moi", headers=h).status_code == 401
+        assert c.get("/api/cans", headers=h).status_code == 401
+        assert c.get("/api/cans/2000000000015/photo", headers=h).status_code == 401
     with ix.base() as cx:
         assert cx.execute("SELECT COUNT(*) AS n FROM users WHERE email = %s", (A,)).fetchone()["n"] == 0
         assert cx.execute("SELECT COUNT(*) AS n FROM codes WHERE email = %s", (A,)).fetchone()["n"] == 0
+        # Plus aucune trace de la collection : ni ligne, ni photo, ni note.
+        restes = cx.execute("SELECT * FROM collection WHERE notes = 'privé' OR photo IS NOT NULL").fetchall()
+        assert restes == []
+        assert A not in str(cx.execute("SELECT * FROM wiki WHERE ean = '2000000000015'").fetchall())
     assert [x["nom"] for x in c.get("/api/cans", headers=hb).json()] == ["Mango"]  # nom repris du Wiki
     assert fiche(c, hb, "2000000000015")["nom"] == "Mango"  # le Wiki, anonyme, reste
+    # La photo donnée à la fiche (qui n'en avait pas) est une contribution au Wiki, sans lien avec le compte.
+    assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 200
 
     h = connecter(c, codes, A)  # une nouvelle inscription repart de zéro
     assert c.get("/api/cans", headers=h).json() == []
+
+
+def test_suppression_exige_l_adresse_du_compte(env):
+    c, codes = env
+    h = connecter(c, codes, A)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=h)
+    assert c.delete("/api/auth/compte", headers=h).status_code == 422  # sans confirmation
+    assert supprimer(c, h, B).status_code == 422
+    assert supprimer(c, h, "").status_code == 422
+    assert c.get("/api/auth/moi", headers=h).status_code == 200
+    assert len(c.get("/api/cans", headers=h).json()) == 1
 
 
 def test_le_compte_proprietaire_ne_se_supprime_pas(env, monkeypatch):
     c, codes = env
     monkeypatch.setenv("OWNER_EMAIL", A)
     h = connecter(c, codes, A)
-    assert c.delete("/api/auth/compte", headers=h).status_code == 403
+    assert supprimer(c, h, A).status_code == 403
     assert c.get("/api/auth/moi", headers=h).status_code == 200
 
 

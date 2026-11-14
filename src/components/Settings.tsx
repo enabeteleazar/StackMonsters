@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BarChart3, Cpu, Database, Lock, MonitorSmartphone, Radio, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 import { api, ErreurAPI, jeton, NonAutorise } from '../api'
+import { CONTACT } from '../config'
 import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
 import { moteurNatif } from '../scanner'
 import LienInstagram from './LienInstagram'
@@ -20,6 +21,11 @@ export default function Settings({ emailUtilisateur, joignable, surVerrouiller, 
   // (sinon il s'affichait puis disparaissait pour le propriétaire, dont le compte ne peut pas être supprimé).
   const [proprietaire, setProprietaire] = useState<boolean | null>(null)
   const [erreurCompte, setErreurCompte] = useState<string | null>(null)
+  // Panneau de confirmation de la suppression : conséquences, puis adresse du compte à saisir.
+  const [suppression, setSuppression] = useState(false)
+  const [saisieSuppression, setSaisieSuppression] = useState('')
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false)
+  const adresseConfirmee = saisieSuppression.trim().toLowerCase() === emailUtilisateur.toLowerCase()
   const [mesure, setMesure] = useState(consentement)
 
   useEffect(() => {
@@ -34,22 +40,24 @@ export default function Settings({ emailUtilisateur, joignable, surVerrouiller, 
   }
 
   const supprimerCompte = async () => {
-    const saisie = prompt(
-      `Suppression définitive du compte et de toute ta collection.\n\nPour confirmer, saisis ${emailUtilisateur} :`,
-    )
-    if (saisie === null) return
-    if (saisie.trim().toLowerCase() !== emailUtilisateur.toLowerCase()) {
-      setErreurCompte('Adresse différente : le compte n’a pas été supprimé.')
-      return
-    }
+    if (!adresseConfirmee || suppressionEnCours) return
     setErreurCompte(null)
+    setSuppressionEnCours(true)
     try {
-      await api.supprimerCompte()
+      await api.supprimerCompte(saisieSuppression)
       quitter()
     } catch (e) {
       if (e instanceof NonAutorise) surVerrouiller()
-      else setErreurCompte('Suppression impossible, réessaie avec le réseau.')
+      else setErreurCompte('Suppression impossible, réessaie avec le réseau. Ton compte n’a pas été supprimé.')
+    } finally {
+      setSuppressionEnCours(false)
     }
+  }
+
+  const fermerSuppression = () => {
+    setSuppression(false)
+    setSaisieSuppression('')
+    setErreurCompte(null)
   }
 
   const deconnecterPartout = async () => {
@@ -164,13 +172,67 @@ export default function Settings({ emailUtilisateur, joignable, surVerrouiller, 
               {mesure === 'oui' ? 'Refuser la mesure d’audience' : 'Accepter la mesure d’audience'}
             </button>
           )}
-          {proprietaire === false && (
-            <button className="accueil-co-secondaire reglages-danger" onClick={() => void supprimerCompte()}>
+          {proprietaire === false && !suppression && (
+            <button className="accueil-co-secondaire reglages-danger" onClick={() => setSuppression(true)}>
               <Trash2 size={18} />
               Supprimer mon compte
             </button>
           )}
         </div>
+        {proprietaire === false && suppression && (
+          <form
+            className="reglages-suppression"
+            aria-labelledby="titre-suppression"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void supprimerCompte()
+            }}
+          >
+            <h3 id="titre-suppression">
+              <Trash2 size={18} /> Supprimer ton compte ?
+            </h3>
+            <p>Effacé définitivement, sans retour possible :</p>
+            <ul>
+              <li>ta collection : canettes, quantités, états, notes et photos ;</li>
+              <li>ton compte et ton adresse e-mail ;</li>
+              <li>tes sessions : tu seras déconnecté de tous tes appareils ;</li>
+              <li>la copie hors ligne gardée sur cet appareil.</li>
+            </ul>
+            <p>
+              Reste dans le Wiki, sans aucun lien avec toi : les fiches que tu as créées ou complétées, les photos
+              devenues celles d’une fiche, tes propositions et tes signalements. Ils n’ont jamais été rattachés à ton
+              compte ; le responsable du Wiki peut retirer une photo sur demande.
+            </p>
+            <p>
+              Pour garder une copie de tes données, écris d’abord à <a href={`mailto:${CONTACT}`}>{CONTACT}</a>.
+            </p>
+            <label htmlFor="confirmation-suppression">
+              Pour confirmer, saisis ton adresse : <b>{emailUtilisateur}</b>
+            </label>
+            <input
+              id="confirmation-suppression"
+              type="email"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={saisieSuppression}
+              onChange={(e) => setSaisieSuppression(e.target.value)}
+            />
+            <div className="reglages-suppression-actions">
+              <button type="button" className="accueil-co-secondaire" onClick={fermerSuppression}>
+                Annuler
+              </button>
+              <button
+                type="submit"
+                className="accueil-co-secondaire reglages-danger"
+                disabled={!adresseConfirmee || suppressionEnCours}
+              >
+                <Trash2 size={18} />
+                {suppressionEnCours ? 'Suppression…' : 'Supprimer définitivement'}
+              </button>
+            </div>
+          </form>
+        )}
         {erreurCompte && <p className="reglages-alerte" role="alert">{erreurCompte}</p>}
 
         <LienInstagram />

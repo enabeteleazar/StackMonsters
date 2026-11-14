@@ -119,20 +119,33 @@ test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async
   await expect(page.locator('.photo-hero img')).toHaveCount(0)
 })
 
-test('la suppression du compte exige l’adresse et efface la collection', async ({ page }) => {
+test('la suppression du compte exige l’adresse et efface la collection', async ({ page, browser }) => {
   const adresse = email()
   const nom = `À effacer ${unique()}`
   await connecter(page, adresse)
   await ajouterParCode(page, ean13(), nom)
   await nav(page, 'Réglages').click()
 
-  page.once('dialog', (d) => d.accept('mauvaise@example.com'))
-  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
-  await expect(page.getByText('le compte n’a pas été supprimé')).toBeVisible()
+  const autre = await nouvellePage(browser)
+  await connecter(autre, adresse)
 
-  page.once('dialog', (d) => d.accept(adresse))
+  // Annuler ne supprime rien.
   await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
+  await expect(page.getByText('ta collection : canettes, quantités, états, notes et photos')).toBeVisible()
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  await expect(page.getByRole('button', { name: 'Supprimer définitivement' })).toHaveCount(0)
+
+  // Le bouton reste inactif tant que l'adresse saisie n'est pas celle du compte.
+  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
+  const confirmer = page.getByRole('button', { name: 'Supprimer définitivement' })
+  await page.getByLabel(/Pour confirmer/).fill('mauvaise@example.com')
+  await expect(confirmer).toBeDisabled()
+  await page.getByLabel(/Pour confirmer/).fill(adresse.toUpperCase())
+  await confirmer.click()
   await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
+
+  await autre.reload() // l'autre appareil perd aussi l'accès
+  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
 
   await connecter(page, adresse)
   await nav(page, 'Collection').click()

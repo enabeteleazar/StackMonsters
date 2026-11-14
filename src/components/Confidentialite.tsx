@@ -134,7 +134,10 @@ export default function Confidentialite() {
                 définir des directives sur le sort de tes données après ton décès.
               </p>
               <p>
-                Dans Réglages, tu peux supprimer ton compte et changer ton choix sur la mesure d’audience. Pour obtenir
+                Dans Réglages, tu peux supprimer ton compte et changer ton choix sur la mesure d’audience. La
+                suppression efface immédiatement ton compte, ta collection (notes et photos comprises) et tes
+                sessions sur tous tes appareils ; les contributions au Wiki, qui n’ont jamais été liées à ton compte,
+                restent anonymes. Pour obtenir
                 une copie de tes données (portabilité) ou exercer tes autres droits, écris à <Contact /> : une réponse
                 est apportée dans un délai d’un mois.
               </p>

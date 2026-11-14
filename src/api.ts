@@ -115,7 +115,9 @@ export const api = {
   deconnexionPartout: () => requete<void>('/auth/deconnexion-partout', { method: 'POST' }),
   /** Rotation du jeton (au plus une fois par jour) : null si le jeton actuel reste valable. */
   renouveler: () => requete<{ token: string | null }>('/auth/renouveler', { method: 'POST' }),
-  supprimerCompte: () => requete<void>('/auth/compte', { method: 'DELETE' }),
+  /** « confirmation » : l'adresse du compte, saisie par l'utilisateur ; vérifiée aussi par le serveur. */
+  supprimerCompte: (confirmation: string) =>
+    requete<void>('/auth/compte', { method: 'DELETE', body: JSON.stringify({ confirmation }) }),
   stats: () =>
     requete<{ utilisateurs: number; references: number; connexions_uniques: number }>('/stats'),
   sante: () => requete<{ status: string; version: string; references: number }>('/health'),

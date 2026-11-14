@@ -390,6 +390,11 @@ class Verification(Demande):
     code: str = Field(min_length=6, max_length=6)
 
 
+class Suppression(BaseModel):
+    """Confirmation explicite : l'adresse du compte, saisie par l'utilisateur."""
+    confirmation: str = Field(max_length=254)
+
+
 # --- base --------------------------------------------------------------------
 
 _schema_pret = False
@@ -838,10 +843,18 @@ def deconnexion_partout(u: dict = Depends(utilisateur), cx: psycopg.Connection =
 
 
 @router.delete("/auth/compte", status_code=204)
-def supprimer_compte(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
-    """Efface le compte, sa collection et ses sessions ; le Wiki, anonyme, est conservé."""
+def supprimer_compte(
+    s: Suppression, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> None:
+    """Efface le compte, sa collection (photos et notes comprises), ses sessions et ses codes.
+
+    Le Wiki, anonyme, est conservé : ses fiches n'ont aucun lien avec le compte. Les sessions et la collection
+    partent par ON DELETE CASCADE.
+    """
     if _est_proprietaire(u["email"]):  # il récupérerait la collection historique à sa prochaine connexion
         raise HTTPException(403, "le compte propriétaire ne peut pas être supprimé")
+    if s.confirmation.strip().lower() != u["email"]:
+        raise HTTPException(422, "confirmation différente de l'adresse du compte")
     with cx.transaction():
         cx.execute("DELETE FROM codes WHERE email = %s", (u["email"],))
         cx.execute("DELETE FROM users WHERE id = %s", (u["id"],))

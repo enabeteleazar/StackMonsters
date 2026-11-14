@@ -88,6 +88,17 @@ pas le code, utilisable depuis une autre IP ou plus tard tant qu'il n'a pas expi
   puis redéployer.
   Les autres seuils sont des constantes de `api/index.py`.
 
+### Suppression du compte
+Réglages → « Supprimer mon compte » ouvre un panneau qui détaille les conséquences ; il faut y saisir
+l'adresse du compte. L'API (`DELETE /api/auth/compte`, corps `{"confirmation": "<adresse>"}`) vérifie elle
+aussi cette adresse (422 sinon) et refuse le compte `OWNER_EMAIL` (403). Effacés immédiatement, dans une
+transaction : le compte, la collection (notes et photos comprises), toutes les sessions (tous les appareils)
+et les codes de connexion en cours ; le front vide ensuite la copie hors ligne de l'appareil.
+Le Wiki n'est pas touché : ses fiches, photos données, propositions et signalements n'ont jamais été liés
+à un compte (aucun auteur enregistré), ils restent donc, anonymes. Ne sont pas non plus liés au compte : les
+compteurs anti-abus (empreintes d'IP, 24 h) et les empreintes d'IP des connexions uniques (13 mois).
+Une nouvelle inscription avec la même adresse repart de zéro.
+
 ## Collection
 - Après un scan (ou un code saisi à la main) : canette déjà possédée → fiche miniature et « +1 » ;
   présente dans le Wiki → ajout immédiat, choix rapide de l'état, ajout annulable ; inconnue → invitation à
@@ -114,8 +125,8 @@ Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comp
   après avoir été choisie (calcul à la lecture, colonne `nouveaute_depuis`).
 - Table `wiki` (une ligne par `ean`), séparée des collections : elle ne contient ni propriétaire, ni
   quantité, ni état, ni notes. Elle est alimentée à l'ajout d'une canette (champs descriptifs) et ne
-  prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Les photos des comptes et
-  les canettes sans code-barres (`LOCAL-…`) n'y sont jamais envoyées. Retirer une canette de sa
+  prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Une photo envoyée devient
+  celle de la fiche si elle n'en a pas encore ; les canettes sans code-barres (`LOCAL-…`) n'y sont jamais envoyées. Retirer une canette de sa
   collection ne la retire pas du Wiki. À la première création de la table, elle est amorcée depuis les
   collections existantes (une seule fois). Une fiche supprimée ou dont le code-barres a changé est notée
   dans `wiki_exclus` et n'est plus recréée ; un changement de code-barres est reporté dans les collections.
@@ -203,5 +214,5 @@ Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetabl
   CAPTCHA. Plusieurs personnes derrière la même IP (CGNAT mobile, école) partagent les compteurs.
 - Session stockée dans `localStorage`, envoyée en `Bearer`, donc lisible par un script injecté (XSS) ; le passage
   au cookie `HttpOnly` est décrit dans « Sessions ».
-- Pas de suppression de compte ni de partage de collection.
+- Pas de partage de collection.
 - Hors ligne : lecture seule de la dernière liste ; « Se déconnecter » vide ce cache.
