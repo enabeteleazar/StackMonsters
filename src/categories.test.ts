@@ -13,6 +13,13 @@ describe('categorieDuNom', () => {
     expect(categorieDuNom('Monster Juiced Pipeline Punch')).toBe('Juiced')
   })
 
+  it('reconnaît une catégorie de plusieurs mots, citée en entier', () => {
+    expect(categorieDuNom('Monster Killer Brew Cold Brew Coffee')).toBe('Killer Brew')
+    expect(categorieDuNom('monster killer-brew vanilla')).toBe('Killer Brew')
+    expect(categorieDuNom('Monster Killer Mango')).toBe('')
+    expect(categorieDuNom('Monster Brew Killer')).toBe('')
+  })
+
   it('ne compte que les mots entiers', () => {
     expect(categorieDuNom('Monster Ultraviolet')).toBe('')
     expect(categorieDuNom('Monster Nitrogen')).toBe('')
