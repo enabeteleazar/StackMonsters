@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Cpu, Database, Lock, Radio, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { BarChart3, Cpu, Database, Lock, MonitorSmartphone, Radio, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
 import { moteurNatif } from '../scanner'
@@ -49,6 +49,18 @@ export default function Settings({ emailUtilisateur, joignable, surVerrouiller, 
     } catch (e) {
       if (e instanceof NonAutorise) surVerrouiller()
       else setErreurCompte('Suppression impossible, réessaie avec le réseau.')
+    }
+  }
+
+  const deconnecterPartout = async () => {
+    if (!confirm('Se déconnecter de tous les appareils ? Il faudra redemander un code partout, ici compris.')) return
+    setErreurCompte(null)
+    try {
+      await api.deconnexionPartout()
+      quitter()
+    } catch (e) {
+      if (e instanceof NonAutorise) surVerrouiller()
+      else setErreurCompte('Déconnexion impossible, réessaie avec le réseau.')
     }
   }
 
@@ -137,6 +149,10 @@ export default function Settings({ emailUtilisateur, joignable, surVerrouiller, 
           >
             <Lock size={18} />
             Se déconnecter
+          </button>
+          <button className="accueil-co-secondaire" onClick={() => void deconnecterPartout()}>
+            <MonitorSmartphone size={18} />
+            Déconnecter tous les appareils
           </button>
           <button className="accueil-co-secondaire" onClick={() => { window.location.hash = 'confidentialite' }}>
             <ShieldCheck size={18} />

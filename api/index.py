@@ -77,7 +77,13 @@ JOINTURE_WIKI = (
     "LEFT JOIN wiki w ON w.ean = COALESCE((SELECT k.fiche FROM wiki_codes k WHERE k.ean = c.ean), "
     "(SELECT x.vers FROM wiki_exclus x WHERE x.ean = c.ean), c.ean)"
 )
-DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
+DUREE_CODE, ESSAIS_MAX, DEMANDES_MAX = 600, 5, 5
+# Sessions (issue #4, voir « Sessions » dans le README) : expiration glissante après 30 jours sans utilisation,
+# 90 jours au plus après la connexion, jeton renouvelé une fois par jour d'usage. L'ancien jeton reste
+# valable quelques minutes après son remplacement (requêtes déjà parties, autre onglet).
+INACTIVITE_SESSION, DUREE_MAX_SESSION = 30 * 86400, 90 * 86400
+ROTATION_SESSION, GRACE_ROTATION = 86400, 600
+PROLONGATION_MIN = 3600  # une session n'est réécrite en base qu'une fois par heure d'usage au plus
 FENETRE_DEMANDES = 3600
 DEMANDES_MAX_IP, VERIFICATIONS_MAX_IP = 20, 60
 # Limites complémentaires (issue #2). Voir « Limites anti-abus » dans le README pour les seuils et le déblocage.
@@ -247,6 +253,19 @@ CREATE TABLE IF NOT EXISTS wiki_moderations (id BIGSERIAL PRIMARY KEY,
     cree TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS wiki_moderations_fiche ON wiki_moderations (fiche);
 CREATE INDEX IF NOT EXISTS wiki_moderation_en_attente ON wiki (moderation) WHERE moderation <> 'acceptee';
+"""),
+    # Sessions : date de connexion (plafond de 90 jours), date d'émission du jeton (rotation) et date de
+    # remplacement (délai de grâce). Les sessions existantes gardent leur échéance : elles sont datées de
+    # leur connexion supposée (échéance - 30 jours), personne n'est déconnecté.
+    (12, """
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cree BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS emis BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS remplacee BIGINT;
+UPDATE sessions SET cree = expire - 2592000 WHERE cree IS NULL;
+UPDATE sessions SET emis = cree WHERE emis IS NULL;
+ALTER TABLE sessions ALTER COLUMN cree SET NOT NULL;
+ALTER TABLE sessions ALTER COLUMN emis SET NOT NULL;
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id);
 """),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
@@ -656,15 +675,33 @@ def connexion(authorization: str | None = Header(default=None)) -> Iterator[psyc
 def utilisateur(
     authorization: str | None = Header(default=None), cx: psycopg.Connection = Depends(connexion),
 ) -> dict:
-    h = _hash_session(_jeton(authorization))
+    h, now = _hash_session(_jeton(authorization)), int(time.time())
     u = cx.execute(
-        "SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id "
-        "WHERE s.hash = %s AND s.expire > %s", (h, int(time.time())),
+        "SELECT u.id, u.email, s.expire, s.cree, s.emis, s.remplacee FROM sessions s "
+        "JOIN users u ON u.id = s.user_id WHERE s.hash = %s AND s.expire > %s", (h, now),
     ).fetchone()
+    if u and u["remplacee"] is None:
+        # Expiration glissante : chaque usage repousse l'échéance, sans dépasser le plafond depuis la connexion.
+        echeance = _echeance_session(u["cree"], now)
+        if echeance - u["expire"] >= PROLONGATION_MIN:
+            cx.execute("UPDATE sessions SET expire = %s WHERE hash = %s", (echeance, h))
     cx.commit()  # les routes ouvrent ensuite leur propre transaction
     if u:
-        return {**u, "hash": h}
+        return {"id": u["id"], "email": u["email"], "hash": h, "cree": u["cree"], "emis": u["emis"],
+                "remplacee": u["remplacee"]}
     raise HTTPException(401, "connexion requise")
+
+
+def _echeance_session(cree: int, now: int) -> int:
+    return min(now + INACTIVITE_SESSION, cree + DUREE_MAX_SESSION)
+
+
+def _ouvrir_session(cx: psycopg.Connection, user_id: int, cree: int, now: int) -> str:
+    """Crée un jeton ; seule son empreinte est stockée."""
+    token = secrets.token_urlsafe(32)
+    cx.execute("INSERT INTO sessions (hash, user_id, expire, cree, emis) VALUES (%s, %s, %s, %s, %s)",
+               (_hash_session(token), user_id, _echeance_session(cree, now), cree, now))
+    return token
 
 
 # --- routes publiques : connexion ----------------------------------------------
@@ -753,9 +790,7 @@ def verification(v: Verification, request: Request) -> dict:
                 "ON CONFLICT (ip_hash) DO NOTHING",
                 (_empreinte_ip(adresse), now),
             )
-        token = secrets.token_urlsafe(32)
-        cx.execute("INSERT INTO sessions (hash, user_id, expire) VALUES (%s, %s, %s)",
-                   (_hash_session(token), u["id"], now + DUREE_SESSION))
+        token = _ouvrir_session(cx, u["id"], now, now)
     return {"token": token, "email": email}
 
 
@@ -767,6 +802,26 @@ router = APIRouter(dependencies=[Depends(utilisateur)])
 @router.get("/auth/moi")
 def moi(u: dict = Depends(utilisateur)) -> dict:
     return {"email": u["email"]}
+
+
+@router.post("/auth/renouveler")
+def renouveler(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Rotation : au plus une fois par jour, remplace le jeton par un nouveau (même date de connexion).
+
+    Renvoie {"token": null} si le jeton est encore récent, ou s'il a déjà été remplacé.
+    """
+    now = int(time.time())
+    if u["remplacee"] is not None or now - u["emis"] < ROTATION_SESSION:
+        return {"token": None}
+    with cx.transaction():
+        # Condition sur « remplacee » : deux appels simultanés ne créent pas deux jetons.
+        if not cx.execute(
+            "UPDATE sessions SET remplacee = %s, expire = LEAST(expire, %s) WHERE hash = %s AND remplacee IS NULL "
+            "RETURNING hash", (now, now + GRACE_ROTATION, u["hash"]),
+        ).fetchone():
+            return {"token": None}
+        token = _ouvrir_session(cx, u["id"], u["cree"], now)
+    return {"token": token}
 
 
 @router.post("/auth/deconnexion", status_code=204)

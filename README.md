@@ -10,10 +10,48 @@ Front React + TypeScript (Vite), API FastAPI (`api/index.py`), Postgres (Neon), 
 
 ## Comptes
 Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais) ; un compte se crée à la
-première vérification réussie. Les limites anti-abus sont détaillées plus bas. Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
+première vérification réussie. Les limites anti-abus sont détaillées plus bas. Pas de mot de passe. Sessions : voir plus bas.
 La page d'accueil publique présente le service ; la collection privée n'est affichée qu'après
 validation de la session par l'API.
 Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
+
+### Sessions
+Modèle actuel (issue #4) : jeton aléatoire de 256 bits gardé dans `localStorage` (clé historique
+`canstack-jeton`) et envoyé en `Authorization: Bearer`. La base ne garde que son empreinte SHA-256
+(table `sessions` : `cree` = connexion, `emis` = émission du jeton, `remplacee`, `expire`).
+
+| Règle | Valeur |
+| --- | --- |
+| Inactivité | expire après 30 jours sans utilisation ; chaque usage repousse l'échéance (réécrite au plus une fois par heure) |
+| Durée maximale | 90 jours après la connexion, même en usage continu : un nouveau code est alors demandé |
+| Rotation | `POST /api/auth/renouveler`, appelé à l'ouverture de l'application et à chaque retour au premier plan : au plus une fois par jour, un nouveau jeton remplace l'ancien (même date de connexion) |
+| Délai de grâce | l'ancien jeton reste valable 10 minutes après son remplacement (requêtes en vol, autre onglet), sans être prolongé ni renouvelé |
+| Déconnexion | « Se déconnecter » (`POST /api/auth/deconnexion`) : cet appareil seulement, cache hors ligne vidé |
+| Révocation | « Déconnecter tous les appareils » (`POST /api/auth/deconnexion-partout`) : toutes les sessions du compte, jetons renouvelés compris |
+
+Migration 12 : ajoute `cree`, `emis` et `remplacee`. Les sessions existantes sont datées de leur connexion
+supposée (échéance - 30 jours) et gardent leur échéance : personne n'est déconnecté par la mise à jour, et
+le plafond de 90 jours court à partir de cette date.
+
+**Cible : cookie `HttpOnly` (prévue après la release du 16 novembre 2026).** Le jeton ne serait plus lisible
+par JavaScript : une faille XSS ne pourrait plus le voler.
+- Cookie `__Host-sm_session` : `HttpOnly; Secure; SameSite=Strict; Path=/`, durée calée sur l'échéance de
+  la session, renvoyé à chaque prolongation et rotation (la rotation devient transparente pour le front).
+  Possible sans configuration CORS : le site et l'API sont sur la même origine (`/api`, réécriture Vercel ;
+  proxy Vite en développement).
+- CSRF : `SameSite=Strict`, plus, sur toute requête qui modifie (POST, PUT, PATCH, DELETE), contrôle de
+  l'en-tête `Origin` (même origine exigée) et d'un en-tête `X-StackMonsters: 1` que les formulaires d'un
+  autre site ne peuvent pas poser.
+- Migration sans reconnexion : pendant une période de transition, l'API accepte encore le `Bearer`. Au
+  démarrage, le front qui trouve un ancien jeton appelle une route d'échange qui révoque ce jeton et pose
+  le cookie (même date de connexion), puis efface `localStorage`.
+- PWA : le front ne voit plus le jeton ; il garde dans `localStorage` un simple indicateur « session
+  ouverte » (aucun secret) pour démarrer hors ligne et choisir l'écran d'accueil. Le service worker
+  ne change pas : les requêtes `/api` de même origine emportent le cookie, et la liste mise en cache reste
+  lisible hors ligne ; la déconnexion continue de vider ce cache. `GET /api/auth/moi` reste la seule
+  vérification de session au démarrage.
+- Sur iOS, une PWA installée a son propre stockage : la session y est déjà séparée de Safari, cookie ou
+  non ; aucune différence pour l'utilisateur.
 
 ### Limites anti-abus
 Toutes appliquées par l'API (fenêtres fixes, table `limites_ip` : empreintes HMAC, jamais l'IP en clair,
@@ -163,6 +201,7 @@ Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetabl
 ## Limites assumées
 - Les limites par IP ralentissent l'inscription en masse sans l'empêcher (réseaux de nombreuses IP) ; pas de
   CAPTCHA. Plusieurs personnes derrière la même IP (CGNAT mobile, école) partagent les compteurs.
-- Session stockée dans `localStorage`, envoyée en `Bearer` (pas de cookie).
+- Session stockée dans `localStorage`, envoyée en `Bearer`, donc lisible par un script injecté (XSS) ; le passage
+  au cookie `HttpOnly` est décrit dans « Sessions ».
 - Pas de suppression de compte ni de partage de collection.
 - Hors ligne : lecture seule de la dernière liste ; « Se déconnecter » vide ce cache.

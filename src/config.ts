@@ -6,7 +6,7 @@ export const API_URL = '/api'
 // Mentions de la politique de confidentialité.
 export const RESPONSABLE = 'NABET Eleazar'
 export const CONTACT = 'contact@mail.stackmonsters.fr'
-export const MISE_A_JOUR_CONFIDENTIALITE = '13 novembre 2026'
+export const MISE_A_JOUR_CONFIDENTIALITE = '14 novembre 2026'
 
 // Clé du navigateur où est gardé le jeton d'accès (voir src/api.ts).
 // Nom historique conservé : le changer déconnecterait tous les utilisateurs.

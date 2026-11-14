@@ -32,6 +32,16 @@ function blobEnDataUrl(blob: Blob): Promise<string> {
 }
 
 // localStorage peut lever une exception (navigation privée de Safari, par exemple).
+/** Remplace le jeton s'il a plus d'un jour ; sans effet hors ligne ou si le serveur le garde. */
+export async function renouvelerJeton(): Promise<void> {
+  try {
+    const { token } = await api.renouveler()
+    if (token) jeton.ecrire(token)
+  } catch {
+    /* l'ancien jeton reste valable ; nouvel essai à la prochaine ouverture */
+  }
+}
+
 export const jeton = {
   lire: (): string => {
     try {
@@ -101,6 +111,10 @@ export const api = {
     }),
   moi: () => requete<{ email: string }>('/auth/moi'),
   deconnexion: () => requete<void>('/auth/deconnexion', { method: 'POST' }),
+  /** Révoque toutes les sessions du compte (tous les appareils), celle-ci comprise. */
+  deconnexionPartout: () => requete<void>('/auth/deconnexion-partout', { method: 'POST' }),
+  /** Rotation du jeton (au plus une fois par jour) : null si le jeton actuel reste valable. */
+  renouveler: () => requete<{ token: string | null }>('/auth/renouveler', { method: 'POST' }),
   supprimerCompte: () => requete<void>('/auth/compte', { method: 'DELETE' }),
   stats: () =>
     requete<{ utilisateurs: number; references: number; connexions_uniques: number }>('/stats'),

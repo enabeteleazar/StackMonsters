@@ -10,7 +10,6 @@ Tickets enregistrés, à prioriser ou à planifier.
 
 - [ ] [#1 — Auditer et renouveler les secrets d’environnement](https://github.com/enabeteleazar/StockMonsters/issues/1) · P0 · Sécurité
 - [ ] [#3 — Suppression complète d’un compte](https://github.com/enabeteleazar/StockMonsters/issues/3) · P1 · Comptes
-- [ ] [#4 — Renforcer la gestion et la révocation des sessions](https://github.com/enabeteleazar/StockMonsters/issues/4) · P1 · Auth
 - [ ] [#5 — Enrichir les fiches canettes](https://github.com/enabeteleazar/StockMonsters/issues/5) · P2 · Catalogue
 - [ ] [#6 — Gérer plusieurs photos par canette](https://github.com/enabeteleazar/StockMonsters/issues/6) · P2 · Collection
 - [ ] [#7 — Ajouter un historique des opérations](https://github.com/enabeteleazar/StockMonsters/issues/7) · P2 · Collection
@@ -35,6 +34,10 @@ _Aucun ticket en validation._
 
 ### Terminé
 
+- [x] [#4 — Renforcer la gestion et la révocation des sessions](https://github.com/enabeteleazar/StockMonsters/issues/4) · P1 · Auth
+  — expiration après 30 jours d'inactivité, 90 jours au plus, rotation quotidienne du jeton (10 min de grâce),
+  « Déconnecter tous les appareils » ; migration 12 sans déconnexion. Jeton Bearer conservé pour la release :
+  le passage au cookie HttpOnly (CSRF, migration, PWA) est documenté dans le README et prévu après.
 - [x] [#2 — Protection contre les créations de comptes abusives](https://github.com/enabeteleazar/StockMonsters/issues/2) · P0 · Sécurité
   — limites par IP sur 24 h, nouveaux comptes limités par IP et globalement (après un code valide, sans
   révéler l'existence d'un compte), plafond global de demandes de code, seuils réglables et script de

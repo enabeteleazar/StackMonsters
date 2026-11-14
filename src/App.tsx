@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BookOpen, Home, LayoutGrid, ScanLine, Settings2 } from 'lucide-react'
-import { api, jeton, NonAutorise } from './api'
+import { api, jeton, NonAutorise, renouvelerJeton } from './api'
 import AccueilPublic from './components/AccueilPublic'
 import Acces from './components/Acces'
 import HorsLigne from './components/HorsLigne'
@@ -90,6 +90,7 @@ export default function App() {
       try {
         const utilisateur = await api.moi()
         if (!active) return
+        void renouvelerJeton()
         setEmailUtilisateur(utilisateur.email)
         setNomUtilisateur(utilisateur.email.split('@', 1)[0])
         const collection = await api.liste()
@@ -132,6 +133,16 @@ export default function App() {
       active = false
     }
   }, [etatAcces, verrouiller])
+
+  // Application restée ouverte plusieurs jours (PWA) : rotation du jeton à chaque retour au premier plan.
+  useEffect(() => {
+    if (etatAcces !== 'prive') return
+    const auRetour = () => {
+      if (document.visibilityState === 'visible') void renouvelerJeton()
+    }
+    document.addEventListener('visibilitychange', auRetour)
+    return () => document.removeEventListener('visibilitychange', auRetour)
+  }, [etatAcces])
 
   const ouvrirConnexion = () => {
     setServiceIndisponible(false)

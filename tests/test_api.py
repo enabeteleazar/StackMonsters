@@ -653,6 +653,135 @@ def test_deconnexion_partout_revoque_toutes_les_sessions(env):
     assert c.get("/api/auth/moi", headers=autre).status_code == 200
 
 
+def test_deconnexion_ne_touche_pas_les_autres_appareils(env):
+    c, codes = env
+    h1, h2 = connecter(c, codes, A), connecter(c, codes, A)
+    assert c.post("/api/auth/deconnexion", headers=h1).status_code == 204
+    assert c.get("/api/auth/moi", headers=h1).status_code == 401
+    assert c.get("/api/auth/moi", headers=h2).status_code == 200
+
+
+def _horloge_session(monkeypatch):
+    horloge = [ix.time.time()]
+    monkeypatch.setattr(ix.time, "time", lambda: horloge[0])
+    return horloge
+
+
+def _session(h):
+    with ix.base() as cx:
+        return cx.execute("SELECT * FROM sessions WHERE hash = %s",
+                          (ix._hash_session(h["Authorization"].removeprefix("Bearer ")),)).fetchone()
+
+
+def test_session_expire_apres_30_jours_sans_utilisation(env, monkeypatch):
+    c, codes = env
+    horloge = _horloge_session(monkeypatch)
+    debut = horloge[0]
+    h = connecter(c, codes, A)
+    horloge[0] = debut + ix.INACTIVITE_SESSION - 60
+    assert c.get("/api/auth/moi", headers=h).status_code == 200
+    horloge[0] = debut + ix.INACTIVITE_SESSION + 60  # utilisée la veille : échéance repoussée
+    assert c.get("/api/auth/moi", headers=h).status_code == 200
+    horloge[0] += ix.INACTIVITE_SESSION + 1  # puis 30 jours sans utilisation
+    assert c.get("/api/auth/moi", headers=h).status_code == 401
+
+
+def test_session_prolongee_au_plus_une_fois_par_heure(env, monkeypatch):
+    c, codes = env
+    horloge = _horloge_session(monkeypatch)
+    h = connecter(c, codes, A)
+    echeance = _session(h)["expire"]
+    horloge[0] += ix.PROLONGATION_MIN - 60
+    c.get("/api/auth/moi", headers=h)
+    assert _session(h)["expire"] == echeance  # pas d'écriture à chaque requête
+    horloge[0] += 120
+    c.get("/api/auth/moi", headers=h)
+    assert _session(h)["expire"] == int(horloge[0]) + ix.INACTIVITE_SESSION
+
+
+def test_session_plafonnee_a_90_jours_meme_utilisee(env, monkeypatch):
+    c, codes = env
+    horloge = _horloge_session(monkeypatch)
+    debut = horloge[0]
+    h = connecter(c, codes, A)
+    while horloge[0] < debut + ix.DUREE_MAX_SESSION - 10 * 86400:  # dernier usage au 80e jour
+        horloge[0] += 10 * 86400
+        assert c.get("/api/auth/moi", headers=h).status_code == 200
+    assert _session(h)["expire"] == int(debut) + ix.DUREE_MAX_SESSION
+    horloge[0] = debut + ix.DUREE_MAX_SESSION + 1
+    assert c.get("/api/auth/moi", headers=h).status_code == 401
+
+
+def test_rotation_quotidienne_du_jeton(env, monkeypatch):
+    c, codes = env
+    horloge = _horloge_session(monkeypatch)
+    debut = horloge[0]
+    h = connecter(c, codes, A)
+    assert c.post("/api/auth/renouveler").status_code == 401
+    assert c.post("/api/auth/renouveler", headers=h).json() == {"token": None}  # jeton du jour
+
+    horloge[0] = debut + ix.ROTATION_SESSION + 1
+    nouveau = c.post("/api/auth/renouveler", headers=h).json()["token"]
+    h2 = {"Authorization": f"Bearer {nouveau}"}
+    assert nouveau and c.get("/api/auth/moi", headers=h2).json() == {"email": A}
+    # L'ancien jeton reste valable quelques minutes, ne se renouvelle plus et n'est plus prolongé.
+    assert c.get("/api/auth/moi", headers=h).status_code == 200
+    assert c.post("/api/auth/renouveler", headers=h).json() == {"token": None}
+    horloge[0] += ix.PROLONGATION_MIN + ix.GRACE_ROTATION
+    assert c.get("/api/auth/moi", headers=h).status_code == 401
+    assert c.get("/api/auth/moi", headers=h2).status_code == 200
+    # Le nouveau jeton garde la date de connexion : le plafond de 90 jours ne repart pas.
+    assert _session(h2)["cree"] == int(debut)
+    horloge[0] = debut + ix.DUREE_MAX_SESSION + 1
+    assert c.get("/api/auth/moi", headers=h2).status_code == 401
+
+
+def test_rotations_simultanees_ne_creent_qu_un_jeton(env, monkeypatch):
+    c, codes = env
+    horloge = _horloge_session(monkeypatch)
+    h = connecter(c, codes, A)
+    horloge[0] += ix.ROTATION_SESSION + 1
+    depart, jetons = threading.Barrier(8), []
+
+    def tourner():
+        depart.wait()
+        jetons.append(c.post("/api/auth/renouveler", headers=h).json()["token"])
+
+    fils = [threading.Thread(target=tourner) for _ in range(8)]
+    for fil in fils:
+        fil.start()
+    for fil in fils:
+        fil.join()
+    assert len([j for j in jetons if j]) == 1
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM sessions s JOIN users u ON u.id = s.user_id "
+                          "WHERE u.email = %s", (A,)).fetchone()["n"] == 2
+
+
+def test_revocation_atteint_aussi_les_jetons_renouveles(env, monkeypatch):
+    c, codes = env
+    horloge = _horloge_session(monkeypatch)
+    h = connecter(c, codes, A)
+    horloge[0] += ix.ROTATION_SESSION + 1
+    h2 = {"Authorization": f"Bearer {c.post('/api/auth/renouveler', headers=h).json()['token']}"}
+    assert c.post("/api/auth/deconnexion-partout", headers=h2).status_code == 204
+    assert c.get("/api/auth/moi", headers=h).status_code == 401
+    assert c.get("/api/auth/moi", headers=h2).status_code == 401
+
+
+def test_migration_12_garde_l_echeance_des_sessions_existantes(env):
+    c, codes = env
+    h = connecter(c, codes, A)
+    with ix.connecter() as cx:
+        expire = _session(h)["expire"]
+        cx.execute("ALTER TABLE sessions DROP COLUMN cree, DROP COLUMN emis, DROP COLUMN remplacee")
+        cx.execute("DELETE FROM schema_migrations WHERE version = 12")
+        assert ix.appliquer_migrations(cx) == [12]
+    s = _session(h)
+    assert (s["expire"], s["cree"], s["emis"], s["remplacee"]) == (expire, expire - 30 * 86400, expire - 30 * 86400, None)
+    assert c.get("/api/auth/moi", headers=h).status_code == 200
+
+
 def test_suppression_de_compte_efface_ses_donnees_seulement(env):
     c, codes = env
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)

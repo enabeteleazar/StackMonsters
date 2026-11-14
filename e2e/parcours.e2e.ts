@@ -139,6 +139,31 @@ test('la suppression du compte exige l’adresse et efface la collection', async
   await expect(page.getByText(nom)).toHaveCount(0)
 })
 
+test('déconnexion : cet appareil seulement, puis tous les appareils', async ({ page, browser }) => {
+  const adresse = email()
+  const autre = await nouvellePage(browser)
+  const troisieme = await nouvellePage(browser)
+  await connecter(page, adresse)
+  await connecter(autre, adresse)
+  await connecter(troisieme, adresse)
+
+  await nav(troisieme, 'Réglages').click()
+  await troisieme.getByRole('button', { name: 'Se déconnecter', exact: true }).click()
+  await expect(troisieme.getByRole('button', { name: 'Entrez' })).toBeVisible()
+  await autre.reload()
+  await expect(nav(autre, 'Réglages')).toBeVisible() // les autres appareils restent connectés
+
+  await nav(page, 'Réglages').click()
+  page.once('dialog', (d) => d.dismiss())
+  await page.getByRole('button', { name: 'Déconnecter tous les appareils' }).click()
+  await expect(nav(page, 'Réglages')).toBeVisible() // annulé : rien ne change
+  page.once('dialog', (d) => d.accept())
+  await page.getByRole('button', { name: 'Déconnecter tous les appareils' }).click()
+  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
+  await autre.reload()
+  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
+})
+
 test('la politique de confidentialité est accessible sans compte', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('link', { name: 'Confidentialité' }).click()
