@@ -68,7 +68,13 @@ then
   exit 1
 fi
 
-.venv/bin/python scripts/migrer_schema.py
+# Migrations automatiques seulement avec SM_MIGRATION_AUTO=1 : .env.local peut désigner la base de production,
+# qui ne doit être migrée qu'au déploiement (scripts/migrer_schema.py). Sinon l'API répond 503 si la base est en retard.
+if [ "${SM_MIGRATION_AUTO:-}" = "1" ]; then
+  .venv/bin/python scripts/migrer_schema.py
+else
+  echo "Migrations non appliquées (SM_MIGRATION_AUTO≠1). Base en retard : SM_MIGRATION_AUTO=1 ./dev.sh, ou scripts/migrer_schema.py."
+fi
 
 .venv/bin/python -m uvicorn api.index:app --host 127.0.0.1 --port 8055 --reload &
 API=$!

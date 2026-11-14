@@ -775,8 +775,8 @@ def test_migration_12_garde_l_echeance_des_sessions_existantes(env):
     with ix.connecter() as cx:
         expire = _session(h)["expire"]
         cx.execute("ALTER TABLE sessions DROP COLUMN cree, DROP COLUMN emis, DROP COLUMN remplacee")
-        cx.execute("DELETE FROM schema_migrations WHERE version = 12")
-        assert ix.appliquer_migrations(cx) == [12]
+        cx.execute("DELETE FROM schema_migrations WHERE version >= 12")
+        assert ix.appliquer_migrations(cx) == [12, 13]
     s = _session(h)
     assert (s["expire"], s["cree"], s["emis"], s["remplacee"]) == (expire, expire - 30 * 86400, expire - 30 * 86400, None)
     assert c.get("/api/auth/moi", headers=h).status_code == 200
@@ -784,6 +784,20 @@ def test_migration_12_garde_l_echeance_des_sessions_existantes(env):
 
 def supprimer(c, h, confirmation):
     return c.request("DELETE", "/api/auth/compte", json={"confirmation": confirmation}, headers=h)
+
+
+def test_une_session_creee_par_l_ancienne_api_reste_valable(env):
+    """L'API v0.4.1, encore en production pendant la migration, insère ses sessions sans cree ni emis."""
+    c, codes = env
+    connecter(c, codes, A)
+    jeton = "ancien-jeton-sans-dates"
+    with ix.base() as cx:
+        uid = cx.execute("SELECT id FROM users WHERE email = %s", (A,)).fetchone()["id"]
+        cx.execute("INSERT INTO sessions (hash, user_id, expire) VALUES (%s, %s, %s)",
+                   (ix._hash_session(jeton), uid, int(ix.time.time()) + 30 * 86400))
+    s = _session({"Authorization": f"Bearer {jeton}"})
+    assert abs(s["cree"] - ix.time.time()) < 60 and s["emis"] == s["cree"]
+    assert c.get("/api/auth/moi", headers={"Authorization": f"Bearer {jeton}"}).status_code == 200
 
 
 def test_suppression_de_compte_efface_ses_donnees_seulement(env):
@@ -1317,10 +1331,30 @@ def test_une_preview_vercel_met_sa_base_a_jour_seule(env, monkeypatch):
         cx.execute("DELETE FROM schema_migrations WHERE version = %s", (ix.MIGRATIONS[-1][0],))
     monkeypatch.setattr(ix, "_schema_pret", False)
     monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("SM_MIGRATION_AUTO", "1")
     assert c.get("/api/cans", headers=h).status_code == 200
     with ix.connecter() as cx:
         v = cx.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()["v"]
     assert v == ix.MIGRATIONS[-1][0]
+
+
+def test_une_preview_sans_sm_migration_auto_ne_migre_pas(env, monkeypatch):
+    """Preview qui partage la base de production : elle ne doit pas la migrer d'elle-même."""
+    c, codes = env
+    h = connecter(c, codes, A)
+    with ix.connecter() as cx:
+        cx.execute("DELETE FROM schema_migrations WHERE version = %s", (ix.MIGRATIONS[-1][0],))
+    monkeypatch.setattr(ix, "_schema_pret", False)
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.delenv("SM_MIGRATION_AUTO", raising=False)
+    try:
+        assert c.get("/api/cans", headers=h).status_code == 503
+        with ix.connecter() as cx:
+            v = cx.execute("SELECT MAX(version) AS v FROM schema_migrations").fetchone()["v"]
+        assert v == ix.MIGRATIONS[-1][0] - 1
+    finally:
+        with ix.connecter() as cx:
+            assert ix.appliquer_migrations(cx) == [ix.MIGRATIONS[-1][0]]
 
 
 def test_la_production_ne_migre_jamais_seule(env, monkeypatch):
@@ -1330,6 +1364,7 @@ def test_la_production_ne_migre_jamais_seule(env, monkeypatch):
         cx.execute("DELETE FROM schema_migrations WHERE version = %s", (ix.MIGRATIONS[-1][0],))
     monkeypatch.setattr(ix, "_schema_pret", False)
     monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("SM_MIGRATION_AUTO", "1")  # sans effet en production
     try:
         assert c.get("/api/cans", headers=h).status_code == 503
     finally:

@@ -267,6 +267,12 @@ ALTER TABLE sessions ALTER COLUMN cree SET NOT NULL;
 ALTER TABLE sessions ALTER COLUMN emis SET NOT NULL;
 CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id);
 """),
+    # Compatibilité avec la version précédente de l'API, qui crée ses sessions sans « cree » ni « emis » :
+    # sans valeur par défaut, sa connexion échouait (NOT NULL) dès que la base passait en version 12.
+    (13, """
+ALTER TABLE sessions ALTER COLUMN cree SET DEFAULT (EXTRACT(EPOCH FROM now())::BIGINT);
+ALTER TABLE sessions ALTER COLUMN emis SET DEFAULT (EXTRACT(EPOCH FROM now())::BIGINT);
+"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -432,12 +438,13 @@ def _verifier_schema(cx: psycopg.Connection) -> None:
         version = cx.execute("SELECT COALESCE(MAX(version), 0) AS v FROM schema_migrations").fetchone()["v"]
     cx.commit()
     if version < MIGRATIONS[-1][0]:
-        # Déploiement Preview de Vercel (base de test) : l'API se met elle-même à jour, pour que chaque Preview
-        # soit utilisable sans migration manuelle. Jamais en production, où le schéma ne change que par le script.
-        if os.environ.get("VERCEL_ENV") == "preview":
+        # Déploiement Preview de Vercel : l'API ne se met elle-même à jour que si SM_MIGRATION_AUTO=1 (Preview
+        # sur une base de test). Sinon, et toujours en production, le schéma ne change que par le script : une
+        # Preview qui partage la base de production ne doit pas la migrer avant le déploiement du code qui va avec.
+        if os.environ.get("VERCEL_ENV") == "preview" and os.environ.get("SM_MIGRATION_AUTO") == "1":
             with cx.transaction():
                 appliquees = appliquer_migrations(cx)
-            logger.warning("Preview : migrations appliquées automatiquement %s", appliquees)
+            logger.warning("Preview (SM_MIGRATION_AUTO=1) : migrations appliquées automatiquement %s", appliquees)
         else:
             logger.error("Schéma en version %d, attendu %d : lancer scripts/migrer_schema.py", version, MIGRATIONS[-1][0])
             raise HTTPException(503, "Base de données à mettre à jour.")

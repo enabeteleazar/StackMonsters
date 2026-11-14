@@ -174,7 +174,14 @@ L'API ne modifie jamais le schéma : les migrations sont listées dans `MIGRATIO
 l'ordre, et appliquées une seule fois par `DATABASE_URL=… python scripts/migrer_schema.py`. **À lancer sur
 chaque base avant de déployer une version qui ajoute une migration** : sinon l'API répond 503. Ne jamais
 modifier une migration déjà déployée, en ajouter une nouvelle, et ne jamais réattribuer un numéro, même
-retiré avant livraison (une base de développement a pu l'enregistrer). `./dev.sh` l'exécute automatiquement.
+retiré avant livraison (une base de développement a pu l'enregistrer).
+
+Mise à jour automatique **seulement avec `SM_MIGRATION_AUTO=1`** : une Preview Vercel (`VERCEL_ENV=preview`)
+se migre alors elle-même, et `./dev.sh` lance le script au démarrage. Sans cette variable (cas par défaut,
+obligatoire quand la Preview ou `.env.local` désignent la base de production), le schéma ne change que par
+le script : la base de production ne doit passer à une nouvelle version qu'au déploiement du code qui va avec.
+Exemple : le 14 novembre 2026, la base de production est passée en version 12 alors que le site était en
+v0.4.1, qui ne savait plus créer de session ; la migration 13 rend ces colonnes compatibles avec l'ancien code.
 
 ## Déployer
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).
