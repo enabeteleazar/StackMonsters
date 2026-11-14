@@ -208,33 +208,38 @@ export default function Wiki({ surNonAutorise }: Props) {
                   {resultat.total} résultat{resultat.total > 1 ? 's' : ''}
                 </p>
               )}
-              <p className="legende-codes" aria-hidden="true">
-                {(['reel', 'genere', 'autre'] as const).map((t) => (
-                  <span key={t}>
-                    <span className={`point-code point-code-${t}`} />
-                    {LIBELLES_CODE[t]}
-                  </span>
-                ))}
-              </p>
+              {/* Provenance des codes-barres : réservée au propriétaire, comme les codes eux-mêmes. */}
+              {peutEditer && (
+                <p className="legende-codes" aria-hidden="true">
+                  {(['reel', 'genere', 'autre'] as const).map((t) => (
+                    <span key={t}>
+                      <span className={`point-code point-code-${t}`} />
+                      {LIBELLES_CODE[t]}
+                    </span>
+                  ))}
+                </p>
+              )}
               <div className="wiki-grille">
                 {fiches.map((f) => (
                   <button key={f.ean} className="carte-wiki wiki-carte" onClick={() => setOuverte(f.ean)}>
                     <span className="wiki-photo">
                       <PhotoWiki ean={f.ean} version={f.photo} />
                       {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
-                      {f.moderation === 'en_attente' && <span className="badge-moderation">À vérifier</span>}
-                      {f.moderation === 'refusee' && <span className="badge-moderation refusee">Refusée</span>}
+                      {peutEditer && f.moderation === 'en_attente' && <span className="badge-moderation">À vérifier</span>}
+                      {peutEditer && f.moderation === 'refusee' && <span className="badge-moderation refusee">Refusée</span>}
                       {!!f.signalements?.length && (
                         <span className="wiki-signale" role="img" aria-label="Erreur signalée">
                           <Flag size={12} />
                         </span>
                       )}
-                      <span
-                        className={`point-code point-code-${typeCode(f.ean)}`}
-                        title={LIBELLES_CODE[typeCode(f.ean)]}
-                        role="img"
-                        aria-label={LIBELLES_CODE[typeCode(f.ean)]}
-                      />
+                      {peutEditer && (
+                        <span
+                          className={`point-code point-code-${typeCode(f.ean)}`}
+                          title={LIBELLES_CODE[typeCode(f.ean)]}
+                          role="img"
+                          aria-label={LIBELLES_CODE[typeCode(f.ean)]}
+                        />
+                      )}
                     </span>
                     <span className="wiki-nom">{f.nom || 'Sans nom'}</span>
                   </button>

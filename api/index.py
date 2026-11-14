@@ -934,7 +934,8 @@ COLONNES_FICHE = (
 def _fiche(r: dict, proprietaire: bool = False) -> dict:
     """Forme publique d'une fiche ; « photo » n'est qu'un marqueur de version.
 
-    Le propriétaire reçoit en plus la provenance (anonyme) et les signalements encore ouverts.
+    Le propriétaire reçoit en plus le statut de modération, la provenance (anonyme) et les signalements
+    encore ouverts : les membres ne voient pas qu'une fiche est à vérifier.
     """
     fiche = {
         "ean": r["ean"], "nom": r["nom"], "volume": r["volume"],
@@ -942,9 +943,9 @@ def _fiche(r: dict, proprietaire: bool = False) -> dict:
         "region": r["region"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
         "codes": list(r["codes"]),
-        "moderation": r["moderation"],
     }
     if proprietaire:
+        fiche["moderation"] = r["moderation"]
         fiche["provenance"] = {"source": r["source"], "cree": r["cree"], "corrigee": r["corrigee"]}
         fiche["signalements"] = r["signalements"]
         fiche["moderations"] = r["moderations"]

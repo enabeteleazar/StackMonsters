@@ -758,7 +758,7 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
     assert (f["categorie"], f["flavor"], f["status"], f["region"]) == ("", "", "", "")
     assert set(f) == {
         "ean", "nom", "volume", "categorie", "flavor", "status", "region",
-        "description", "photo", "codes", "moderation",
+        "description", "photo", "codes",
     }
     assert f["photo"]  # la fiche n'avait pas de photo : celle envoyée devient la sienne
     assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 200
@@ -1304,11 +1304,12 @@ def test_une_fiche_creee_par_un_membre_est_a_verifier(env, monkeypatch):
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
     c.put("/api/cans", json=canette("2000000000015", nom="Mango"), headers=hb)
     c.put("/api/cans", json=canette("2000000000022", nom="Ultra"), headers=ha)
-    assert fiche(c, hb, "2000000000015")["moderation"] == "en_attente"
-    assert fiche(c, hb, "2000000000022")["moderation"] == "acceptee"  # créée par le propriétaire
+    assert "moderation" not in fiche(c, hb, "2000000000015")  # statut réservé au propriétaire
+    assert fiche(c, ha, "2000000000015")["moderation"] == "en_attente"
+    assert fiche(c, ha, "2000000000022")["moderation"] == "acceptee"  # créée par le propriétaire
     # Un autre ajout de la même canette ne change pas le statut.
     c.put("/api/cans", json=canette("2000000000015", nom="Mango"), headers=ha)
-    assert fiche(c, hb, "2000000000015")["moderation"] == "en_attente"
+    assert fiche(c, ha, "2000000000015")["moderation"] == "en_attente"
 
 
 def test_proposer_une_canette_sans_l_ajouter_a_sa_collection(env, monkeypatch):
@@ -1321,7 +1322,8 @@ def test_proposer_une_canette_sans_l_ajouter_a_sa_collection(env, monkeypatch):
     r = c.post("/api/wiki/propositions", json=corps, headers=hb)
     assert r.status_code == 201
     f = r.json()
-    assert (f["nom"], f["moderation"], f["region"]) == ("Mango Loco", "en_attente", "Europe") and f["photo"]
+    assert (f["nom"], f["region"]) == ("Mango Loco", "Europe") and f["photo"] and "moderation" not in f
+    assert fiche(c, ha, "2000000000015")["moderation"] == "en_attente"
     assert c.get("/api/cans", headers=hb).json() == []  # proposer n'ajoute pas à la collection
 
     assert c.post("/api/wiki/propositions", json=corps, headers=hb).status_code == 409  # même code-barres

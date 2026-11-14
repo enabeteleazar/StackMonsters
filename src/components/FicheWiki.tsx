@@ -217,7 +217,7 @@ export default function FicheWiki({
               </div>
             </div>
 
-            {fiche.moderation && fiche.moderation !== 'acceptee' && (
+            {peutEditer && fiche.moderation && fiche.moderation !== 'acceptee' && (
               <div className={`fiche-moderation ${fiche.moderation}`} role="status">
                 {fiche.moderation === 'en_attente' ? <ShieldQuestion size={18} /> : <Ban size={18} />}
                 <span>
