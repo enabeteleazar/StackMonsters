@@ -488,7 +488,6 @@ html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.col
 .pied-instagram p{margin:0;color:var(--alu);font-size:13px;line-height:1.5}
 .pied-instagram p a{color:var(--acide);font-weight:600;text-decoration:none}
 .attente-session{padding-top:22px;color:var(--alu);text-align:center;font-size:13px}
-.btn-retour-accueil{padding:12px!important;color:var(--alu);font-size:12px}
 /* ============ boutons ============ */
 .btn{
   display:inline-flex;align-items:center;justify-content:center;gap:10px;
@@ -737,7 +736,6 @@ nav.nav-bas button{
   font-family:var(--display);text-transform:uppercase;letter-spacing:.06em;font-size:11px;color:var(--alu);
 }
 nav.nav-bas button svg{transition:transform .15s var(--ease), color .15s var(--ease)}
-nav.nav-bas button.pousse{visibility:hidden}
 nav.nav-bas button[aria-current="true"]{color:var(--blanc)}
 nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:translateY(-1px)}
 
@@ -757,7 +755,6 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
     border-radius:var(--r-md);font-size:12.5px;letter-spacing:.08em;
   }
   nav.nav-bas button[aria-current="true"]{background:var(--graphite-clair)}
-  nav.nav-bas button.pousse{display:none}
 }
 
 /* ============ toast ============ */

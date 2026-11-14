@@ -4,17 +4,15 @@ import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
 import { moteurNatif } from '../scanner'
 import LienInstagram from './LienInstagram'
-import type { Canette } from '../types'
 
 type Props = {
-  canettes: Canette[]
   emailUtilisateur: string
   joignable: boolean
   surVerrouiller: () => void
   surStats: () => void
 }
 
-export default function Settings({ canettes, emailUtilisateur, joignable, surVerrouiller, surStats }: Props) {
+export default function Settings({ emailUtilisateur, joignable, surVerrouiller, surStats }: Props) {
   const [sante, setSante] = useState<{ status: string; version: string; references: number } | null>(null)
 
   // Seul le propriétaire (OWNER_EMAIL) obtient une réponse : sinon l'API répond 403 et le bouton reste caché.

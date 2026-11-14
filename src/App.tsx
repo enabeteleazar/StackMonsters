@@ -248,7 +248,6 @@ export default function App() {
         {vue === 'wiki' && <Wiki surNonAutorise={verrouiller} />}
         {vue === 'reglages' && (
           <Settings
-            canettes={canettes}
             emailUtilisateur={emailUtilisateur}
             joignable={joignable}
             surVerrouiller={verrouiller}
