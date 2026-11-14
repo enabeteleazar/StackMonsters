@@ -92,7 +92,7 @@ main.large{max-width:1080px}
 
 /* ============ logo ============ */
 .logo{display:flex;align-items:center;gap:9px}
-/* Même logo partout : icône encadrée de vert (.accueil-public-marque) et texte en 22 px. */
+/* Même logo partout : badge rond (public/favicon.svg, version sans texte) et texte en 22 px. */
 .logo-marque{
   font-family:var(--display);font-weight:700;text-transform:uppercase;
   letter-spacing:.16em;font-size:22px;line-height:1;
@@ -113,9 +113,9 @@ html:has(.connexion),html:has(.connexion) body{height:100%;overflow:hidden;overs
   width:100%;max-width:1100px;margin:0 auto;padding:calc(min(18px,2.2vh) + env(safe-area-inset-top)) 20px 0;
   display:flex;align-items:center;justify-content:space-between;flex:0 0 auto;
 }
-.accueil-public-marque{width:min(46px,5.5vh);height:min(46px,5.5vh);display:grid;place-items:center;border:2px solid var(--acide);
-  border-radius:12px;box-shadow:0 0 18px rgba(158,232,24,.45), inset 0 0 12px rgba(158,232,24,.15)}
-.accueil-public-marque img{width:30px;height:30px}
+.accueil-public-marque{width:min(46px,5.5vh);height:min(46px,5.5vh);display:block;flex:0 0 auto;border-radius:50%;
+  box-shadow:0 0 18px rgba(158,232,24,.4)}
+.accueil-public-marque img{display:block;width:100%;height:100%}
 .accueil-public-contenu{flex:1;min-height:0;width:100%;max-width:980px;margin:0 auto;display:flex;flex-direction:column;
   padding:0 20px min(36px,4vh)}
 
@@ -912,3 +912,6 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .ordinateur .accueil-public-fonctions b{color:var(--acide);font-weight:700}
 .ordinateur .accueil-public-pied .pied-instagram p{font-size:13px}
 .ordinateur .accueil-public-independance{font-size:11px}
+/* Badge complet (public/images/logo-badge.svg) à la place de la canette, sur l'écran ordinateur. */
+.ordinateur-badge{position:relative;margin:0;display:grid;place-items:center;min-height:0;align-self:stretch}
+.ordinateur-badge img{width:min(100%,62vh,480px);height:auto;aspect-ratio:1;filter:drop-shadow(0 0 40px rgba(158,232,24,.28))}
