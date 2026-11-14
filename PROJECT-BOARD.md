@@ -16,7 +16,6 @@ Tickets enregistrés, à prioriser ou à planifier.
 - [ ] [#6 — Gérer plusieurs photos par canette](https://github.com/enabeteleazar/StockMonsters/issues/6) · P2 · Collection
 - [ ] [#7 — Ajouter un historique des opérations](https://github.com/enabeteleazar/StockMonsters/issues/7) · P2 · Collection
 - [ ] [#9 — Proposer une nouvelle référence au catalogue](https://github.com/enabeteleazar/StockMonsters/issues/9) · P3 · Catalogue
-- [ ] [#10 — Rechercher dans le catalogue global](https://github.com/enabeteleazar/StockMonsters/issues/10) · P3 · Recherche
 - [ ] [#11 — Améliorer le parcours après lecture du code-barres](https://github.com/enabeteleazar/StockMonsters/issues/11) · P2 · Scan
 - [ ] [#12 — Ajouter des statistiques avancées](https://github.com/enabeteleazar/StockMonsters/issues/12) · P4 · Statistiques
 - [ ] [#13 — Ajouter badges et niveaux](https://github.com/enabeteleazar/StockMonsters/issues/13) · P4 · Gamification
@@ -41,7 +40,10 @@ _Aucun ticket en validation._
 - [x] [#8 — Créer un catalogue mondial partagé](https://github.com/enabeteleazar/StockMonsters/issues/8) · P3 · Catalogue
   — le Wiki est la référence commune, les collections en sont les exemplaires. EAN absents (code « 20… » tiré
   du nom) et multiples (codes secondaires) gérés ; un EAN réutilisé selon les marchés reste lié à une seule fiche
-  (choix assumé, cas jugé trop rare). Reste à suivre à part : la provenance des fiches.
+  (choix assumé, cas jugé trop rare). Provenance anonyme et signalement des erreurs ajoutés ensuite.
+- [x] [#10 — Rechercher dans le catalogue global](https://github.com/enabeteleazar/StockMonsters/issues/10) · P3 · Recherche
+  — recherche côté serveur (nom, saveur, pays, gamme, code-barres, sans accents), index trigramme, filtres,
+  tri, pagination et suggestions ; ne lit que le catalogue, jamais les collections.
 
 ## Conventions
 
