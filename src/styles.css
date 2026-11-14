@@ -180,6 +180,8 @@ html:has(.connexion),html:has(.connexion) body{height:100%;overflow:hidden;overs
   .connexion-fumee{animation:none}
 }
 
+/* Accroche seule, sans visuel à côté : une seule colonne. */
+.accueil-public-hero.accueil-public-hero-seul{grid-template-columns:minmax(0,1fr)}
 .accueil-public-alerte{max-width:480px;margin:6px auto 0;padding:10px 14px;border:1px solid rgba(255,77,77,.25);
   border-radius:var(--r-md);background:rgba(255,77,77,.08);color:#ffb3b3;font-size:13px;text-align:center}
 .accueil-public-action{position:relative;z-index:2;text-align:center;flex:0 0 auto;margin-top:min(14px,1.6vh)}
@@ -219,6 +221,7 @@ html:has(.connexion),html:has(.connexion) body{height:100%;overflow:hidden;overs
 /* Téléphone : texte et canette chacun dans leur colonne, ils ne se chevauchent jamais. */
 @media (max-width:560px){
   .accueil-public-hero{grid-template-columns:minmax(0,1fr) 36%;column-gap:10px}
+  .accueil-public-hero.accueil-public-hero-seul{grid-template-columns:minmax(0,1fr)}
   .accueil-public-texte{min-width:0}
   .accueil-public-canette{position:relative;min-height:0;z-index:1}
 }
