@@ -1,5 +1,5 @@
 import { API_URL, CLE_JETON } from './config'
-import type { Canette, FicheWiki, ModifFicheWiki, ReponseWiki, ResultatRechercheWiki, TriWiki } from './types'
+import type { Canette, FicheWiki, ModifFicheWiki, PropositionWiki, ReponseWiki, ResultatRechercheWiki, TriWiki } from './types'
 
 /** Levée quand le service répond 401 : jeton absent ou refusé. */
 export class NonAutorise extends Error {
@@ -107,7 +107,15 @@ export const api = {
   sante: () => requete<{ status: string; version: string; references: number }>('/health'),
   wiki: () => requete<ReponseWiki>('/wiki'),
   /** Recherche paginée côté serveur dans le catalogue partagé. */
-  wikiRecherche: (p: { q?: string; categorie?: string; region?: string; tri?: TriWiki; page?: number; signalees?: boolean }) => {
+  wikiRecherche: (p: {
+    q?: string
+    categorie?: string
+    region?: string
+    tri?: TriWiki
+    page?: number
+    signalees?: boolean
+    a_verifier?: boolean
+  }) => {
     const params = new URLSearchParams()
     for (const [cle, valeur] of Object.entries(p)) if (valeur) params.set(cle, String(valeur))
     return requete<ResultatRechercheWiki>(`/wiki/recherche?${params}`)
@@ -126,6 +134,15 @@ export const api = {
     }),
   wikiRetirerCode: (ean: string, code: string) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/code-barres/${encodeURIComponent(code)}`, { method: 'DELETE' }),
+  /** Propose une canette au catalogue : créée « à vérifier » (acceptée d'emblée pour le propriétaire). */
+  wikiProposer: (p: PropositionWiki) =>
+    requete<FicheWiki>('/wiki/propositions', { method: 'POST', body: JSON.stringify(p) }),
+  /** Propriétaire : accepte ou refuse une fiche. */
+  wikiModerer: (ean: string, decision: 'acceptee' | 'refusee', motif = '') =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/moderation`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, motif }),
+    }),
   /** Signale une erreur sur une fiche ; le motif est transmis sans lien avec le compte. */
   wikiSignaler: (ean: string, motif: string) =>
     requete<{ ok: boolean }>(`/wiki/${encodeURIComponent(ean)}/signalement`, {

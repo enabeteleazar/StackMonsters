@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, Flag, Loader2, Search, WifiOff } from 'lucide-react'
+import { BookOpen, Flag, Loader2, PlusCircle, Search, ShieldQuestion, WifiOff } from 'lucide-react'
 import { api, NonAutorise } from '../api'
 import { CATEGORIES, REGIONS } from '../categories'
 import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
 import type { FicheWiki as Fiche, ResultatRechercheWiki, TriWiki } from '../types'
 import FicheWiki from './FicheWiki'
 import PhotoWiki from './PhotoWiki'
+import PropositionWiki from './PropositionWiki'
 
 type Props = {
   surNonAutorise: () => void
@@ -47,6 +48,9 @@ export default function Wiki({ surNonAutorise }: Props) {
   const [tri, setTri] = useState<TriWiki>('pertinence')
   // Propriétaire : n'afficher que les fiches qui ont des erreurs signalées.
   const [signaleesSeules, setSignaleesSeules] = useState(false)
+  // Propriétaire : n'afficher que les fiches à vérifier (créées par des membres).
+  const [aVerifierSeules, setAVerifierSeules] = useState(false)
+  const [propositionOuverte, setPropositionOuverte] = useState(false)
   const [ouverte, setOuverte] = useState<string | null>(null)
   const requeteEnCours = useRef(0)
 
@@ -62,7 +66,9 @@ export default function Wiki({ surNonAutorise }: Props) {
       setChargement(true)
       setErreur(false)
       try {
-        const r = await api.wikiRecherche({ q: qEnvoyee, categorie: gamme, region, tri, page, signalees: signaleesSeules })
+        const r = await api.wikiRecherche({
+          q: qEnvoyee, categorie: gamme, region, tri, page, signalees: signaleesSeules, a_verifier: aVerifierSeules,
+        })
         if (numero !== requeteEnCours.current) return // une recherche plus récente a pris le relais
         setResultat(r)
         setFiches((avant) => (page === 1 ? r.fiches : [...avant, ...r.fiches]))
@@ -74,7 +80,7 @@ export default function Wiki({ surNonAutorise }: Props) {
         if (numero === requeteEnCours.current) setChargement(false)
       }
     },
-    [qEnvoyee, gamme, region, tri, signaleesSeules, surNonAutorise],
+    [qEnvoyee, gamme, region, tri, signaleesSeules, aVerifierSeules, surNonAutorise],
   )
 
   useEffect(() => {
@@ -82,7 +88,7 @@ export default function Wiki({ surNonAutorise }: Props) {
   }, [charger])
 
   const peutEditer = resultat?.peut_editer ?? false
-  const filtresActifs = !!(qEnvoyee || gamme || region || signaleesSeules)
+  const filtresActifs = !!(qEnvoyee || gamme || region || signaleesSeules || aVerifierSeules)
   const fiche = ouverte ? (fiches.find((f) => f.ean === ouverte) ?? null) : null
   const fermer = useCallback(() => setOuverte(null), [])
   const toutEffacer = () => {
@@ -90,6 +96,7 @@ export default function Wiki({ surNonAutorise }: Props) {
     setGamme('')
     setRegion('')
     setSignaleesSeules(false)
+    setAVerifierSeules(false)
   }
 
   return (
@@ -108,6 +115,11 @@ export default function Wiki({ surNonAutorise }: Props) {
           )}
         </div>
         <span className="accueil-public-trait" aria-hidden="true" />
+
+        <button className="accueil-co-secondaire wiki-proposer" onClick={() => setPropositionOuverte(true)}>
+          <PlusCircle size={20} />
+          Proposer une canette
+        </button>
 
         <label className="collec-recherche wiki-recherche">
           <Search size={18} />
@@ -151,6 +163,18 @@ export default function Wiki({ surNonAutorise }: Props) {
             </select>
           </label>
         </div>
+
+        {peutEditer && (resultat?.a_verifier ?? 0) > 0 && (
+          <button
+            className={`wiki-signalees wiki-a-verifier${aVerifierSeules ? ' actif' : ''}`}
+            aria-pressed={aVerifierSeules}
+            onClick={() => setAVerifierSeules((v) => !v)}
+          >
+            <ShieldQuestion size={16} />
+            {resultat!.a_verifier} fiche{resultat!.a_verifier > 1 ? 's' : ''} à vérifier
+            <span>{aVerifierSeules ? 'Tout afficher' : 'Voir'}</span>
+          </button>
+        )}
 
         {peutEditer && (resultat?.signalees ?? 0) > 0 && (
           <button
@@ -198,6 +222,8 @@ export default function Wiki({ surNonAutorise }: Props) {
                     <span className="wiki-photo">
                       <PhotoWiki ean={f.ean} version={f.photo} />
                       {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
+                      {f.moderation === 'en_attente' && <span className="badge-moderation">À vérifier</span>}
+                      {f.moderation === 'refusee' && <span className="badge-moderation refusee">Refusée</span>}
                       {!!f.signalements?.length && (
                         <span className="wiki-signale" role="img" aria-label="Erreur signalée">
                           <Flag size={12} />
@@ -252,6 +278,15 @@ export default function Wiki({ surNonAutorise }: Props) {
             </div>
           ))}
       </div>
+
+      {propositionOuverte && (
+        <PropositionWiki
+          proprietaire={peutEditer}
+          surFermeture={() => setPropositionOuverte(false)}
+          surProposee={() => void charger(1)}
+          surNonAutorise={surNonAutorise}
+        />
+      )}
 
       {fiche && (
         <FicheWiki

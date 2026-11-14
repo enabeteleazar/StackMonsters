@@ -230,6 +230,18 @@ CREATE INDEX IF NOT EXISTS wiki_recherche ON wiki USING gin (
     gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS wiki_recherche_nom ON wiki USING gin (sm_texte(nom) gin_trgm_ops);
 """),
+    # Modération des fiches créées par les membres (« à vérifier » jusqu'à la décision du propriétaire) et
+    # historique des décisions. Les fiches existantes sont considérées comme acceptées. Pas d'auteur gardé.
+    (11, """
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS moderation TEXT NOT NULL DEFAULT 'acceptee'
+    CHECK (moderation IN ('en_attente', 'acceptee', 'refusee'));
+CREATE TABLE IF NOT EXISTS wiki_moderations (id BIGSERIAL PRIMARY KEY,
+    fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE,
+    decision TEXT NOT NULL CHECK (decision IN ('acceptee', 'refusee')), motif TEXT NOT NULL DEFAULT '',
+    cree TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS wiki_moderations_fiche ON wiki_moderations (fiche);
+CREATE INDEX IF NOT EXISTS wiki_moderation_en_attente ON wiki (moderation) WHERE moderation <> 'acceptee';
+"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -303,6 +315,42 @@ class Signalement(BaseModel):
         if len(motif) < 3:
             raise ValueError("motif trop court")
         return motif
+
+
+class Proposition(BaseModel):
+    """Canette proposée au catalogue par un membre, sans l'ajouter à sa collection."""
+
+    ean: str = Field(default="", max_length=64)
+    nom: str = Field(min_length=1, max_length=200)
+    volume: str = Field(default="", max_length=40)
+    categorie: str = Field(default="", max_length=80)
+    flavor: str = Field(default="", max_length=200)
+    region: str = Field(default="", max_length=80)
+    photo: str | None = Field(default=None, max_length=300_000)
+    # Envoyée après avoir vu les fiches proches : le membre confirme qu'il ne s'agit pas d'un doublon.
+    confirmer_doublon: bool = False
+
+    @field_validator("nom")
+    @classmethod
+    def formater(cls, nom: str) -> str:
+        nom = formater_nom(nom)
+        if not nom:
+            raise ValueError("nom obligatoire")
+        return nom
+
+    @field_validator("photo")
+    @classmethod
+    def verifier_photo(cls, photo: str | None) -> str | None:
+        if photo is not None and not _photo_valide(photo):
+            raise ValueError("format de photo refusé")
+        return photo
+
+
+class Decision(BaseModel):
+    """Décision du propriétaire sur une fiche à vérifier."""
+
+    decision: Literal["acceptee", "refusee"]
+    motif: str = Field(default="", max_length=500)
 
 
 class Delta(BaseModel):
@@ -802,8 +850,9 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         fiche = (_fiche_de_la_ligne(cx, ean) if deja_la else None) or ean
         cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (fiche,))
         cx.execute(
-            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, nouveaute_depuis, source, cree, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, nouveaute_depuis, source, moderation,
+                                 cree, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (ean) DO UPDATE SET
                   nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
                   volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
@@ -825,7 +874,9 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
              statut, c.region.strip(),
              int(time.time()) if statut == "Nouveauté" else None,
              # Provenance anonyme, fixée à la création de la fiche (jamais modifiée ensuite).
-             "sans-code" if c.ean.startswith("LOCAL-") else "code-barres", maintenant(), maintenant()),
+             "sans-code" if c.ean.startswith("LOCAL-") else "code-barres",
+             # Une fiche créée par un membre est « à vérifier » ; une fiche existante garde son statut.
+             "acceptee" if _est_proprietaire(u["email"]) else "en_attente", maintenant(), maintenant()),
         )
         # Une photo envoyée devient celle de la fiche du Wiki si elle n'en a pas encore (visible par tous).
         if c.photo:
@@ -874,7 +925,9 @@ COLONNES_FICHE = (
     "(photo IS NOT NULL) AS a_photo, maj, source, cree, corrigee, "
     "COALESCE((SELECT array_agg(k.ean ORDER BY k.ean) FROM wiki_codes k WHERE k.fiche = wiki.ean), '{}') AS codes, "
     "COALESCE((SELECT json_agg(json_build_object('id', s.id, 'motif', s.motif, 'cree', s.cree) ORDER BY s.id) "
-    "FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL), '[]') AS signalements"
+    "FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL), '[]') AS signalements, moderation, "
+    "COALESCE((SELECT json_agg(json_build_object('decision', m.decision, 'motif', m.motif, 'cree', m.cree) "
+    "ORDER BY m.id) FROM wiki_moderations m WHERE m.fiche = wiki.ean), '[]') AS moderations"
 )
 
 
@@ -889,10 +942,12 @@ def _fiche(r: dict, proprietaire: bool = False) -> dict:
         "region": r["region"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
         "codes": list(r["codes"]),
+        "moderation": r["moderation"],
     }
     if proprietaire:
         fiche["provenance"] = {"source": r["source"], "cree": r["cree"], "corrigee": r["corrigee"]}
         fiche["signalements"] = r["signalements"]
+        fiche["moderations"] = r["moderations"]
     return fiche
 
 
@@ -938,6 +993,7 @@ def wiki_recherche(
     page: int = Query(default=1, ge=1, le=10_000),
     par_page: int = Query(default=24, ge=1, le=PAR_PAGE_MAX),
     signalees: bool = False,
+    a_verifier: bool = False,
     u: dict = Depends(utilisateur),
     cx: psycopg.Connection = Depends(connexion),
 ) -> dict:
@@ -963,6 +1019,11 @@ def wiki_recherche(
         params.append(region)
     if signalees and proprio:
         conditions.append("EXISTS (SELECT 1 FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL)")
+    if a_verifier and proprio:
+        conditions.append("moderation = 'en_attente'")
+    if not proprio:  # une fiche refusée n'apparaît plus dans le catalogue des membres
+        conditions.append("moderation <> 'refusee'")
+    visibles = "" if proprio else " WHERE moderation <> 'refusee'"
     ou = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
     if tri == "recent":
@@ -985,17 +1046,21 @@ def wiki_recherche(
         total = lignes[0]["total_filtre"] if lignes else (
             cx.execute(f"SELECT COUNT(*) AS n FROM wiki{ou}", params).fetchone()["n"] if page > 1 else 0
         )
-        total_catalogue = cx.execute("SELECT COUNT(*) AS n FROM wiki").fetchone()["n"]
+        total_catalogue = cx.execute(f"SELECT COUNT(*) AS n FROM wiki{visibles}").fetchone()["n"]
         suggestions = []
         if total == 0 and q:
             suggestions = [r["nom"] for r in cx.execute(
                 "SELECT nom, GREATEST(similarity(sm_texte(nom), sm_texte(%s)), "
-                "word_similarity(sm_texte(%s), sm_texte(nom))) AS score FROM wiki "
-                "WHERE nom <> '' ORDER BY score DESC, lower(nom) LIMIT 3",
-                (q, q),
+                "word_similarity(sm_texte(%s), sm_texte(nom)), word_similarity(sm_texte(nom), sm_texte(%s))) AS score FROM wiki "
+                "WHERE nom <> ''" + ("" if proprio else " AND moderation <> 'refusee'")
+                + " ORDER BY score DESC, lower(nom) LIMIT 3",
+                (q, q, q),
             ).fetchall() if r["score"] >= 0.3]
         nb_signalees = cx.execute(
             "SELECT COUNT(DISTINCT fiche) AS n FROM wiki_signalements WHERE traite IS NULL"
+        ).fetchone()["n"] if proprio else 0
+        nb_a_verifier = cx.execute(
+            "SELECT COUNT(*) AS n FROM wiki WHERE moderation = 'en_attente'"
         ).fetchone()["n"] if proprio else 0
     return {
         "peut_editer": proprio,
@@ -1006,6 +1071,7 @@ def wiki_recherche(
         "pages": max(1, -(-total // par_page)),
         "suggestions": suggestions,
         "signalees": nb_signalees,
+        "a_verifier": nb_a_verifier,
     }
 
 
@@ -1013,10 +1079,11 @@ def wiki_recherche(
 def wiki_liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     """Toutes les fiches, sans les photos (servies à part, pour garder la réponse légère)."""
     with cx.transaction():
+        proprio = _est_proprietaire(u["email"])
+        visibles = "" if proprio else " WHERE moderation <> 'refusee'"
         lignes = cx.execute(
-            f"SELECT {COLONNES_FICHE} FROM wiki ORDER BY (nom = ''), lower(nom), ean"
+            f"SELECT {COLONNES_FICHE} FROM wiki{visibles} ORDER BY (nom = ''), lower(nom), ean"
         ).fetchall()
-    proprio = _est_proprietaire(u["email"])
     return {"peut_editer": proprio, "fiches": [_fiche(r, proprio) for r in lignes]}
 
 
@@ -1224,6 +1291,68 @@ def wiki_signaler(
             "INSERT INTO wiki_signalements (fiche, motif, cree) VALUES (%s, %s, %s)", (ean, sig.motif, maintenant()),
         )
     return {"ok": True}
+
+
+def _doublons_probables(cx: psycopg.Connection, nom: str) -> list[str]:
+    """Noms de fiches très proches du nom proposé (doublon probable), hors fiches refusées."""
+    # word_similarity : un nom existant contenu, à une faute près, dans le nom proposé (« Monster Mango Loko »
+    # contient presque « Mango Loco »), sans pénaliser les mots en plus comme « Monster ».
+    return [r["nom"] for r in cx.execute(
+        "SELECT nom, GREATEST(similarity(sm_texte(nom), sm_texte(%s)), word_similarity(sm_texte(nom), sm_texte(%s))) AS score "
+        "FROM wiki WHERE moderation <> 'refusee' AND nom <> '' ORDER BY score DESC, lower(nom) LIMIT 3",
+        (nom, nom),
+    ).fetchall() if r["score"] >= 0.6]
+
+
+@router.post("/wiki/propositions", status_code=201)
+def wiki_proposer(
+    prop: Proposition, request: Request, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Un membre propose une canette au catalogue : elle est créée « à vérifier » (acceptée si c'est le propriétaire).
+
+    Sans code-barres, le code est tiré du nom (convert.py). Un code déjà connu est refusé ; un nom très proche
+    d'une fiche existante demande une confirmation (confirmer_doublon) pour éviter les doublons.
+    """
+    _limiter_ip(cx, request, "proposition", 30, int(time.time()))
+    proprio = _est_proprietaire(u["email"])
+    if prop.ean.strip():
+        ean = _normaliser_code(prop.ean.strip())
+        if ean is None or ean.startswith("LOCAL-"):
+            raise HTTPException(422, "code-barres invalide")
+    else:
+        ean = convert.nom_en_13_chiffres(prop.nom)
+    with cx.transaction():
+        if _code_pris(cx, ean) or cx.execute("SELECT 1 FROM wiki_exclus WHERE ean = %s", (ean,)).fetchone():
+            raise HTTPException(409, "cette canette existe déjà dans le Wiki" if prop.ean.strip()
+                                else "une canette du même nom existe déjà dans le Wiki")
+        if not prop.confirmer_doublon:
+            proches = _doublons_probables(cx, prop.nom)
+            if proches:
+                raise HTTPException(409, "doublon probable : " + " ; ".join(proches))
+        r = cx.execute(
+            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, region, photo, source, moderation, cree, maj)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, 'proposition', %s, %s, %s)
+               RETURNING """ + COLONNES_FICHE,
+            (ean, prop.nom, prop.volume.strip(), prop.categorie.strip(), prop.flavor.strip(), prop.region.strip(),
+             prop.photo, "acceptee" if proprio else "en_attente", maintenant(), maintenant()),
+        ).fetchone()
+    return _fiche(r, proprio)
+
+
+@router.post("/wiki/{ean}/moderation")
+def wiki_moderer(ean: str, d: Decision, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Le propriétaire accepte ou refuse une fiche ; chaque décision est gardée dans l'historique."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    with cx.transaction():
+        if cx.execute("UPDATE wiki SET moderation = %s, maj = %s WHERE ean = %s", (d.decision, maintenant(), ean)).rowcount == 0:
+            raise HTTPException(404, "fiche inconnue")
+        cx.execute(
+            "INSERT INTO wiki_moderations (fiche, decision, motif, cree) VALUES (%s, %s, %s, %s)",
+            (ean, d.decision, " ".join(d.motif.split()), maintenant()),
+        )
+        r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (ean,)).fetchone()
+    return _fiche(r, proprietaire=True)
 
 
 @router.post("/wiki/signalements/{ident}/traite")

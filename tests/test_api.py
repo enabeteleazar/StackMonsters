@@ -758,7 +758,7 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
     assert (f["categorie"], f["flavor"], f["status"], f["region"]) == ("", "", "", "")
     assert set(f) == {
         "ean", "nom", "volume", "categorie", "flavor", "status", "region",
-        "description", "photo", "codes",
+        "description", "photo", "codes", "moderation",
     }
     assert f["photo"]  # la fiche n'avait pas de photo : celle envoyée devient la sienne
     assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 200
@@ -998,6 +998,7 @@ def test_wiki_amorce_depuis_les_collections_existantes_une_seule_fois(env):
     c.put("/api/cans", json=canette("LOCAL-AMORCE", nom="Perso"), headers=ha)
     # Simule une base d'avant le Wiki : la table n'existe pas encore, les collections si.
     with ix.connecter() as cx:
+        cx.execute("DROP TABLE wiki_moderations")
         cx.execute("DROP TABLE wiki_signalements")
         cx.execute("DROP TABLE wiki_codes")
         cx.execute("DROP TABLE wiki")
@@ -1294,3 +1295,78 @@ def test_recherche_des_fiches_signalees_reservee_au_proprietaire(env, monkeypatc
     assert r["signalees"] == 1 and [f["ean"] for f in r["fiches"]] == ["2000000000015"]
     r = _rechercher(c, hb, signalees="true")  # ignoré pour un autre compte
     assert r["signalees"] == 0 and len(r["fiches"]) >= 2
+
+
+
+def test_une_fiche_creee_par_un_membre_est_a_verifier(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango"), headers=hb)
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra"), headers=ha)
+    assert fiche(c, hb, "2000000000015")["moderation"] == "en_attente"
+    assert fiche(c, hb, "2000000000022")["moderation"] == "acceptee"  # créée par le propriétaire
+    # Un autre ajout de la même canette ne change pas le statut.
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango"), headers=ha)
+    assert fiche(c, hb, "2000000000015")["moderation"] == "en_attente"
+
+
+def test_proposer_une_canette_sans_l_ajouter_a_sa_collection(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    corps = {"ean": "2000000000015", "nom": "mango loco", "region": "Europe", "flavor": "Mangue", "volume": "500 ml",
+             "photo": PNG_1PX}
+    assert c.post("/api/wiki/propositions", json=corps).status_code == 401
+    r = c.post("/api/wiki/propositions", json=corps, headers=hb)
+    assert r.status_code == 201
+    f = r.json()
+    assert (f["nom"], f["moderation"], f["region"]) == ("Mango Loco", "en_attente", "Europe") and f["photo"]
+    assert c.get("/api/cans", headers=hb).json() == []  # proposer n'ajoute pas à la collection
+
+    assert c.post("/api/wiki/propositions", json=corps, headers=hb).status_code == 409  # même code-barres
+    assert c.post("/api/wiki/propositions", json={"ean": "123", "nom": "X"}, headers=hb).status_code == 422
+    # Nom très proche d'une fiche existante : confirmation demandée, puis acceptée.
+    proche = {"nom": "Mango Loko"}
+    r = c.post("/api/wiki/propositions", json=proche, headers=hb)
+    assert r.status_code == 409 and "Mango Loco" in r.json()["detail"]
+    code = ix.convert.nom_en_13_chiffres("Mango Loko")
+    try:
+        r = c.post("/api/wiki/propositions", json={**proche, "confirmer_doublon": True}, headers=hb)
+        assert r.status_code == 201 and r.json()["ean"] == code  # sans code-barres : code tiré du nom
+        # Proposée par le propriétaire : acceptée d'emblée.
+        r = c.post("/api/wiki/propositions", json={"ean": "2000000000022", "nom": "Pipeline"}, headers=ha)
+        assert r.json()["moderation"] == "acceptee"
+    finally:
+        with ix.base() as cx:
+            cx.execute("DELETE FROM wiki WHERE ean = %s", (code,))
+
+
+def test_moderation_accepter_refuser_et_historique(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango"), headers=hb)
+    url = "/api/wiki/2000000000015/moderation"
+    assert c.post(url, json={"decision": "acceptee"}, headers=hb).status_code == 403
+    assert c.post("/api/wiki/TEST-INCONNU/moderation", json={"decision": "acceptee"}, headers=ha).status_code == 404
+    assert c.post(url, json={"decision": "peut-etre"}, headers=ha).status_code == 422
+
+    r = c.post(url, json={"decision": "refusee", "motif": "  Doublon de   Mango Loco "}, headers=ha).json()
+    assert r["moderation"] == "refusee" and r["moderations"][-1]["motif"] == "Doublon de Mango Loco"
+    # Refusée : absente du catalogue des membres (liste, recherche), toujours visible du propriétaire…
+    assert fiche(c, hb, "2000000000015") is None
+    assert all(f["ean"] != "2000000000015" for f in _rechercher(c, hb, q="mango")["fiches"])
+    assert fiche(c, ha, "2000000000015")["moderation"] == "refusee"
+    # … et la collection du membre la garde.
+    assert c.get("/api/cans/2000000000015", headers=hb).json()["nom"] == "Mango"
+
+    r = c.post(url, json={"decision": "acceptee"}, headers=ha).json()
+    assert r["moderation"] == "acceptee" and [m["decision"] for m in r["moderations"]] == ["refusee", "acceptee"]
+    assert "moderations" not in fiche(c, hb, "2000000000015")  # historique réservé au propriétaire
+
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra"), headers=hb)
+    r = _rechercher(c, ha, a_verifier="true", par_page=60)
+    eans = [f["ean"] for f in r["fiches"]]
+    assert "2000000000022" in eans and "2000000000015" not in eans and r["a_verifier"] == len(eans)
+    assert all(f["moderation"] == "en_attente" for f in r["fiches"])

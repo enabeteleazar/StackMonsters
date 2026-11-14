@@ -56,6 +56,10 @@ export type FicheWiki = {
   codes: string[]
   /** Propriétaire seulement : d'où vient la fiche (sans lien avec un compte) et sa dernière correction. */
   provenance?: { source: string; cree: string; corrigee: string | null }
+  /** Modération : fiche créée par un membre « à vérifier », puis acceptée ou refusée par le propriétaire. */
+  moderation?: 'en_attente' | 'acceptee' | 'refusee'
+  /** Propriétaire seulement : historique des décisions de modération. */
+  moderations?: { decision: 'acceptee' | 'refusee'; motif: string; cree: string }[]
   /** Propriétaire seulement : erreurs signalées par les comptes, pas encore traitées. */
   signalements?: { id: number; motif: string; cree: string }[]
 }
@@ -76,6 +80,20 @@ export type ResultatRechercheWiki = {
   suggestions: string[]
   /** Propriétaire : nombre de fiches avec un signalement ouvert. */
   signalees: number
+  /** Propriétaire : nombre de fiches à vérifier. */
+  a_verifier: number
+}
+
+/** Canette proposée au catalogue (sans l'ajouter à sa collection). */
+export type PropositionWiki = {
+  ean: string
+  nom: string
+  volume: string
+  categorie: string
+  flavor: string
+  region: string
+  photo: string | null
+  confirmer_doublon?: boolean
 }
 
 export type TriWiki = 'pertinence' | 'nom' | 'recent'

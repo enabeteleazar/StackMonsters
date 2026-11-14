@@ -83,6 +83,11 @@ export default function Confidentialite() {
                 transmis au responsable du Wiki, lui aussi sans lien avec ton compte, et conservé jusqu’à son
                 traitement.
               </p>
+              <p>
+                Une fiche créée par un membre (ajout ou proposition) reste « à vérifier » jusqu’à la décision du
+                responsable du Wiki, qui l’accepte ou la refuse. Ses décisions (date, motif) sont conservées avec la fiche ;
+                l’auteur de la proposition n’est pas enregistré.
+              </p>
             </Bloc>
 
             <Bloc titre="Combien de temps ?">

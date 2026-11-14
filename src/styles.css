@@ -425,6 +425,26 @@ html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.col
 .verdict .fiche-signaler{margin-top:8px}
 .verdict .fiche-alerte{color:#ff8a8a}
 
+/* ============ propositions et modération du Wiki ============ */
+.wiki-proposer{position:relative;width:100%;max-width:none;margin:0 0 14px}
+.wiki-a-verifier{border-color:rgba(255,159,26,.6);color:#ffb347}
+.wiki-a-verifier.actif{background:rgba(255,159,26,.12)}
+.badge-moderation{position:absolute;left:6px;bottom:6px;z-index:2;padding:3px 7px;border-radius:999px;background:#ff9f1a;
+  color:#0A0C07;font:700 9px var(--display);text-transform:uppercase;letter-spacing:.06em}
+.badge-moderation.refusee{background:#ff5a5a}
+.verdict .fiche-moderation{display:flex;align-items:flex-start;gap:10px;margin:0 0 14px;padding:12px 14px;border-radius:14px;
+  font-size:14px;line-height:1.45;border:1px solid rgba(255,159,26,.5);background:rgba(255,159,26,.08);color:#ffcf8a}
+.verdict .fiche-moderation svg{flex:0 0 auto;margin-top:1px}
+.verdict .fiche-moderation.refusee{border-color:rgba(255,90,90,.5);background:rgba(255,90,90,.08);color:#ff9a9a}
+.verdict .fiche-moderer{display:grid;gap:10px;margin:0 0 16px}
+.verdict .fiche-historique{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:4px;font-size:13px;color:var(--alu)}
+.verdict .fiche-historique small{margin-right:6px}
+.verdict .proposition-proches{margin:6px 0 0;padding-left:18px;display:grid;gap:4px;font-size:14px}
+.verdict .proposition-proches small{color:var(--alu)}
+.verdict .proposition-doublon{margin-top:12px}
+.verdict .proposition-envoyee{display:grid;justify-items:center;gap:14px;margin-top:24px;text-align:center;font-size:16px}
+.verdict .proposition-envoyee svg{color:var(--acide);filter:drop-shadow(0 0 10px rgba(158,232,24,.6))}
+
 /* ============ connexion (même univers que l'accueil public) ============ */
 /* Écran fixe : en-tête en haut ; seule la zone du formulaire défile au besoin (petit écran, clavier ouvert). */
 .connexion{height:100vh;height:100dvh;position:relative;overflow:hidden;display:flex;flex-direction:column;

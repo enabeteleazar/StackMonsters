@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Flag, ImageOff, ImagePlus, Trash2, X } from 'lucide-react'
+import { Ban, CheckCircle2, Flag, ImageOff, ImagePlus, ShieldQuestion, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
 import { reduirePhoto } from '../photo'
@@ -61,6 +61,22 @@ export default function FicheWiki({
           ? 'Trop de signalements pour le moment, réessaie plus tard.'
           : 'Signalement non envoyé, réessaie.',
       })
+    } finally {
+      setSignalementOccupe(false)
+    }
+  }
+
+  // Modération (propriétaire) : accepter ou refuser la fiche, avec un motif facultatif.
+  const [motifRefus, setMotifRefus] = useState('')
+  const [refusOuvert, setRefusOuvert] = useState(false)
+  const moderer = async (decision: 'acceptee' | 'refusee') => {
+    setSignalementOccupe(true)
+    try {
+      surEnregistree(fiche.ean, await api.wikiModerer(fiche.ean, decision, decision === 'refusee' ? motifRefus.trim() : ''))
+      setRefusOuvert(false)
+      setMotifRefus('')
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
     } finally {
       setSignalementOccupe(false)
     }
@@ -200,6 +216,66 @@ export default function FicheWiki({
                 <b>{fiche.status || '—'}</b>
               </div>
             </div>
+
+            {fiche.moderation && fiche.moderation !== 'acceptee' && (
+              <div className={`fiche-moderation ${fiche.moderation}`} role="status">
+                {fiche.moderation === 'en_attente' ? <ShieldQuestion size={18} /> : <Ban size={18} />}
+                <span>
+                  {fiche.moderation === 'en_attente'
+                    ? 'Fiche à vérifier : ajoutée par un membre, pas encore validée.'
+                    : 'Fiche refusée : elle n’apparaît plus dans le Wiki des membres.'}
+                </span>
+              </div>
+            )}
+
+            {peutEditer && (
+              <div className="fiche-moderer" role="region" aria-label="Modération">
+                {fiche.moderation !== 'acceptee' && (
+                  <button
+                    className="btn btn-primaire actions-principal"
+                    disabled={signalementOccupe}
+                    onClick={() => void moderer('acceptee')}
+                  >
+                    <CheckCircle2 size={18} /> Accepter la fiche
+                  </button>
+                )}
+                {fiche.moderation !== 'refusee' &&
+                  (refusOuvert ? (
+                    <div className="champs">
+                      <div>
+                        <label htmlFor="w-refus">Motif du refus (facultatif)</label>
+                        <textarea
+                          id="w-refus"
+                          maxLength={500}
+                          placeholder="Ex. : doublon de Mango Loco"
+                          value={motifRefus}
+                          onChange={(e) => setMotifRefus(e.target.value)}
+                        />
+                      </div>
+                      <button className="btn btn-fantome btn-danger" disabled={signalementOccupe} onClick={() => void moderer('refusee')}>
+                        <Ban size={17} /> Confirmer le refus
+                      </button>
+                      <button className="btn btn-fantome" onClick={() => setRefusOuvert(false)}>
+                        Annuler
+                      </button>
+                    </div>
+                  ) : (
+                    <button className="btn btn-fantome btn-danger" onClick={() => setRefusOuvert(true)}>
+                      <Ban size={17} /> Refuser la fiche
+                    </button>
+                  ))}
+                {!!fiche.moderations?.length && (
+                  <ul className="fiche-historique" aria-label="Historique de modération">
+                    {fiche.moderations.map((m, i) => (
+                      <li key={i}>
+                        <small>{dateCourte(m.cree)}</small> {m.decision === 'acceptee' ? 'Acceptée' : 'Refusée'}
+                        {m.motif && ` — ${m.motif}`}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             {peutEditer && !!fiche.signalements?.length && (
               <div className="fiche-signalements" role="region" aria-label="Erreurs signalées">
