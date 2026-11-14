@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Cpu, Database, Lock, MonitorSmartphone, Radio, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { BarChart3, Cpu, Database, Eraser, Lock, MonitorSmartphone, Radio, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 import { CONTACT } from '../config'
 import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
@@ -11,9 +11,14 @@ type Props = {
   joignable: boolean
   surVerrouiller: () => void
   surStats: () => void
+  /** Nombre de canettes de la collection (pour la confirmation du vidage). */
+  nbCanettes: number
+  surCollectionVidee: (retirees: number) => void
 }
 
-export default function Settings({ emailUtilisateur, joignable, surVerrouiller, surStats }: Props) {
+export default function Settings({
+  emailUtilisateur, joignable, surVerrouiller, surStats, nbCanettes, surCollectionVidee,
+}: Props) {
   const [sante, setSante] = useState<{ status: string; version: string; references: number } | null>(null)
 
   // Seul le propriétaire (OWNER_EMAIL) obtient une réponse : sinon l'API répond 403 et le bouton reste caché.
@@ -21,6 +26,9 @@ export default function Settings({ emailUtilisateur, joignable, surVerrouiller, 
   // (sinon il s'affichait puis disparaissait pour le propriétaire, dont le compte ne peut pas être supprimé).
   const [proprietaire, setProprietaire] = useState<boolean | null>(null)
   const [erreurCompte, setErreurCompte] = useState<string | null>(null)
+  // Vidage de la collection : panneau de confirmation, puis appel à l'API.
+  const [vidage, setVidage] = useState(false)
+  const [vidageEnCours, setVidageEnCours] = useState(false)
   // Panneau de confirmation de la suppression : conséquences, puis adresse du compte à saisir.
   const [suppression, setSuppression] = useState(false)
   const [saisieSuppression, setSaisieSuppression] = useState('')
@@ -58,6 +66,21 @@ export default function Settings({ emailUtilisateur, joignable, surVerrouiller, 
     setSuppression(false)
     setSaisieSuppression('')
     setErreurCompte(null)
+  }
+
+  const viderCollection = async () => {
+    setErreurCompte(null)
+    setVidageEnCours(true)
+    try {
+      const { retirees } = await api.viderCollection()
+      setVidage(false)
+      surCollectionVidee(retirees)
+    } catch (e) {
+      if (e instanceof NonAutorise) surVerrouiller()
+      else setErreurCompte('Vidage impossible, réessaie avec le réseau. Ta collection n’a pas été modifiée.')
+    } finally {
+      setVidageEnCours(false)
+    }
   }
 
   const deconnecterPartout = async () => {
@@ -172,13 +195,58 @@ export default function Settings({ emailUtilisateur, joignable, surVerrouiller, 
               {mesure === 'oui' ? 'Refuser la mesure d’audience' : 'Accepter la mesure d’audience'}
             </button>
           )}
+          {!vidage && (
+            <button
+              className="accueil-co-secondaire reglages-danger"
+              disabled={nbCanettes === 0}
+              onClick={() => {
+                setSuppression(false)
+                setVidage(true)
+              }}
+            >
+              <Eraser size={18} />
+              {nbCanettes === 0 ? 'Collection déjà vide' : 'Vider ma collection'}
+            </button>
+          )}
           {proprietaire === false && !suppression && (
-            <button className="accueil-co-secondaire reglages-danger" onClick={() => setSuppression(true)}>
+            <button
+              className="accueil-co-secondaire reglages-danger"
+              onClick={() => {
+                setVidage(false)
+                setSuppression(true)
+              }}
+            >
               <Trash2 size={18} />
               Supprimer mon compte
             </button>
           )}
         </div>
+        {vidage && (
+          <div className="reglages-suppression" role="region" aria-labelledby="titre-vidage">
+            <h3 id="titre-vidage">
+              <Eraser size={18} /> Vider ta collection ?
+            </h3>
+            <p>
+              {nbCanettes > 1 ? `Les ${nbCanettes} canettes` : 'La canette'} de ta collection {nbCanettes > 1 ? 'seront retirées' : 'sera retirée'}{' '}
+              définitivement, avec leurs quantités, états, notes et photos. Impossible de revenir en arrière.
+            </p>
+            <p>Ton compte reste ouvert, et les fiches du Wiki ne changent pas : tu pourras rescanner tes canettes.</p>
+            <div className="reglages-suppression-actions">
+              <button type="button" className="accueil-co-secondaire" onClick={() => setVidage(false)}>
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="accueil-co-secondaire reglages-danger"
+                disabled={vidageEnCours}
+                onClick={() => void viderCollection()}
+              >
+                <Eraser size={18} />
+                {vidageEnCours ? 'Vidage…' : 'Vider'}
+              </button>
+            </div>
+          </div>
+        )}
         {proprietaire === false && suppression && (
           <form
             className="reglages-suppression"

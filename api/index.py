@@ -396,6 +396,11 @@ class Verification(Demande):
     code: str = Field(min_length=6, max_length=6)
 
 
+class Vidage(BaseModel):
+    """Confirmation explicite du vidage de la collection."""
+    confirmation: Literal["vider"]
+
+
 class Suppression(BaseModel):
     """Confirmation explicite : l'adresse du compte, saisie par l'utilisateur."""
     confirmation: str = Field(max_length=254)
@@ -1036,6 +1041,14 @@ def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur), cx: psycopg.Conn
     if r is None:
         raise HTTPException(404, "canette inconnue")
     return r
+
+
+@router.delete("/cans")
+def vider_collection(v: Vidage, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Retire toutes les canettes de la collection (quantités, états, notes, photos). Le compte et le Wiki restent."""
+    with cx.transaction():
+        n = cx.execute("DELETE FROM collection WHERE user_id = %s", (u["id"],)).rowcount
+    return {"retirees": n}
 
 
 @router.delete("/cans/{ean}", status_code=204)

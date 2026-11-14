@@ -268,6 +268,12 @@ export default function App() {
             joignable={joignable}
             surVerrouiller={verrouiller}
             surStats={() => setVue('stats')}
+            nbCanettes={canettes.length}
+            surCollectionVidee={(retirees) => {
+              viderPhotos()
+              void recharger()
+              toast(retirees > 1 ? `Collection vidée : ${retirees} canettes retirées` : 'Collection vidée')
+            }}
           />
         )}
         {vue === 'stats' && <Stats surRetour={() => setVue('reglages')} />}

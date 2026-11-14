@@ -782,6 +782,26 @@ def test_migration_12_garde_l_echeance_des_sessions_existantes(env):
     assert c.get("/api/auth/moi", headers=h).status_code == 200
 
 
+def test_vider_sa_collection_seulement(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango", photo=PNG_1PX, notes="privé"), headers=ha)
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra"), headers=ha)
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango"), headers=hb)
+    vider = lambda h, corps: c.request("DELETE", "/api/cans", json=corps, headers=h)
+    assert vider({}, {"confirmation": "vider"}).status_code == 401
+    assert vider(ha, {}).status_code == 422  # confirmation obligatoire
+    assert vider(ha, {"confirmation": "oui"}).status_code == 422
+    assert len(c.get("/api/cans", headers=ha).json()) == 2
+    r = vider(ha, {"confirmation": "vider"})
+    assert r.status_code == 200 and r.json() == {"retirees": 2}
+    assert c.get("/api/cans", headers=ha).json() == []
+    assert c.get("/api/auth/moi", headers=ha).status_code == 200  # le compte reste
+    assert [x["nom"] for x in c.get("/api/cans", headers=hb).json()] == ["Mango"]  # l'autre collection aussi
+    assert fiche(c, hb, "2000000000022")["nom"] == "Ultra"  # le Wiki ne change pas
+    assert vider(ha, {"confirmation": "vider"}).json() == {"retirees": 0}
+
+
 def supprimer(c, h, confirmation):
     return c.request("DELETE", "/api/auth/compte", json={"confirmation": confirmation}, headers=h)
 

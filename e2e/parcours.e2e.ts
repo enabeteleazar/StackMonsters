@@ -150,6 +150,29 @@ test('une fiche encore dans une collection se masque du Wiki au lieu d’être s
   await expect(membre.getByText(nom)).toBeVisible() // gardée dans sa collection
 })
 
+test('vider sa collection garde le compte et le Wiki', async ({ page }) => {
+  const nom = `A vider ${unique()}`
+  await connecter(page, email())
+  await ajouterParCode(page, ean13(), nom)
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Vider ma collection' }).click()
+  await expect(page.getByText('La canette de ta collection sera retirée')).toBeVisible()
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  await nav(page, 'Collection').click()
+  await expect(page.getByText(nom)).toBeVisible() // annulé : rien n'a bougé
+
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Vider ma collection' }).click()
+  await page.getByRole('button', { name: 'Vider', exact: true }).click()
+  await expect(page.getByText('Collection vidée')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Collection déjà vide' })).toBeDisabled()
+  await nav(page, 'Collection').click()
+  await expect(page.getByText(nom)).toHaveCount(0)
+  await nav(page, 'Wiki').click()
+  await page.getByLabel('Chercher dans le Wiki').fill(nom)
+  await expect(page.locator('.wiki-grille').getByText(nom)).toBeVisible() // la fiche du Wiki reste
+})
+
 test('la suppression du compte exige l’adresse et efface la collection', async ({ page, browser }) => {
   const adresse = email()
   const nom = `À effacer ${unique()}`

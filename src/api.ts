@@ -100,6 +100,9 @@ export const api = {
   ajuster: (ean: string, delta: number) =>
     requete<Canette>(`/cans/${encodeURIComponent(ean)}/nb`, { method: 'PATCH', body: JSON.stringify({ delta }) }),
   lire: (ean: string) => requete<Canette>(`/cans/${encodeURIComponent(ean)}`),
+  /** Retire toutes les canettes de la collection ; renvoie leur nombre. */
+  viderCollection: () =>
+    requete<{ retirees: number }>('/cans', { method: 'DELETE', body: JSON.stringify({ confirmation: 'vider' }) }),
   supprimer: (ean: string) =>
     requete<void>(`/cans/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
   demande: (email: string) =>
