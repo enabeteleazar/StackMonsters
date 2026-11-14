@@ -4,6 +4,7 @@ import { api, jeton, NonAutorise, renouvelerJeton } from './api'
 import AccueilPublic from './components/AccueilPublic'
 import Acces from './components/Acces'
 import HorsLigne from './components/HorsLigne'
+import InvitationInstallation from './components/InvitationInstallation'
 import Camera from './components/Camera'
 import Collection from './components/Collection'
 import Confidentialite from './components/Confidentialite'
@@ -14,6 +15,7 @@ import Settings from './components/Settings'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
 import Wiki from './components/Wiki'
+import { inviterAInstaller } from './installation'
 import { suivre } from './suivi'
 import type { Canette } from './types'
 
@@ -35,6 +37,8 @@ export default function App() {
     jeton.lire() ? 'verification' : 'accueil',
   )
   const [refuse, setRefuse] = useState(false)
+  // Invitation à installer l'appli : une seule fois par appareil, juste après la première connexion.
+  const [invitation, setInvitation] = useState(false)
   const [serviceIndisponible, setServiceIndisponible] = useState(false)
   const [confidentialite, setConfidentialite] = useState(() => window.location.hash === '#confidentialite')
 
@@ -79,6 +83,7 @@ export default function App() {
     setRefuse(false)
     setServiceIndisponible(false)
     setEtatAcces('prive')
+    setInvitation(inviterAInstaller())
     void recharger()
   }, [recharger])
 
@@ -348,6 +353,7 @@ export default function App() {
       )}
 
       {message && <div className="toast">{message}</div>}
+      {invitation && <InvitationInstallation surFermeture={() => setInvitation(false)} />}
     </>
   )
 }

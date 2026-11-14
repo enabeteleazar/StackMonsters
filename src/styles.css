@@ -545,6 +545,28 @@ nav.nav-bas button.nav-scan[aria-current="true"] svg{color:#0A0C07}
   background:var(--graphite);border:1px solid var(--ligne);border-radius:var(--r-md);padding:14px;font-size:14px}
 .consentement div{display:flex;gap:10px;margin-top:10px}
 .consentement .btn{flex:1}
+/* Invitation à installer l'appli (après la première connexion), dans l'univers de l'accueil public. */
+.invitation-fond{position:fixed;inset:0;z-index:90;display:grid;place-items:end center;padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+  background:rgba(0,0,0,.72);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+.invitation{position:relative;width:100%;max-width:440px;max-height:100%;overflow:auto;padding:26px 20px 18px;text-align:center;
+  border:1.5px solid rgba(158,232,24,.55);border-radius:22px;color:var(--blanc);
+  background:radial-gradient(80% 60% at 50% 0%,rgba(158,232,24,.18),transparent 70%),#050603;
+  box-shadow:0 0 40px -8px rgba(158,232,24,.45);animation:invitation-entree .25s ease-out}
+@keyframes invitation-entree{from{transform:translateY(24px);opacity:0}}
+@media (prefers-reduced-motion:reduce){.invitation{animation:none}}
+.invitation-fermer{position:absolute;top:10px;right:10px;width:44px;height:44px;display:grid;place-items:center;
+  border:0;border-radius:50%;background:none;color:var(--alu);cursor:pointer}
+.invitation-logo{display:block;margin:0 auto 12px;width:72px;height:72px;border-radius:50%;box-shadow:0 0 24px rgba(158,232,24,.45)}
+.invitation h2{margin:0;font:600 italic 24px/1.25 "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.invitation h2 b{color:var(--acide);font-weight:800}
+.invitation-intro{margin:10px 0 0;color:var(--alu);font-size:14.5px;line-height:1.45}
+.invitation-etapes{list-style:none;margin:18px 0 0;padding:0;display:grid;gap:12px;text-align:left}
+.invitation-etapes li{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:14px;
+  background:rgba(255,255,255,.04);border:1px solid rgba(158,232,24,.18);font-size:14.5px;line-height:1.35}
+.invitation-etapes svg{flex:0 0 auto;color:var(--acide);filter:drop-shadow(0 0 6px rgba(158,232,24,.45))}
+.invitation-etapes b{color:var(--blanc)}
+.invitation-actions{display:grid;gap:10px;margin-top:18px}
+.invitation-actions .btn{width:100%;justify-content:center;gap:8px;min-height:48px}
 /* Bannière posée sur la photo d'une fiche du Wiki validée « Nouveauté » par le propriétaire */
 .bandeau-nouveaute{position:absolute;top:10px;left:10px;z-index:2;padding:4px 9px;border-radius:999px;
   background:var(--acide);color:var(--abysse);font-family:var(--display);font-size:11px;font-weight:700;

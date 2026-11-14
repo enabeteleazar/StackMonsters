@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
+import { devices, expect, test, type Browser, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 
 const JOURNAL_API = 'e2e-results/api.log' // écrit par le serveur d'API (playwright.config.ts)
@@ -31,6 +31,9 @@ async function connecter(page: Page, adresse: string) {
   await page.fill('#f-code', codes(adresse).at(-1)!)
   await page.getByRole('button', { name: 'Se connecter' }).click()
   await expect(nav(page, 'Réglages')).toBeVisible()
+  // Invitation à installer l'appli (première connexion sur cet appareil) : refermée pour la suite du parcours.
+  const invitation = page.getByRole('dialog', { name: /Installe StackMonsters/ })
+  if (await invitation.isVisible()) await invitation.getByRole('button', { name: /Compris|Plus tard/ }).click()
 }
 
 const nav = (page: Page, nom: string) => page.locator('nav.nav-bas').getByRole('button', { name: nom })
@@ -203,6 +206,41 @@ test('déconnexion : cet appareil seulement, puis tous les appareils', async ({ 
   await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
   await autre.reload()
   await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
+})
+
+test('l’invitation à installer l’appli s’affiche une seule fois, après la première connexion', async ({ page, browser }) => {
+  const adresse = email()
+  const avant = codes(adresse).length
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Entrez' }).click()
+  await page.fill('#f-email', adresse)
+  await page.getByRole('button', { name: 'Recevoir le code' }).click()
+  await expect.poll(() => codes(adresse).length).toBeGreaterThan(avant)
+  await page.fill('#f-code', codes(adresse).at(-1)!)
+  await page.getByRole('button', { name: 'Se connecter' }).click()
+  const invitation = page.getByRole('dialog', { name: /Installe StackMonsters/ })
+  await expect(invitation).toBeVisible()
+  await expect(invitation.getByText('Installer l’application')).toBeVisible() // Android : menu du navigateur
+  await invitation.getByRole('button', { name: 'Compris' }).click()
+  await expect(invitation).toHaveCount(0)
+
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Se déconnecter', exact: true }).click()
+  await connecter(page, adresse) // même appareil : plus d'invitation
+  await expect(invitation).toHaveCount(0)
+
+  // iPhone : les gestes de Safari (Partager → Sur l'écran d'accueil).
+  const iphone = await (await browser.newContext({ ...devices['iPhone 13'], baseURL: test.info().project.use.baseURL })).newPage()
+  const avantIphone = codes(adresse).length
+  await iphone.goto('/')
+  await iphone.getByRole('button', { name: 'Entrez' }).click()
+  await iphone.fill('#f-email', adresse)
+  await iphone.getByRole('button', { name: 'Recevoir le code' }).click()
+  await expect.poll(() => codes(adresse).length).toBeGreaterThan(avantIphone)
+  await iphone.fill('#f-code', codes(adresse).at(-1)!)
+  await iphone.getByRole('button', { name: 'Se connecter' }).click()
+  const surIphone = iphone.getByRole('dialog', { name: /Installe StackMonsters/ })
+  await expect(surIphone.getByText('Sur l’écran d’accueil')).toBeVisible()
 })
 
 test('la politique de confidentialité est accessible sans compte', async ({ page }) => {

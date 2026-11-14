@@ -100,6 +100,13 @@ Le Wiki n'est pas touché : ses fiches, photos données, propositions et signale
 compteurs anti-abus (empreintes d'IP, 24 h) et les empreintes d'IP des connexions uniques (13 mois).
 Une nouvelle inscription avec la même adresse repart de zéro.
 
+### Invitation à installer l'appli
+Juste après la première connexion sur un téléphone ou une tablette, une fenêtre invite à installer l'appli
+(`src/installation.ts`, `InvitationInstallation.tsx`), une seule fois par appareil (`localStorage`,
+`sm_invitation_installation`) et jamais si l'appli est déjà ouverte depuis l'écran d'accueil. Android : bouton
+« Installer » quand le navigateur le permet (`beforeinstallprompt`), sinon le chemin par son menu. iOS : aucune
+API, la fenêtre montre le geste Partager → « Sur l'écran d'accueil » → « Ajouter ».
+
 ## Collection
 - Après un scan (ou un code saisi à la main) : canette déjà possédée → fiche miniature et « +1 » ;
   présente dans le Wiki → ajout immédiat, choix rapide de l'état, ajout annulable ; inconnue → invitation à
