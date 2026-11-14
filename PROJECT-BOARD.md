@@ -9,7 +9,6 @@
 Tickets enregistrés, à prioriser ou à planifier.
 
 - [ ] [#1 — Auditer et renouveler les secrets d’environnement](https://github.com/enabeteleazar/StockMonsters/issues/1) · P0 · Sécurité
-- [ ] [#2 — Protection contre les créations de comptes abusives](https://github.com/enabeteleazar/StockMonsters/issues/2) · P0 · Sécurité
 - [ ] [#3 — Suppression complète d’un compte](https://github.com/enabeteleazar/StockMonsters/issues/3) · P1 · Comptes
 - [ ] [#4 — Renforcer la gestion et la révocation des sessions](https://github.com/enabeteleazar/StockMonsters/issues/4) · P1 · Auth
 - [ ] [#5 — Enrichir les fiches canettes](https://github.com/enabeteleazar/StockMonsters/issues/5) · P2 · Catalogue
@@ -36,6 +35,11 @@ _Aucun ticket en validation._
 
 ### Terminé
 
+- [x] [#2 — Protection contre les créations de comptes abusives](https://github.com/enabeteleazar/StockMonsters/issues/2) · P0 · Sécurité
+  — limites par IP sur 24 h, nouveaux comptes limités par IP et globalement (après un code valide, sans
+  révéler l'existence d'un compte), plafond global de demandes de code, seuils réglables et script de
+  déblocage (`scripts/debloquer.py`), documentés dans le README. Ralentit l'inscription en masse sans
+  l'empêcher (pas de CAPTCHA).
 - [x] [#8 — Créer un catalogue mondial partagé](https://github.com/enabeteleazar/StockMonsters/issues/8) · P3 · Catalogue
   — le Wiki est la référence commune, les collections en sont les exemplaires. EAN absents (code « 20… » tiré
   du nom) et multiples (codes secondaires) gérés ; un EAN réutilisé selon les marchés reste lié à une seule fiche

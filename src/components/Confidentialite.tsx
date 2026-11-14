@@ -94,7 +94,7 @@ export default function Confidentialite() {
               <ul>
                 <li>Compte et collection : jusqu’à la suppression du compte.</li>
                 <li>Sessions : 30 jours au plus, ou jusqu’à la déconnexion.</li>
-                <li>Codes de connexion et compteurs de limitation : une heure environ.</li>
+                <li>Codes de connexion : une heure environ ; compteurs de limitation (empreintes, jamais l’IP en clair) : 24 heures au plus.</li>
                 <li>Empreintes d’IP des connexions uniques : 13 mois.</li>
                 <li>Ton choix sur la mesure d’audience : 6 mois s’il s’agit d’un refus, 13 mois pour un accord ; la
                   question t’est ensuite reposée.</li>

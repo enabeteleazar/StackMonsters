@@ -9,12 +9,46 @@ Front React + TypeScript (Vite), API FastAPI (`api/index.py`), Postgres (Neon), 
 - [Issues GitHub](https://github.com/enabeteleazar/StockMonsters/issues)
 
 ## Comptes
-Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais, 5 demandes par heure et
-par adresse). Par adresse IP et par heure : 20 demandes de code et 60 vérifications au maximum (table
-`limites_ip`, empreintes HMAC uniquement). Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
+Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais) ; un compte se crée à la
+première vérification réussie. Les limites anti-abus sont détaillées plus bas. Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
 La page d'accueil publique présente le service ; la collection privée n'est affichée qu'après
 validation de la session par l'API.
 Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
+
+### Limites anti-abus
+Toutes appliquées par l'API (fenêtres fixes, table `limites_ip` : empreintes HMAC, jamais l'IP en clair,
+purgées après 24 h). Au-delà : réponse `429` avec `Retry-After` (secondes avant de pouvoir réessayer).
+
+| Limite | Seuil | Fenêtre |
+| --- | --- | --- |
+| Demandes de code par adresse e-mail | 5 | 1 h |
+| Essais par code | 5 | durée du code (10 min) |
+| Demandes de code par IP | 20 / 60 | 1 h / 24 h |
+| Vérifications de code par IP | 60 | 1 h |
+| Nouveaux comptes par IP | 5 (`SM_COMPTES_MAX_IP_JOUR`) | 24 h |
+| Nouveaux comptes, tous visiteurs | 30 (`SM_COMPTES_MAX_HEURE`) | 1 h |
+| Demandes de code, tous visiteurs | 300 (`SM_DEMANDES_MAX_HEURE`) | 1 h |
+| Signalements / propositions au Wiki par IP | 20 / 30 | 1 h |
+
+Une IPv6 compte pour son /64. Les réponses ne révèlent pas si une adresse a déjà un compte : la demande
+de code répond toujours `{"ok": true}` et ses limites ne dépendent pas de l'existence du compte. Les limites
+de création ne s'appliquent qu'après un code valide (seul le titulaire de l'adresse l'apprend, `429`
+« inscriptions limitées ») et ne bloquent jamais la connexion d'un membre existant ; un refus ne consomme
+pas le code, utilisable depuis une autre IP ou plus tard tant qu'il n'a pas expiré.
+
+**Débloquer** (membre légitime bloqué, pic d'inscriptions attendu) :
+- attendre la fin de la fenêtre (`Retry-After`, message affiché à l'écran) ;
+- ou effacer les compteurs avec `scripts/debloquer.py`, lancé avec la `DATABASE_URL` **et** le
+  `SESSION_SECRET` de l'environnement visé (les clés sont des HMAC). Sans `--appliquer`, simple aperçu :
+  ```bash
+  python scripts/debloquer.py --ip 203.0.113.7           # toutes les limites de cette IP
+  python scripts/debloquer.py --email membre@exemple.fr  # ses demandes et essais de code
+  python scripts/debloquer.py --inscriptions --demandes --appliquer   # limites globales
+  ```
+  Le script n'efface que des compteurs et des codes, jamais un compte ;
+- ou relever un seuil dans Vercel (`SM_COMPTES_MAX_IP_JOUR`, `SM_COMPTES_MAX_HEURE`, `SM_DEMANDES_MAX_HEURE`),
+  puis redéployer.
+  Les autres seuils sont des constantes de `api/index.py`.
 
 ## Collection
 - Après un scan (ou un code saisi à la main) : canette déjà possédée → fiche miniature et « +1 » ;
@@ -135,7 +169,8 @@ Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetabl
 `E2E_DATABASE_URL=… E2E_PYTHON=.venv/bin/python pnpm exec playwright test`.
 
 ## Limites assumées
-- Aucune protection contre l'inscription en masse (un compte se crée à la première vérification).
+- Les limites par IP ralentissent l'inscription en masse sans l'empêcher (réseaux de nombreuses IP) ; pas de
+  CAPTCHA. Plusieurs personnes derrière la même IP (CGNAT mobile, école) partagent les compteurs.
 - Session stockée dans `localStorage`, envoyée en `Bearer` (pas de cookie).
 - Pas de suppression de compte ni de partage de collection.
 - Hors ligne : lecture seule de la dernière liste ; « Se déconnecter » vide ce cache.

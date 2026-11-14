@@ -238,6 +238,126 @@ def test_limite_ip_repart_apres_la_fenetre(env, monkeypatch):
     assert c.post("/api/auth/verification", json=corps, headers=entetes).status_code == 401
 
 
+def _horloge(monkeypatch):
+    horloge = [ix.time.time()]
+    monkeypatch.setattr(ix.time, "time", lambda: horloge[0])
+    return horloge
+
+
+def _creer(c, codes, email, ip):
+    """Demande puis vérification d'un code depuis une IP ; renvoie la réponse de la vérification."""
+    entetes = {"X-Forwarded-For": ip}
+    assert c.post("/api/auth/demande", json={"email": email}, headers=entetes).status_code == 200
+    return c.post("/api/auth/verification", json={"email": email, "code": codes[email]}, headers=entetes)
+
+
+def test_limite_de_demandes_par_ip_sur_24_heures(env, monkeypatch):
+    c, _ = env
+    monkeypatch.setattr(ix, "DEMANDES_MAX_IP_JOUR", 3)
+    horloge = _horloge(monkeypatch)
+    debut, entetes = horloge[0], {"X-Forwarded-For": IP_A}
+    for i in range(3):  # réparties sur plusieurs heures : la limite horaire ne joue pas
+        horloge[0] = debut + i * 2 * ix.FENETRE_DEMANDES
+        assert c.post("/api/auth/demande", json={"email": f"test-j{i}@example.com"}, headers=entetes).status_code == 200
+    horloge[0] = debut + 7 * ix.FENETRE_DEMANDES
+    r = c.post("/api/auth/demande", json={"email": A}, headers=entetes)
+    assert r.status_code == 429 and int(r.headers["retry-after"]) == ix.FENETRE_JOUR - 7 * ix.FENETRE_DEMANDES
+    # La purge horaire ne doit pas effacer le compteur de 24 h.
+    assert c.post("/api/auth/demande", json={"email": A}, headers=entetes).status_code == 429
+    horloge[0] = debut + ix.FENETRE_JOUR + 1
+    assert c.post("/api/auth/demande", json={"email": A}, headers=entetes).status_code == 200
+
+
+def test_la_demande_ne_revele_pas_si_le_compte_existe(env, monkeypatch):
+    c, codes = env
+    connecter(c, codes, A)
+    monkeypatch.setattr(ix, "DEMANDES_MAX", 1)
+    existant, nouveau = (c.post("/api/auth/demande", json={"email": e}) for e in (A, B))
+    assert (existant.status_code, existant.json()) == (nouveau.status_code, nouveau.json()) == (200, {"ok": True})
+    existant, nouveau = (c.post("/api/auth/demande", json={"email": e}) for e in (A, B))
+    assert existant.status_code == nouveau.status_code == 429 and existant.json() == nouveau.json()
+
+
+def test_creations_de_comptes_limitees_par_ip(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setattr(ix, "COMPTES_MAX_IP_JOUR", 2)
+    for i in range(2):
+        assert _creer(c, codes, f"test-c{i}@example.com", IP_A).status_code == 200
+    # La demande de code reste acceptée, comme pour toute adresse : rien ne trahit l'absence de compte.
+    r = _creer(c, codes, A, IP_A)
+    assert r.status_code == 429 and r.json()["detail"] == ix.INSCRIPTIONS_LIMITEES
+    assert int(r.headers["retry-after"]) > ix.FENETRE_DEMANDES
+    with ix.base() as cx:
+        assert not cx.execute("SELECT 1 FROM users WHERE email = %s", (A,)).fetchone()
+    # Un compte existant se connecte toujours depuis cette IP…
+    assert _creer(c, codes, "test-c0@example.com", IP_A).status_code == 200
+    # … et la création réussit depuis une autre IP, avec le même code.
+    r = c.post("/api/auth/verification", json={"email": A, "code": codes[A]}, headers={"X-Forwarded-For": IP_B})
+    assert r.status_code == 200
+
+
+def test_creations_de_comptes_limitees_globalement(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setattr(ix, "COMPTES_MAX_HEURE", 2)
+    horloge = _horloge(monkeypatch)
+    assert _creer(c, codes, "test-g0@example.com", IP_A).status_code == 200
+    assert _creer(c, codes, "test-g1@example.com", IP_B).status_code == 200
+    r = _creer(c, codes, A, "192.0.2.50")
+    assert r.status_code == 429 and r.json()["detail"] == ix.INSCRIPTIONS_LIMITEES
+    assert _creer(c, codes, "test-g0@example.com", "192.0.2.50").status_code == 200  # membres non bloqués
+    # Le refus global n'a pas consommé le quota de l'IP ; la variable d'environnement relève le seuil.
+    monkeypatch.setenv("SM_COMPTES_MAX_HEURE", "3")
+    assert c.post("/api/auth/verification", json={"email": A, "code": codes[A]},
+                  headers={"X-Forwarded-For": "192.0.2.50"}).status_code == 200
+    monkeypatch.delenv("SM_COMPTES_MAX_HEURE")
+    horloge[0] += ix.FENETRE_DEMANDES + 1
+    assert _creer(c, codes, B, IP_A).status_code == 200
+
+
+def test_demandes_de_code_limitees_globalement(env, monkeypatch):
+    c, _ = env
+    monkeypatch.setattr(ix, "DEMANDES_MAX_HEURE", 3)
+    ips = ["192.0.2.1", "192.0.2.2", "192.0.2.3", "192.0.2.4"]
+    for i, ip in enumerate(ips[:3]):
+        assert c.post("/api/auth/demande", json={"email": f"test-d{i}@example.com"},
+                      headers={"X-Forwarded-For": ip}).status_code == 200
+    r = c.post("/api/auth/demande", json={"email": A}, headers={"X-Forwarded-For": ips[3]})
+    assert r.status_code == 429 and r.json()["detail"] == "trop de tentatives"
+
+
+def test_seuil_global_invalide_garde_la_valeur_par_defaut(monkeypatch):
+    monkeypatch.setenv("SM_COMPTES_MAX_HEURE", "beaucoup")
+    assert ix._seuil("SM_COMPTES_MAX_HEURE", 30) == 30
+    monkeypatch.setenv("SM_COMPTES_MAX_HEURE", "0")
+    assert ix._seuil("SM_COMPTES_MAX_HEURE", 30) == 1
+
+
+def test_script_de_deblocage(env, monkeypatch):
+    sys.path.insert(0, str(ix.Path(__file__).resolve().parent.parent / "scripts"))
+    from debloquer import debloquer
+
+    c, codes = env
+    monkeypatch.setattr(ix, "COMPTES_MAX_IP_JOUR", 1)
+    monkeypatch.setattr(ix, "DEMANDES_MAX", 1)
+    assert _creer(c, codes, "test-x@example.com", IP_A).status_code == 200
+    assert _creer(c, codes, A, IP_A).status_code == 429
+    assert c.post("/api/auth/demande", json={"email": B}).status_code == 200
+    assert c.post("/api/auth/demande", json={"email": B}).status_code == 429
+    with ix.base() as cx:
+        apercu = debloquer(cx, ips=[IP_A], emails=[B])
+        assert any("compte (" + IP_A + ") : 1" in ligne for ligne in apercu)
+        assert f"codes de connexion de {B} : 1" in apercu
+    verifier_a = {"email": A, "code": codes[A]}
+    assert c.post("/api/auth/verification", json=verifier_a, headers={"X-Forwarded-For": IP_A}).status_code == 429
+    assert c.post("/api/auth/demande", json={"email": B}).status_code == 429  # l'aperçu n'efface rien
+    with ix.base() as cx:
+        debloquer(cx, ips=[IP_A], emails=[B], appliquer=True)
+    assert c.post("/api/auth/verification", json=verifier_a, headers={"X-Forwarded-For": IP_A}).status_code == 200
+    assert c.post("/api/auth/demande", json={"email": B}).status_code == 200
+    with ix.base() as cx, pytest.raises(ValueError):
+        debloquer(cx, ips=["pas-une-ip"])
+
+
 def test_identifiants_base_refuses_renvoient_503_sans_exposer_url(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://dbuser:placeholder@secret-host/db")
 

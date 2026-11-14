@@ -3,11 +3,20 @@ import { ArrowLeft, ArrowRight, KeyRound, Mail } from 'lucide-react'
 import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 import { suivre } from '../suivi'
 
-/** Message unique pour toutes les limites (demandes de code, essais, adresse IP). */
+/** Délai lisible : minutes sous 1 h 30, heures au-delà. */
+function delai(secondes: number): string {
+  const minutes = Math.ceil(secondes / 60)
+  if (minutes < 90) return `${minutes} minute${minutes > 1 ? 's' : ''}`
+  const heures = Math.round(minutes / 60)
+  return `${heures} heure${heures > 1 ? 's' : ''}`
+}
+
+/** Message des limites : demandes de code, essais, adresse IP, créations de comptes. */
 function messageLimite(err: ErreurAPI): string {
-  if (!err.attente) return 'Trop de tentatives. Réessaie dans une heure.'
-  const minutes = Math.ceil(err.attente / 60)
-  return `Trop de tentatives. Réessaie dans ${minutes} minute${minutes > 1 ? 's' : ''}.`
+  const quand = err.attente ? `dans ${delai(err.attente)}` : 'plus tard'
+  if (err.detail === 'inscriptions limitées')
+    return `Trop de comptes créés récemment depuis ce réseau. Ton code est bon : réessaie ${quand}.`
+  return err.attente ? `Trop de tentatives. Réessaie ${quand}.` : 'Trop de tentatives. Réessaie dans une heure.'
 }
 
 /** Configuration d'envoi d'e-mail invalide côté serveur (clé Resend, expéditeur non vérifié). */

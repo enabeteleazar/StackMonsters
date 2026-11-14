@@ -80,6 +80,12 @@ JOINTURE_WIKI = (
 DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
 FENETRE_DEMANDES = 3600
 DEMANDES_MAX_IP, VERIFICATIONS_MAX_IP = 20, 60
+# Limites complémentaires (issue #2). Voir « Limites anti-abus » dans le README pour les seuils et le déblocage.
+FENETRE_JOUR = 86400
+DEMANDES_MAX_IP_JOUR = 60  # demandes de code par IP sur 24 h
+COMPTES_MAX_IP_JOUR = 5  # nouveaux comptes par IP sur 24 h ; SM_COMPTES_MAX_IP_JOUR
+DEMANDES_MAX_HEURE, COMPTES_MAX_HEURE = 300, 30  # tous visiteurs confondus ; SM_DEMANDES_MAX_HEURE, SM_COMPTES_MAX_HEURE
+INSCRIPTIONS_LIMITEES = "inscriptions limitées"
 DUREE_EMPREINTES_IP = 395 * 86400  # 13 mois : durée de conservation annoncée dans la politique de confidentialité
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
@@ -477,31 +483,67 @@ def _empreinte_ip(adresse: str) -> str:
     return hmac.new(_secret(), f"unique-ip:{adresse}".encode(), hashlib.sha256).hexdigest()
 
 
-def _limiter_ip(cx: psycopg.Connection, request: Request, action: str, maximum: int, now: int) -> None:
-    """Compte l'appel pour cette IP (fenêtre fixe d'une heure) et répond 429 au-delà du maximum."""
+def _adresse_limitee(adresse: str) -> str:
+    """Adresse retenue pour les limites : un abonné IPv6 dispose en général d'un /64 entier."""
+    if ":" in adresse:
+        return str(ipaddress.ip_network(f"{adresse}/64", strict=False).network_address)
+    return adresse
+
+
+def _cle_limite(action: str, adresse: str | None = None) -> str:
+    """Clé HMAC d'un compteur : par IP, ou globale (sans adresse). L'IP n'est jamais stockée en clair."""
+    sujet = f"limite-ip:{action}:{_adresse_limitee(adresse)}" if adresse else f"limite-globale:{action}"
+    return hmac.new(_secret(), sujet.encode(), hashlib.sha256).hexdigest()
+
+
+def _compter(
+    cx: psycopg.Connection, cle: str, maximum: int, fenetre: int, now: int,
+    detail: str = "trop de tentatives", consommer: bool = True,
+) -> None:
+    """Compteur à fenêtre fixe : 429 au-delà du maximum.
+
+    Sans « consommer », vérifie seulement qu'il reste de la place (l'appel sera compté s'il aboutit).
+    """
+    expiree = now - fenetre
+    if consommer:
+        n = cx.execute(
+            """INSERT INTO limites_ip (cle, debut, n) VALUES (%s, %s, 1)
+               ON CONFLICT (cle) DO UPDATE SET
+                 n = CASE WHEN limites_ip.debut <= %s THEN 1 ELSE limites_ip.n + 1 END,
+                 debut = CASE WHEN limites_ip.debut <= %s THEN EXCLUDED.debut ELSE limites_ip.debut END
+               RETURNING n, debut""",
+            (cle, now, expiree, expiree),
+        ).fetchone()
+        cx.commit()  # le compteur doit survivre au 429 qui suit
+        depasse = n["n"] > maximum
+    else:
+        n = cx.execute("SELECT n, debut FROM limites_ip WHERE cle = %s AND debut > %s", (cle, expiree)).fetchone()
+        depasse = bool(n) and n["n"] >= maximum
+    if depasse:
+        raise _trop_de_tentatives(n["debut"] + fenetre - now, detail)
+
+
+def _limiter_ip(
+    cx: psycopg.Connection, request: Request, action: str, maximum: int, now: int,
+    fenetre: int = FENETRE_DEMANDES, detail: str = "trop de tentatives", consommer: bool = True,
+) -> None:
+    """Compte l'appel pour cette IP (fenêtre fixe, une heure par défaut) et répond 429 au-delà du maximum."""
     adresse = _adresse_ip(request)
-    if not adresse:
-        return
-    if ":" in adresse:  # un abonné IPv6 dispose en général d'un /64 entier
-        adresse = str(ipaddress.ip_network(f"{adresse}/64", strict=False).network_address)
-    cle = hmac.new(_secret(), f"limite-ip:{action}:{adresse}".encode(), hashlib.sha256).hexdigest()
-    expiree = now - FENETRE_DEMANDES
-    n = cx.execute(
-        """INSERT INTO limites_ip (cle, debut, n) VALUES (%s, %s, 1)
-           ON CONFLICT (cle) DO UPDATE SET
-             n = CASE WHEN limites_ip.debut <= %s THEN 1 ELSE limites_ip.n + 1 END,
-             debut = CASE WHEN limites_ip.debut <= %s THEN EXCLUDED.debut ELSE limites_ip.debut END
-           RETURNING n, debut""",
-        (cle, now, expiree, expiree),
-    ).fetchone()
-    cx.commit()  # le compteur doit survivre au 429 qui suit
-    if n["n"] > maximum:
-        raise _trop_de_tentatives(n["debut"] + FENETRE_DEMANDES - now)
+    if adresse:
+        _compter(cx, _cle_limite(action, adresse), maximum, fenetre, now, detail, consommer)
 
 
-def _trop_de_tentatives(attente: int) -> HTTPException:
+def _seuil(nom: str, defaut: int) -> int:
+    """Seuil global réglable sans changer le code (variable d'environnement), sinon valeur par défaut."""
+    try:
+        return max(1, int(os.environ.get(nom, "")))
+    except ValueError:
+        return defaut
+
+
+def _trop_de_tentatives(attente: int, detail: str = "trop de tentatives") -> HTTPException:
     """429 commun à toutes les limites, avec le délai réel avant de pouvoir réessayer."""
-    return HTTPException(429, "trop de tentatives", headers={"Retry-After": str(max(1, attente))})
+    return HTTPException(429, detail, headers={"Retry-After": str(max(1, attente))})
 
 
 def _url_site() -> str:
@@ -638,8 +680,11 @@ def demande(d: Demande, request: Request) -> dict:
     now = int(time.time())
     code = f"{secrets.randbelow(10**6):06d}"
     with base() as cx:
+        # Mêmes limites que l'adresse ait un compte ou non : la réponse ne révèle rien.
         _limiter_ip(cx, request, "demande", DEMANDES_MAX_IP, now)
-        cx.execute("DELETE FROM limites_ip WHERE debut <= %s", (now - FENETRE_DEMANDES,))
+        _limiter_ip(cx, request, "demande-jour", DEMANDES_MAX_IP_JOUR, now, FENETRE_JOUR)
+        _compter(cx, _cle_limite("demande"), _seuil("SM_DEMANDES_MAX_HEURE", DEMANDES_MAX_HEURE), FENETRE_DEMANDES, now)
+        cx.execute("DELETE FROM limites_ip WHERE debut <= %s", (now - FENETRE_JOUR,))
         # Un code expiré compte encore dans la limite : il n'est purgé qu'une fois la fenêtre passée.
         cx.execute("DELETE FROM codes WHERE cree <= %s", (now - FENETRE_DEMANDES,))
         cx.execute("DELETE FROM sessions WHERE expire < %s", (now,))
@@ -681,6 +726,15 @@ def verification(v: Verification, request: Request) -> dict:
             raise HTTPException(401, "code invalide ou expiré")
         if not hmac.compare_digest(c["hash"], _hash_code(email, v.code)):
             raise HTTPException(401, "code invalide ou expiré")
+        if not cx.execute("SELECT 1 FROM users WHERE email = %s", (email,)).fetchone():
+            # Création de compte : limitée seulement ici, une fois le code validé. Seul le titulaire de
+            # l'adresse apprend qu'elle n'avait pas de compte ; le code reste utilisable jusqu'à expiration.
+            comptes_heure = _seuil("SM_COMPTES_MAX_HEURE", COMPTES_MAX_HEURE)
+            comptes_ip = _seuil("SM_COMPTES_MAX_IP_JOUR", COMPTES_MAX_IP_JOUR)
+            _limiter_ip(cx, request, "compte", comptes_ip, now, FENETRE_JOUR, INSCRIPTIONS_LIMITEES, False)
+            _compter(cx, _cle_limite("compte"), comptes_heure, FENETRE_DEMANDES, now, INSCRIPTIONS_LIMITEES, False)
+            _limiter_ip(cx, request, "compte", comptes_ip, now, FENETRE_JOUR, INSCRIPTIONS_LIMITEES)
+            _compter(cx, _cle_limite("compte"), comptes_heure, FENETRE_DEMANDES, now, INSCRIPTIONS_LIMITEES)
         cx.execute("DELETE FROM codes WHERE email = %s", (email,))
         u = cx.execute("INSERT INTO users (email, cree) VALUES (%s, %s) ON CONFLICT (email) DO NOTHING RETURNING id",
                        (email, now)).fetchone()
