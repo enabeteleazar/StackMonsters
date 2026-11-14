@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Iterator, Literal
 
 import psycopg
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
@@ -216,6 +216,19 @@ CREATE TABLE IF NOT EXISTS wiki_signalements (id BIGSERIAL PRIMARY KEY,
     fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE,
     motif TEXT NOT NULL, cree TEXT NOT NULL, traite TEXT);
 CREATE INDEX IF NOT EXISTS wiki_signalements_fiche ON wiki_signalements (fiche);
+"""),
+    # Recherche dans le catalogue : texte sans accents ni majuscules (sm_texte, IMMUTABLE pour pouvoir
+    # l'indexer) et index trigramme sur nom, saveur, pays, gamme et code-barres. Voir DOC_RECHERCHE.
+    (10, """
+CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA public;
+-- Noms complets (public.…) : PostgreSQL 17+ restreint le search_path pendant la création d'un index.
+CREATE OR REPLACE FUNCTION public.sm_texte(t text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$ SELECT pg_catalog.lower(public.unaccent('public.unaccent'::regdictionary, coalesce(t, ''))) $$;
+CREATE INDEX IF NOT EXISTS wiki_recherche ON wiki USING gin (
+    sm_texte(nom || ' ' || flavor || ' ' || region || ' ' || COALESCE(NULLIF(categorie, ''), gamme) || ' ' || ean)
+    gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS wiki_recherche_nom ON wiki USING gin (sm_texte(nom) gin_trgm_ops);
 """),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
@@ -903,6 +916,97 @@ def _code_pris(cx: psycopg.Connection, code: str) -> bool:
     return cx.execute(
         "SELECT 1 FROM wiki WHERE ean = %s UNION ALL SELECT 1 FROM wiki_codes WHERE ean = %s LIMIT 1", (code, code),
     ).fetchone() is not None
+
+
+# Texte indexé d'une fiche (migration 10) : la requête doit reprendre exactement cette expression pour
+# que PostgreSQL utilise l'index trigramme.
+DOC_RECHERCHE = "sm_texte(nom || ' ' || flavor || ' ' || region || ' ' || COALESCE(NULLIF(categorie, ''), gamme) || ' ' || ean)"
+PAR_PAGE_MAX = 60
+
+
+def _motif_like(mot: str) -> str:
+    """Mot de recherche utilisable dans LIKE : % et _ y sont des caractères ordinaires."""
+    return "%" + mot.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+@router.get("/wiki/recherche")
+def wiki_recherche(
+    q: str = Query(default="", max_length=120),
+    categorie: str = Query(default="", max_length=80),
+    region: str = Query(default="", max_length=80),
+    tri: Literal["pertinence", "nom", "recent"] = "pertinence",
+    page: int = Query(default=1, ge=1, le=10_000),
+    par_page: int = Query(default=24, ge=1, le=PAR_PAGE_MAX),
+    signalees: bool = False,
+    u: dict = Depends(utilisateur),
+    cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Recherche paginée dans le catalogue partagé (jamais dans les collections).
+
+    Chaque mot saisi doit apparaître dans le nom, la saveur, le pays, la gamme ou le code-barres, sans tenir
+    compte des accents ni des majuscules ; un code-barres exact trouve aussi la fiche par ses codes secondaires.
+    Sans résultat, des noms proches sont proposés (« Tu cherchais… ? »).
+    """
+    proprio = _est_proprietaire(u["email"])
+    q = " ".join(q.split())
+    mots = q.split(" ") if q else []
+    conditions, params = [], []
+    for mot in mots:
+        conditions.append(f"({DOC_RECHERCHE} LIKE sm_texte(%s) "
+                          "OR EXISTS (SELECT 1 FROM wiki_codes k WHERE k.fiche = wiki.ean AND k.ean = %s))")
+        params += [_motif_like(mot), mot]
+    if categorie:
+        conditions.append("COALESCE(NULLIF(categorie, ''), gamme) = %s")
+        params.append(categorie)
+    if region:
+        conditions.append("region = %s")
+        params.append(region)
+    if signalees and proprio:
+        conditions.append("EXISTS (SELECT 1 FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL)")
+    ou = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+    if tri == "recent":
+        ordre, params_ordre = "cree DESC, ean", []
+    elif tri == "pertinence" and q:
+        # Code-barres exact, puis nom identique, puis nom qui commence par la saisie, puis les plus proches.
+        ordre = ("CASE WHEN ean = %s OR EXISTS (SELECT 1 FROM wiki_codes k WHERE k.fiche = wiki.ean AND k.ean = %s) "
+                 "THEN 0 WHEN sm_texte(nom) = sm_texte(%s) THEN 1 WHEN sm_texte(nom) LIKE sm_texte(%s) THEN 2 ELSE 3 END, "
+                 "similarity(sm_texte(nom), sm_texte(%s)) DESC, (nom = ''), lower(nom), ean")
+        params_ordre = [q, q, q, q.replace("%", "").replace("_", "") + "%", q]
+    else:
+        ordre, params_ordre = "(nom = ''), lower(nom), ean", []
+
+    with cx.transaction():
+        lignes = cx.execute(
+            f"SELECT {COLONNES_FICHE}, COUNT(*) OVER () AS total_filtre FROM wiki{ou} ORDER BY {ordre} "
+            "LIMIT %s OFFSET %s",
+            (*params, *params_ordre, par_page, (page - 1) * par_page),
+        ).fetchall()
+        total = lignes[0]["total_filtre"] if lignes else (
+            cx.execute(f"SELECT COUNT(*) AS n FROM wiki{ou}", params).fetchone()["n"] if page > 1 else 0
+        )
+        total_catalogue = cx.execute("SELECT COUNT(*) AS n FROM wiki").fetchone()["n"]
+        suggestions = []
+        if total == 0 and q:
+            suggestions = [r["nom"] for r in cx.execute(
+                "SELECT nom, GREATEST(similarity(sm_texte(nom), sm_texte(%s)), "
+                "word_similarity(sm_texte(%s), sm_texte(nom))) AS score FROM wiki "
+                "WHERE nom <> '' ORDER BY score DESC, lower(nom) LIMIT 3",
+                (q, q),
+            ).fetchall() if r["score"] >= 0.3]
+        nb_signalees = cx.execute(
+            "SELECT COUNT(DISTINCT fiche) AS n FROM wiki_signalements WHERE traite IS NULL"
+        ).fetchone()["n"] if proprio else 0
+    return {
+        "peut_editer": proprio,
+        "fiches": [_fiche(r, proprio) for r in lignes],
+        "total": total,
+        "total_catalogue": total_catalogue,
+        "page": page,
+        "pages": max(1, -(-total // par_page)),
+        "suggestions": suggestions,
+        "signalees": nb_signalees,
+    }
 
 
 @router.get("/wiki")

@@ -62,6 +62,24 @@ export type FicheWiki = {
 
 export type ReponseWiki = { peut_editer: boolean; fiches: FicheWiki[] }
 
+/** Une page de résultats de la recherche dans le catalogue (jamais les collections). */
+export type ResultatRechercheWiki = {
+  peut_editer: boolean
+  fiches: FicheWiki[]
+  /** Nombre de fiches qui correspondent à la recherche et aux filtres. */
+  total: number
+  /** Nombre de fiches dans tout le catalogue. */
+  total_catalogue: number
+  page: number
+  pages: number
+  /** Noms proches proposés quand rien ne correspond (« Tu cherchais… ? »). */
+  suggestions: string[]
+  /** Propriétaire : nombre de fiches avec un signalement ouvert. */
+  signalees: number
+}
+
+export type TriWiki = 'pertinence' | 'nom' | 'recent'
+
 export type ModifFicheWiki = Pick<
   FicheWiki,
   'ean' | 'nom' | 'volume' | 'categorie' | 'flavor' | 'status' | 'region' | 'description'

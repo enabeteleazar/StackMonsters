@@ -1,5 +1,5 @@
 import { API_URL, CLE_JETON } from './config'
-import type { Canette, FicheWiki, ModifFicheWiki, ReponseWiki } from './types'
+import type { Canette, FicheWiki, ModifFicheWiki, ReponseWiki, ResultatRechercheWiki, TriWiki } from './types'
 
 /** Levée quand le service répond 401 : jeton absent ou refusé. */
 export class NonAutorise extends Error {
@@ -106,6 +106,12 @@ export const api = {
     requete<{ utilisateurs: number; references: number; connexions_uniques: number }>('/stats'),
   sante: () => requete<{ status: string; version: string; references: number }>('/health'),
   wiki: () => requete<ReponseWiki>('/wiki'),
+  /** Recherche paginée côté serveur dans le catalogue partagé. */
+  wikiRecherche: (p: { q?: string; categorie?: string; region?: string; tri?: TriWiki; page?: number; signalees?: boolean }) => {
+    const params = new URLSearchParams()
+    for (const [cle, valeur] of Object.entries(p)) if (valeur) params.set(cle, String(valeur))
+    return requete<ResultatRechercheWiki>(`/wiki/recherche?${params}`)
+  },
   wikiModifier: (ean: string, f: ModifFicheWiki) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}`, { method: 'PUT', body: JSON.stringify(f) }),
   wikiSupprimer: (ean: string) =>

@@ -59,21 +59,3 @@ export function fichesCorrespondantes(fiches: FicheWiki[], saisie: string, limit
     .slice(0, limite)
     .map(({ fiche }) => fiche)
 }
-
-/** Filtre le catalogue sur ses champs descriptifs ou son code-barres. */
-export function filtrerFiches(fiches: FicheWiki[], recherche: string, gamme = ''): FicheWiki[] {
-  const q = normaliser(recherche)
-  const categorieRecherchee = normaliser(gamme)
-  return fiches.filter(
-    (f) =>
-      (!categorieRecherchee || normaliser(f.categorie) === categorieRecherchee) &&
-      (!q ||
-        normaliser(f.nom).includes(q) ||
-        normaliser(f.categorie).includes(q) ||
-        normaliser(f.flavor).includes(q) ||
-        normaliser(f.status).includes(q) ||
-        normaliser(f.region).includes(q) ||
-        (f.codes ?? []).some((code) => code.includes(q)) ||
-        f.ean.includes(q)),
-  )
-}

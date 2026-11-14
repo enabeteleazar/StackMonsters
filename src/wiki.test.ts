@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CATEGORIES, REGIONS, STATUTS } from './categories'
 import type { FicheWiki } from './types'
-import { fichesCorrespondantes, filtrerFiches, suggererFiches, trouverFicheParCodeBarres } from './wiki'
+import { fichesCorrespondantes, suggererFiches, trouverFicheParCodeBarres } from './wiki'
 
 const f = (ean: string, nom: string): FicheWiki => ({
   ean,
@@ -47,51 +47,14 @@ describe('fichesCorrespondantes', () => {
   })
 })
 
-describe('filtrerFiches', () => {
-  it('renvoie tout sans recherche', () => {
-    expect(filtrerFiches(fiches, '  ')).toHaveLength(3)
-  })
-
-  it('cherche dans le nom sans tenir compte de la casse', () => {
-    expect(filtrerFiches(fiches, 'mango').map((x) => x.ean)).toEqual(['1'])
-  })
-
-  it('filtre par gamme et combine le filtre avec la recherche textuelle', () => {
-    const catalogue = [
-      { ...fiches[0], categorie: 'Juiced' },
-      { ...fiches[1], categorie: 'Ultra' },
-      { ...fiches[2], nom: 'Monster Juiced', categorie: 'Juiced' },
-    ]
-    expect(filtrerFiches(catalogue, '', 'juiced').map((x) => x.ean)).toEqual(['1', '3016'])
-    expect(filtrerFiches(catalogue, 'mango', 'Juiced').map((x) => x.ean)).toEqual(['1'])
-    expect(filtrerFiches(catalogue, '', 'Original')).toEqual([])
-  })
-
-  it('cherche dans les catégories descriptives sans tenir compte de la casse', () => {
-    const catalogue = [{ ...fiches[0], categorie: 'Juiced', flavor: 'Mango', status: 'Active', region: 'Europe' }]
-    expect(filtrerFiches(catalogue, 'juiced').map((x) => x.ean)).toEqual(['1'])
-    expect(filtrerFiches(catalogue, 'mango').map((x) => x.ean)).toEqual(['1'])
-    expect(filtrerFiches(catalogue, 'active').map((x) => x.ean)).toEqual(['1'])
-    expect(filtrerFiches(catalogue, 'europe').map((x) => x.ean)).toEqual(['1'])
-  })
-
-  it('cherche par code-barres, y compris pour une fiche sans nom', () => {
-    expect(filtrerFiches(fiches, '3016').map((x) => x.ean)).toEqual(['3016'])
-  })
-
-  describe('options du catalogue', () => {
-    it('contient les 10 catégories et les 7 régions proposées', () => {
-      expect(CATEGORIES).toEqual([
-        'Original', 'Ultra', 'Juiced', 'Reserve', 'Special',
-        'Java', 'Rehab', 'Nitro', 'Water', 'Asia',
-      ])
-      expect(REGIONS).toEqual(['Global', 'US', 'Canada', 'Europe', 'Europe/Aus', 'US/Global', 'Japan'])
-      expect(STATUTS).toEqual(['Active', 'Stop', 'Nouveauté'])
-    })
-  })
-
-  it('ne renvoie rien quand rien ne correspond', () => {
-    expect(filtrerFiches(fiches, 'zzz')).toEqual([])
+describe('options du catalogue', () => {
+  it('contient les 10 catégories et les 7 régions proposées', () => {
+    expect(CATEGORIES).toEqual([
+      'Original', 'Ultra', 'Juiced', 'Reserve', 'Special',
+      'Java', 'Rehab', 'Nitro', 'Water', 'Asia',
+    ])
+    expect(REGIONS).toEqual(['Global', 'US', 'Canada', 'Europe', 'Europe/Aus', 'US/Global', 'Japan'])
+    expect(STATUTS).toEqual(['Active', 'Stop', 'Nouveauté'])
   })
 })
 
@@ -123,7 +86,6 @@ describe('trouverFicheParCodeBarres : codes supplémentaires', () => {
   it('retrouve une fiche par un de ses autres codes', () => {
     const catalogue = [{ ...f('3017620422003', 'Paradise'), codes: ['96385074'] }]
     expect(trouverFicheParCodeBarres(catalogue, '96385074')?.nom).toBe('Paradise')
-    expect(filtrerFiches(catalogue, '9638')).toHaveLength(1)
   })
 })
 

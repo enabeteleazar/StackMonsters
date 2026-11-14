@@ -1226,3 +1226,71 @@ def test_signaler_une_fiche_et_traiter_le_signalement(env, monkeypatch):
     r = c.post(f"/api/wiki/signalements/{sig[0]['id']}/traite", headers=ha)
     assert r.status_code == 200 and r.json()["signalements"] == []
     assert c.post(f"/api/wiki/signalements/{sig[0]['id']}/traite", headers=ha).status_code == 404
+
+
+def _rechercher(c, h, **params):
+    r = c.get("/api/wiki/recherche", params=params, headers=h)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_recherche_catalogue_par_nom_saveur_pays_gamme_et_code(env, monkeypatch):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango Loco", flavor="Mangue Passion", categorie="Juiced",
+                                     region="Europe", notes="note très privée", nb=7), headers=ha)
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra Rosà", categorie="Ultra", region="US"), headers=ha)
+    c.put("/api/cans", json=canette("2000000000039", nom="Pipeline Punch", categorie="Juiced", region="US"), headers=ha)
+
+    assert c.get("/api/wiki/recherche").status_code == 401
+    noms = lambda r: [f["nom"] for f in r["fiches"]]
+    # B ne possède rien : la recherche porte sur le catalogue, pas sur les collections.
+    assert noms(_rechercher(c, hb, q="mango")) == ["Mango Loco"]
+    assert noms(_rechercher(c, hb, q="ROSA")) == ["Ultra Rosà"]  # sans accents ni majuscules
+    assert noms(_rechercher(c, hb, q="passion")) == ["Mango Loco"]  # par la saveur
+    assert noms(_rechercher(c, hb, q="2000000000022")) == ["Ultra Rosà"]  # par le code-barres
+    assert noms(_rechercher(c, hb, q="juiced us")) == ["Pipeline Punch"]  # chaque mot doit correspondre
+    assert noms(_rechercher(c, hb, categorie="Juiced", tri="nom")) == ["Mango Loco", "Pipeline Punch"]
+    assert noms(_rechercher(c, hb, region="US", categorie="Ultra")) == ["Ultra Rosà"]
+    assert noms(_rechercher(c, hb, q="100%_")) == []  # % et _ ne sont pas des jokers
+
+    r = _rechercher(c, hb, q="mango")
+    assert r["total_catalogue"] >= 3 and r["total"] == 1 and r["pages"] == 1
+    fiche_trouvee = r["fiches"][0]
+    assert "note" not in str(fiche_trouvee) and "nb" not in fiche_trouvee and "etat" not in fiche_trouvee
+
+
+def test_recherche_paginee_et_suggestions(env):
+    c, codes = env
+    h = connecter(c, codes, A)
+    for i in range(5):
+        code = ix.convert.nom_en_13_chiffres(f"Test Pagination {i}")
+        c.put("/api/cans", json=canette(f"LOCAL-P{i}", nom=f"Test Pagination {i}"), headers=h)
+    try:
+        p1 = _rechercher(c, h, q="pagination", tri="nom", par_page=2)
+        p3 = _rechercher(c, h, q="pagination", tri="nom", par_page=2, page=3)
+        assert (p1["total"], p1["pages"], len(p1["fiches"])) == (5, 3, 2)
+        assert [f["nom"] for f in p3["fiches"]] == ["Test Pagination 4"]
+        assert _rechercher(c, h, q="pagination", par_page=2, page=9)["fiches"] == []
+        assert c.get("/api/wiki/recherche", params={"par_page": 500}, headers=h).status_code == 422
+
+        r = _rechercher(c, h, q="paginatoin")  # faute de frappe : rien, mais des noms proches
+        assert r["total"] == 0 and r["suggestions"] and all("Pagination" in n for n in r["suggestions"])
+        assert _rechercher(c, h, q="zzzzqqq")["suggestions"] == []
+    finally:
+        with ix.base() as cx:
+            cx.execute("DELETE FROM wiki WHERE nom LIKE 'Test Pagination %'")
+
+
+def test_recherche_des_fiches_signalees_reservee_au_proprietaire(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra"), headers=hb)
+    c.post("/api/wiki/2000000000015/signalement", json={"motif": "Mauvais nom"}, headers=hb)
+
+    r = _rechercher(c, ha, signalees="true")
+    assert r["signalees"] == 1 and [f["ean"] for f in r["fiches"]] == ["2000000000015"]
+    r = _rechercher(c, hb, signalees="true")  # ignoré pour un autre compte
+    assert r["signalees"] == 0 and len(r["fiches"]) >= 2
