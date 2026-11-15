@@ -55,15 +55,18 @@ export function volumeEnMl(volume: string): number | null {
 }
 
 /**
- * Variante citée dans le nom d'une canette : « … Shot » → Shot, « … Zero Sugar … » → Zero Sugar, une collaboration
- * connue → Collaboration. Chaîne vide sinon (même règle que la migration 14 de l'API).
+ * Variante d'après le nom d'une canette, dans cet ordre : « … Shot » → Shot, « Zero » → Zero Sugar, collaboration
+ * connue (VR46, Lando Norris, McLaren, « … X … ») → Collaboration, « Limited » ou « Édition limitée » → Édition
+ * limitée, sinon Standard. Chaîne vide tant qu'il n'y a pas de nom (mêmes règles que les migrations 14 et 15).
  */
 export function varianteDuNom(nom: string): string {
   const n = sansAccents(nom)
+  if (!n.trim()) return ''
   if (/\bshots?\b/.test(n)) return 'Shot'
   if (/\bzero\b/.test(n)) return 'Zero Sugar'
   if (/\b(vr46|rossi|lando|norris|mclaren)\b/.test(n) || /\s[x×]\s/.test(n)) return 'Collaboration'
-  return ''
+  if (/\b(limited|limitee)\b/.test(n)) return 'Édition limitée'
+  return 'Standard'
 }
 
 export const STATUTS = ['Active', 'Stop', 'Nouveauté'] as const

@@ -41,8 +41,14 @@ describe('varianteDuNom', () => {
     expect(varianteDuNom('Monster Energy Zero Sugar')).toBe('Zero Sugar')
     expect(varianteDuNom('Monster VR46 Rossi')).toBe('Collaboration')
     expect(varianteDuNom('Monster Energy X McLaren')).toBe('Collaboration')
-    expect(varianteDuNom('Monster Ultra White')).toBe('')
-    expect(varianteDuNom('Monster Shotgun')).toBe('')
+    expect(varianteDuNom('Monster Energy Limited Edition Gold')).toBe('Édition limitée')
+    expect(varianteDuNom('Monster Mango Édition Limitée')).toBe('Édition limitée')
+  })
+
+  it('met Standard quand le nom ne cite aucune autre variante, rien sans nom', () => {
+    expect(varianteDuNom('Monster Ultra White')).toBe('Standard')
+    expect(varianteDuNom('Monster Shotgun')).toBe('Standard')
+    expect(varianteDuNom('  ')).toBe('')
   })
 })
 

@@ -383,6 +383,13 @@ CREATE INDEX wiki_recherche ON wiki USING gin (
     sm_texte(nom || ' ' || flavor || ' ' || region || ' ' || COALESCE(NULLIF(categorie, ''), gamme) || ' ' || variante
              || ' ' || ean) gin_trgm_ops);
 """),
+    # Variante : « Limited » / « Édition limitée » → Édition limitée, sinon Standard, pour les fiches nommées dont
+    # la variante est encore vide (mêmes règles que varianteDuNom dans src/categories.ts). Une variante déjà
+    # remplie ne change pas ; seules des valeurs vides sont complétées.
+    (15, r"""
+UPDATE wiki SET variante = CASE WHEN sm_texte(nom) ~ '\m(limited|limitee)\M' THEN 'Édition limitée' ELSE 'Standard' END
+    WHERE variante = '' AND btrim(nom) <> '';
+"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de

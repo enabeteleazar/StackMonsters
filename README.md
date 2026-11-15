@@ -142,14 +142,19 @@ API, la fenêtre montre le geste Partager → « Sur l'écran d'accueil » → �
 Les listes contrôlées sont dans `src/categories.ts` et `api/index.py` (un test vérifie qu'elles sont identiques).
 L'API refuse (422, message lisible) une valeur hors liste dans une fiche ou une proposition. L'ajout d'une
 canette à sa collection reste souple pour les anciennes versions de l'appli : volume mis au format s'il est
-lisible, variante inconnue ignorée. La variante est remplie depuis le nom à la création (« … Shot »,
-« Zero Sugar », collaborations connues), se filtre dans le Wiki et entre dans la recherche.
+lisible, variante inconnue ignorée. La variante est remplie depuis le nom à la création, comme la catégorie
+(`varianteDuNom`, dans cet ordre) : « Shot » → Shot, « Zero » → Zero Sugar, collaboration connue (VR46, Lando
+Norris, McLaren, « … X … ») → Collaboration, « Limited » / « Édition limitée » → Édition limitée, sinon
+Standard. Un choix fait à la main ou venu du Wiki n'est jamais écrasé. Elle se filtre dans le Wiki et entre
+dans la recherche.
 
 Migration 14 : copie d'abord les valeurs d'avant dans `sauvegarde_migration_14`, puis met les volumes au
 format « 500 ml » (Wiki et collections), remplace le statut historique « Discontinued » par « Stop », déplace
 une saveur de plus de 60 caractères dans la description si celle-ci est vide, et remplit la variante depuis le
 nom. Ce qui ne peut pas être converti (volume illisible, saveur longue avec une description déjà remplie,
 valeur hors liste) reste tel quel : la fiche reste valide et le propriétaire la voit « à reprendre ».
+Migration 15 : complète les variantes encore vides des fiches nommées (Édition limitée ou Standard), sans
+toucher une variante déjà remplie.
 
 Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comptes confondus. Une vignette
 (photo + nom) ouvre la fiche : nom, version, volume, catégorie, saveur, statut et région.

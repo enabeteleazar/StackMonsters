@@ -1845,3 +1845,21 @@ def test_migration_14_normalise_les_anciennes_fiches_sans_perte(env, monkeypatch
     # Les anciennes fiches restent modifiables et valides.
     r = c.put("/api/wiki/2000000000039", json={"nom": "Monster Ultra White", "volume": "500"}, headers=h)
     assert r.status_code == 200 and r.json()["a_reprendre"] == []
+
+
+def test_migration_15_complete_les_variantes_vides(env):
+    c, codes = env
+    h = connecter(c, codes, A)
+    with ix.connecter() as cx:
+        for ean, nom, variante in [("2000000000015", "Monster Energy Limited Edition Gold", ""),
+                                   ("2000000000022", "Monster Mango Édition Limitée", ""),
+                                   ("2000000000039", "Monster Ultra White", ""),
+                                   ("2000000000046", "Monster Energy Zero Sugar", "Zero Sugar"),
+                                   ("2000000000053", "", "")]:
+            cx.execute("INSERT INTO wiki (ean, nom, variante, cree, maj) VALUES (%s, %s, %s, 'x', 'x')", (ean, nom, variante))
+        cx.execute("DELETE FROM schema_migrations WHERE version = 15")
+        assert ix.appliquer_migrations(cx) == [15]
+        lignes = cx.execute("SELECT ean, variante FROM wiki WHERE ean LIKE '200000000%'").fetchall()
+    variantes = {r["ean"]: r["variante"] for r in lignes}
+    assert variantes == {"2000000000015": "Édition limitée", "2000000000022": "Édition limitée",
+                         "2000000000039": "Standard", "2000000000046": "Zero Sugar", "2000000000053": ""}
