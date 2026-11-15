@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Sparkles, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
-import { CATEGORIES, categorieDuNom, libelleStatut, REGIONS, STATUTS_COLLECTION } from '../categories'
+import { CATEGORIES, categorieDuNom, libelleStatut, REGIONS, STATUTS_COLLECTION, varianteDuNom } from '../categories'
+import { ChampSaveur, ChampVariante, ChampVolume } from './ChampsFiche'
 import { normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
 import { CANETTE_VIDE, ETATS, type Canette, type FicheWiki } from '../types'
@@ -135,6 +136,10 @@ export default function Verdict(p: Props) {
               <div className="meta-item">
                 <span>Volume</span>
                 <b>{p.existante!.volume || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Variante</span>
+                <b>{p.existante!.variante || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>Status</span>
@@ -280,8 +285,8 @@ function Formulaire({
   const champsWiki = codeBarresLocal || !c.ean.startsWith('LOCAL-')
   // Le Wiki garde la première valeur saisie : un champ déjà rempli ne se modifie pas depuis une collection.
   const valeursWiki = nouvelle ? fiches?.find((fiche) => fiche.ean === ficheChoisie) : depart
-  const verrouille = (k: 'categorie' | 'flavor' | 'status' | 'region') => !!valeursWiki?.[k]
-  const champsVerrouilles = (['categorie', 'flavor', 'status', 'region'] as const).some(verrouille)
+  const verrouille = (k: 'categorie' | 'flavor' | 'status' | 'region' | 'variante') => !!valeursWiki?.[k]
+  const champsVerrouilles = (['categorie', 'flavor', 'status', 'region', 'variante'] as const).some(verrouille)
   // Nom et volume affichés viennent du Wiki : les modifier ici n'aurait aucun effet visible.
   const texteVerrouille = (k: 'nom' | 'volume') => !nouvelle && !!depart.dans_wiki && !!depart[k]
   // Le code n'est contrôlé qu'à la création : une fiche existante reste toujours modifiable.
@@ -294,6 +299,7 @@ function Formulaire({
   const [nomQuitte, setNomQuitte] = useState(false)
   // Dernière catégorie remplie automatiquement depuis le nom (une catégorie choisie à la main n'est jamais écrasée).
   const categorieAuto = useRef('')
+  const varianteAuto = useRef('')
   const choixFicheRequis =
     nouvelle && !!ficheCodeDisponible && ficheChoisie !== ficheCodeDisponible.ean
   const rechercheActive = c.nom.trim().length >= 2 || (c.ean.trim().length >= 2 && !c.ean.startsWith('LOCAL-'))
@@ -314,6 +320,7 @@ function Formulaire({
         flavor: fiche.flavor,
         status: fiche.status,
         region: fiche.region,
+        variante: fiche.variante,
         photo,
       }))
       setFicheChoisie(fiche.ean)
@@ -367,6 +374,11 @@ function Formulaire({
                 categorieAuto.current = detectee
                 champ('categorie', detectee)
               }
+              if (nouvelle && !verrouille('variante') && (!c.variante || c.variante === varianteAuto.current)) {
+                const detectee = varianteDuNom(nom)
+                varianteAuto.current = detectee
+                champ('variante', detectee)
+              }
             }}
             onBlur={() => setNomQuitte(true)}
           />
@@ -417,19 +429,18 @@ function Formulaire({
         )}
         <div>
           <label htmlFor="f-volume">Volume</label>
-          <input
+          <ChampVolume
             id="f-volume"
-            value={c.volume}
-            placeholder="500 ml"
-            disabled={texteVerrouille('volume')}
-            onChange={(e) => champ('volume', e.target.value)}
+            valeur={c.volume}
+            desactive={texteVerrouille('volume')}
+            surChange={(v) => champ('volume', v)}
           />
         </div>
         {champsWiki && (
           <>
             {(champsVerrouilles || texteVerrouille('nom')) && (
               <p className="sous">
-                Nom, volume, catégorie, saveur, statut et région viennent du Wiki partagé : seuls les champs
+                Nom, volume, catégorie, saveur, variante, statut et région viennent du Wiki partagé : seuls les champs
                 encore vides peuvent être complétés ici.
               </p>
             )}
@@ -449,12 +460,20 @@ function Formulaire({
             </div>
             <div>
               <label htmlFor="f-flavor">Saveur</label>
-              <input
+              <ChampSaveur
                 id="f-flavor"
-                value={c.flavor}
-                disabled={verrouille('flavor')}
-                maxLength={200}
-                onChange={(e) => champ('flavor', e.target.value)}
+                valeur={c.flavor}
+                desactive={verrouille('flavor')}
+                surChange={(v) => champ('flavor', v)}
+              />
+            </div>
+            <div>
+              <label htmlFor="f-variante">Variante</label>
+              <ChampVariante
+                id="f-variante"
+                valeur={c.variante ?? ''}
+                desactive={verrouille('variante')}
+                surChange={(v) => champ('variante', v)}
               />
             </div>
             <div className="duo">

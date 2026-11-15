@@ -102,9 +102,11 @@ test('une canette sans code-barres reçoit un code tiré de son nom et rejoint l
   await page.getByRole('button', { name: 'Modifier la fiche' }).click()
   // Le nom vient désormais du Wiki : il ne se modifie plus depuis la collection.
   await expect(page.locator('#f-nom')).toBeDisabled()
-  await page.fill('#f-volume', '500 ml')
+  await page.selectOption('#f-volume', '500') // volume pris dans la liste des formats (en ml)
   await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await expect(page.getByText('Fiche enregistrée')).toBeVisible()
+  await page.getByRole('button', { name: nom }).click()
+  await expect(page.locator('.meta-item', { hasText: 'Volume' })).toContainText('500 ml')
 })
 
 test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async ({ page }) => {

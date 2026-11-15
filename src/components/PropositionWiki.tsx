@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { BookOpen, Camera as CameraIcon, CheckCircle2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
-import { CATEGORIES, categorieDuNom, REGIONS } from '../categories'
+import { CATEGORIES, categorieDuNom, REGIONS, varianteDuNom } from '../categories'
+import { ChampSaveur, ChampVariante, ChampVolume } from './ChampsFiche'
 import { normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
 import type { FicheWiki, PropositionWiki as Proposition } from '../types'
@@ -14,7 +15,7 @@ type Props = {
   surNonAutorise: () => void
 }
 
-const VIDE: Proposition = { ean: '', nom: '', volume: '', categorie: '', flavor: '', region: '', photo: null }
+const VIDE: Proposition = { ean: '', nom: '', volume: '', categorie: '', flavor: '', region: '', variante: '', photo: null }
 
 /**
  * Proposer une canette au catalogue partagé, sans l'ajouter à sa collection. La fiche reste « à vérifier »
@@ -23,6 +24,7 @@ const VIDE: Proposition = { ean: '', nom: '', volume: '', categorie: '', flavor:
 export default function PropositionWiki({ proprietaire, surFermeture, surProposee, surNonAutorise }: Props) {
   const [p, setP] = useState<Proposition>(VIDE)
   const [categorieChoisie, setCategorieChoisie] = useState(false)
+  const [varianteChoisie, setVarianteChoisie] = useState(false)
   const [proches, setProches] = useState<string[]>([])
   const [doublon, setDoublon] = useState<string | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
@@ -113,6 +115,7 @@ export default function PropositionWiki({ proprietaire, surFermeture, surPropose
                     champ('nom', nom)
                     setDoublon(null)
                     if (!categorieChoisie) champ('categorie', categorieDuNom(nom))
+                    if (!varianteChoisie) champ('variante', varianteDuNom(nom))
                   }}
                 />
               </div>
@@ -171,11 +174,24 @@ export default function PropositionWiki({ proprietaire, surFermeture, surPropose
               </div>
               <div>
                 <label htmlFor="p-saveur">Saveur</label>
-                <input id="p-saveur" maxLength={200} value={p.flavor} onChange={(e) => champ('flavor', e.target.value)} />
+                <ChampSaveur id="p-saveur" valeur={p.flavor} surChange={(v) => champ('flavor', v)} />
               </div>
-              <div>
-                <label htmlFor="p-volume">Volume</label>
-                <input id="p-volume" maxLength={40} placeholder="500 ml" value={p.volume} onChange={(e) => champ('volume', e.target.value)} />
+              <div className="duo">
+                <div>
+                  <label htmlFor="p-volume">Volume</label>
+                  <ChampVolume id="p-volume" valeur={p.volume} surChange={(v) => champ('volume', v)} />
+                </div>
+                <div>
+                  <label htmlFor="p-variante">Variante</label>
+                  <ChampVariante
+                    id="p-variante"
+                    valeur={p.variante}
+                    surChange={(v) => {
+                      setVarianteChoisie(true)
+                      champ('variante', v)
+                    }}
+                  />
+                </div>
               </div>
               <div className="photo-zone">
                 <CameraIcon size={22} />

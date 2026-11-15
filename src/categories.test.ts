@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categorieDuNom } from './categories'
+import { categorieDuNom, varianteDuNom, volumeEnMl } from './categories'
 
 describe('categorieDuNom', () => {
   it('repère une catégorie citée dans le nom, sans tenir compte de la casse', () => {
@@ -32,5 +32,22 @@ describe('categorieDuNom', () => {
   it('renvoie une chaîne vide sans catégorie dans le nom', () => {
     expect(categorieDuNom('Monster Energy Mango')).toBe('')
     expect(categorieDuNom('')).toBe('')
+  })
+})
+
+describe('varianteDuNom', () => {
+  it('repère Shot, Zero Sugar et les collaborations', () => {
+    expect(varianteDuNom('Monster Energy Zero Sugar Vanilla Shot')).toBe('Shot')
+    expect(varianteDuNom('Monster Energy Zero Sugar')).toBe('Zero Sugar')
+    expect(varianteDuNom('Monster VR46 Rossi')).toBe('Collaboration')
+    expect(varianteDuNom('Monster Energy X McLaren')).toBe('Collaboration')
+    expect(varianteDuNom('Monster Ultra White')).toBe('')
+    expect(varianteDuNom('Monster Shotgun')).toBe('')
+  })
+})
+
+describe('volumeEnMl', () => {
+  it('lit « 500 ml » et « 500 », rien d’autre', () => {
+    expect([volumeEnMl('500 ml'), volumeEnMl('355'), volumeEnMl(''), volumeEnMl('un grand')]).toEqual([500, 355, null, null])
   })
 })

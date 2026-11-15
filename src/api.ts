@@ -125,6 +125,8 @@ export const api = {
     requete<{ utilisateurs: number; references: number; connexions_uniques: number }>('/stats'),
   sante: () => requete<{ status: string; version: string; references: number }>('/health'),
   wiki: () => requete<ReponseWiki>('/wiki'),
+  /** Saveurs déjà connues dans le Wiki, les plus fréquentes d'abord (suggestions des formulaires). */
+  wikiSaveurs: () => requete<string[]>('/wiki/saveurs'),
   /** Recherche paginée côté serveur dans le catalogue partagé. */
   wikiRecherche: (p: {
     q?: string
@@ -135,6 +137,7 @@ export const api = {
     signalees?: boolean
     a_verifier?: boolean
     sans_categorie?: boolean
+    variante?: string
     nouveautes?: boolean
   }) => {
     const params = new URLSearchParams()

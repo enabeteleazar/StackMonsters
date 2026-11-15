@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, Flag, Loader2, PlusCircle, Search, ShieldQuestion, WifiOff } from 'lucide-react'
 import { api, NonAutorise } from '../api'
-import { CATEGORIES, REGIONS } from '../categories'
+import { CATEGORIES, REGIONS, VARIANTES } from '../categories'
 import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
 import type { FicheWiki as Fiche, ResultatRechercheWiki, TriWiki } from '../types'
 import FicheWiki from './FicheWiki'
@@ -50,6 +50,7 @@ export default function Wiki({ surNonAutorise }: Props) {
   const [qEnvoyee, setQEnvoyee] = useState('')
   const [gamme, setGamme] = useState('')
   const [region, setRegion] = useState('')
+  const [variante, setVariante] = useState('')
   const [tri, setTri] = useState<TriWiki>('pertinence')
   // Propriétaire : n'afficher que les fiches qui ont des erreurs signalées.
   const [signaleesSeules, setSignaleesSeules] = useState(false)
@@ -78,7 +79,7 @@ export default function Wiki({ surNonAutorise }: Props) {
             : gamme === NOUVEAUTES
               ? { nouveautes: true }
               : { categorie: gamme }),
-          region, tri, page, signalees: signaleesSeules, a_verifier: aVerifierSeules,
+          region, variante, tri, page, signalees: signaleesSeules, a_verifier: aVerifierSeules,
         })
         if (numero !== requeteEnCours.current) return // une recherche plus récente a pris le relais
         setResultat(r)
@@ -91,7 +92,7 @@ export default function Wiki({ surNonAutorise }: Props) {
         if (numero === requeteEnCours.current) setChargement(false)
       }
     },
-    [qEnvoyee, gamme, region, tri, signaleesSeules, aVerifierSeules, surNonAutorise],
+    [qEnvoyee, gamme, region, variante, tri, signaleesSeules, aVerifierSeules, surNonAutorise],
   )
 
   useEffect(() => {
@@ -99,13 +100,14 @@ export default function Wiki({ surNonAutorise }: Props) {
   }, [charger])
 
   const peutEditer = resultat?.peut_editer ?? false
-  const filtresActifs = !!(qEnvoyee || gamme || region || signaleesSeules || aVerifierSeules)
+  const filtresActifs = !!(qEnvoyee || gamme || region || variante || signaleesSeules || aVerifierSeules)
   const fiche = ouverte ? (fiches.find((f) => f.ean === ouverte) ?? null) : null
   const fermer = useCallback(() => setOuverte(null), [])
   const toutEffacer = () => {
     setQ('')
     setGamme('')
     setRegion('')
+    setVariante('')
     setSignaleesSeules(false)
     setAVerifierSeules(false)
   }
@@ -162,6 +164,15 @@ export default function Wiki({ surNonAutorise }: Props) {
               <option value="">Tous</option>
               {REGIONS.map((r) => (
                 <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Variante</span>
+            <select name="variante-wiki" value={variante} onChange={(e) => setVariante(e.target.value)} aria-label="Filtrer par variante">
+              <option value="">Toutes</option>
+              {VARIANTES.map((v) => (
+                <option key={v} value={v}>{v}</option>
               ))}
             </select>
           </label>

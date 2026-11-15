@@ -27,6 +27,8 @@ from typing import Iterator, Literal
 
 import psycopg
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
@@ -69,7 +71,8 @@ COLONNES_COLLECTION = (
     "COALESCE(w.photo IS NOT NULL, false) AS photo_wiki, (w.ean IS NOT NULL) AS dans_wiki, "
     "COALESCE(w.description, '') AS description, "
     "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
-    "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region"
+    "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region, "
+    "COALESCE(w.variante, '') AS variante"
 )
 # Fiche du Wiki d'une ligne de collection : par son code, par la fiche dont c'est un code secondaire,
 # ou par celle qui a remplacé ce code (wiki_exclus.vers).
@@ -115,6 +118,86 @@ def _photo_valide(photo: str) -> bool:
 
 # Début de mot : début du nom, ou lettre précédée d'un espace, tiret, barre, point ou parenthèse.
 DEBUT_MOT_RE = re.compile(r"(^|[\s\-/.(\[])(\w)")
+
+
+# Fiches normalisées (issue #5, voir « Champs d'une fiche » dans le README). Mêmes listes que src/categories.ts
+# (un test vérifie qu'elles restent identiques).
+CATEGORIES = ("Original", "Ultra", "Juiced", "Reserve", "Special", "Java", "Killer Brew", "Rehab", "Nitro", "Water",
+              "Asia")
+REGIONS = ("Global", "US", "Canada", "Europe", "Europe/Aus", "US/Global", "Japan")
+VARIANTES = ("Standard", "Zero Sugar", "Shot", "Édition limitée", "Collaboration")
+SAVEUR_MAX = 60
+VOLUME_RE = re.compile(r"^\s*(\d{2,4})(?:[.,]\d+)?\s*(ml|oz|fl\.?\s*oz)?\s*$", re.IGNORECASE)
+VOLUME_NORMAL_RE = re.compile(r"^\d{2,4} ml$")
+
+
+def normaliser_volume(texte: str) -> str | None:
+    """« 500 », « 500ml », « 16 oz » → « 500 ml » / « 473 ml » ; chaîne vide gardée ; None si illisible."""
+    if not texte.strip():
+        return ""
+    m = VOLUME_RE.match(texte)
+    if not m:
+        return None
+    n = int(m.group(1))
+    if m.group(2) and m.group(2).lower() != "ml":
+        n = round(n * 29.5735)  # once liquide américaine
+    return f"{n} ml" if 50 <= n <= 3000 else None
+
+
+def _valeur_controlee(valeur: str, permises: tuple[str, ...], champ: str) -> str:
+    valeur = valeur.strip()
+    if valeur and valeur not in permises:
+        raise ValueError(f"{champ} inconnu(e) : {valeur}")
+    return valeur
+
+
+def _a_reprendre(r: dict) -> list[str]:
+    """Champs d'une fiche ancienne hors des valeurs contrôlées (à corriger par le propriétaire)."""
+    champs = []
+    if r["volume"] and not VOLUME_NORMAL_RE.match(r["volume"]):
+        champs.append("volume")
+    if len(r["flavor"]) > SAVEUR_MAX:
+        champs.append("saveur")
+    if (r["categorie"] or r["gamme"]) and (r["categorie"] or r["gamme"]) not in CATEGORIES:
+        champs.append("catégorie")
+    if r["region"] and r["region"] not in REGIONS:
+        champs.append("pays")
+    return champs
+
+
+class ChampsControles(BaseModel):
+    """Volume en ml, saveur courte, gamme, pays et variante pris dans leurs listes (fiche, proposition)."""
+
+    @field_validator("volume", check_fields=False)
+    @classmethod
+    def volume_normalise(cls, volume: str) -> str:
+        v = normaliser_volume(volume)
+        if v is None:
+            raise ValueError("volume attendu en ml, entre 50 et 3000 (ex. : 500)")
+        return v
+
+    @field_validator("flavor", check_fields=False)
+    @classmethod
+    def saveur_courte(cls, flavor: str) -> str:
+        flavor = " ".join(flavor.split())
+        if len(flavor) > SAVEUR_MAX:
+            raise ValueError(f"saveur trop longue ({SAVEUR_MAX} caractères au plus) : la description sert aux détails")
+        return flavor
+
+    @field_validator("categorie", check_fields=False)
+    @classmethod
+    def categorie_connue(cls, categorie: str) -> str:
+        return _valeur_controlee(categorie, CATEGORIES, "catégorie")
+
+    @field_validator("region", check_fields=False)
+    @classmethod
+    def region_connue(cls, region: str) -> str:
+        return _valeur_controlee(region, REGIONS, "pays")
+
+    @field_validator("variante", check_fields=False)
+    @classmethod
+    def variante_connue(cls, variante: str) -> str:
+        return _valeur_controlee(variante, VARIANTES, "variante")
 
 
 def formater_nom(nom: str) -> str:
@@ -273,6 +356,33 @@ CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id);
 ALTER TABLE sessions ALTER COLUMN cree SET DEFAULT (EXTRACT(EPOCH FROM now())::BIGINT);
 ALTER TABLE sessions ALTER COLUMN emis SET DEFAULT (EXTRACT(EPOCH FROM now())::BIGINT);
 """),
+    # Fiches normalisées (issue #5). Rien n'est perdu : les valeurs d'avant sont copiées dans
+    # sauvegarde_migration_14 ; une saveur trop longue ne part dans la description que si celle-ci est vide ;
+    # un volume illisible reste tel quel (signalé « à reprendre » au propriétaire).
+    (14, r"""
+CREATE TABLE IF NOT EXISTS sauvegarde_migration_14 AS
+    SELECT 'wiki' AS source, NULL::bigint AS user_id, ean, volume, flavor, description, status FROM wiki
+    UNION ALL SELECT 'collection', user_id, ean, volume, '', '', '' FROM collection;
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS variante TEXT NOT NULL DEFAULT '';
+UPDATE wiki SET volume = substring(volume FROM '^\s*(\d{2,4})') || ' ml'
+    WHERE volume ~* '^\s*\d{2,4}\s*(ml)?\s*$' AND volume !~ '^\d{2,4} ml$'
+      AND substring(volume FROM '^\s*(\d{2,4})')::int BETWEEN 50 AND 3000;
+UPDATE collection SET volume = substring(volume FROM '^\s*(\d{2,4})') || ' ml'
+    WHERE volume ~* '^\s*\d{2,4}\s*(ml)?\s*$' AND volume !~ '^\d{2,4} ml$'
+      AND substring(volume FROM '^\s*(\d{2,4})')::int BETWEEN 50 AND 3000;
+UPDATE wiki SET status = 'Stop' WHERE status = 'Discontinued';
+UPDATE wiki SET description = flavor, flavor = '' WHERE length(flavor) > 60 AND description = '';
+UPDATE wiki SET variante = CASE
+        WHEN nom ~* '\mshots?\M' THEN 'Shot'
+        WHEN nom ~* '\mzero\M' THEN 'Zero Sugar'
+        WHEN nom ~* '\m(vr46|rossi|lando|norris|mclaren)\M' OR nom ~* '\s[x×]\s' THEN 'Collaboration'
+        ELSE '' END
+    WHERE variante = '';
+DROP INDEX IF EXISTS wiki_recherche;
+CREATE INDEX wiki_recherche ON wiki USING gin (
+    sm_texte(nom || ' ' || flavor || ' ' || region || ' ' || COALESCE(NULLIF(categorie, ''), gamme) || ' ' || variante
+             || ' ' || ean) gin_trgm_ops);
+"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -289,6 +399,7 @@ class Canette(BaseModel):
     flavor: str = Field(default="", max_length=200)
     status: Literal["", "Active", "Stop", "Nouveauté"] = ""
     region: str = Field(default="", max_length=80)
+    variante: str = Field(default="", max_length=40)
     etat: str = Field(default="", max_length=40)
     nb: int = Field(default=1, ge=1, le=9999)
     notes: str = Field(default="", max_length=4000)
@@ -307,8 +418,20 @@ class Canette(BaseModel):
     def formater(cls, nom: str) -> str:
         return formater_nom(nom)
 
+    @field_validator("volume")
+    @classmethod
+    def volume_normalise(cls, volume: str) -> str:
+        """Ajout depuis la collection : volume mis au format « 500 ml » s'il est lisible, gardé sinon."""
+        v = normaliser_volume(volume)
+        return volume.strip() if v is None else v
 
-class FicheWiki(BaseModel):
+    @field_validator("variante")
+    @classmethod
+    def variante_connue(cls, variante: str) -> str:
+        return variante.strip() if variante.strip() in VARIANTES else ""
+
+
+class FicheWiki(ChampsControles):
     """Champs d'une fiche du Wiki modifiables par le propriétaire."""
 
     ean: str | None = Field(default=None, min_length=1, max_length=64)
@@ -318,6 +441,7 @@ class FicheWiki(BaseModel):
     flavor: str = Field(default="", max_length=200)
     status: Literal["", "Active", "Stop", "Nouveauté"] = ""
     region: str = Field(default="", max_length=80)
+    variante: str = Field(default="", max_length=40)
     description: str = Field(default="", max_length=4000)
 
     @field_validator("nom")
@@ -348,7 +472,7 @@ class Signalement(BaseModel):
         return motif
 
 
-class Proposition(BaseModel):
+class Proposition(ChampsControles):
     """Canette proposée au catalogue par un membre, sans l'ajouter à sa collection."""
 
     ean: str = Field(default="", max_length=64)
@@ -357,6 +481,7 @@ class Proposition(BaseModel):
     categorie: str = Field(default="", max_length=80)
     flavor: str = Field(default="", max_length=200)
     region: str = Field(default="", max_length=80)
+    variante: str = Field(default="", max_length=40)
     photo: str | None = Field(default=None, max_length=300_000)
     # Envoyée après avoir vu les fiches proches : le membre confirme qu'il ne s'agit pas d'un doublon.
     confirmer_doublon: bool = False
@@ -984,9 +1109,9 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         fiche = (_fiche_de_la_ligne(cx, ean) if deja_la else None) or ean
         cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (fiche,))
         cx.execute(
-            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, nouveaute_depuis, source, moderation,
-                                 cree, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, variante, nouveaute_depuis, source,
+                                 moderation, cree, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (ean) DO UPDATE SET
                   nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
                   volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
@@ -997,15 +1122,17 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                   nouveaute_depuis = CASE WHEN wiki.status = '' THEN EXCLUDED.nouveaute_depuis
                                           ELSE wiki.nouveaute_depuis END,
                   region = CASE WHEN wiki.region = '' THEN EXCLUDED.region ELSE wiki.region END,
+                  variante = CASE WHEN wiki.variante = '' THEN EXCLUDED.variante ELSE wiki.variante END,
                   maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
                               OR (wiki.volume = '' AND EXCLUDED.volume <> '')
                               OR (COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = '' AND EXCLUDED.categorie <> '')
                               OR (wiki.flavor = '' AND EXCLUDED.flavor <> '')
                               OR (wiki.status = '' AND EXCLUDED.status <> '')
                               OR (wiki.region = '' AND EXCLUDED.region <> '')
+                              OR (wiki.variante = '' AND EXCLUDED.variante <> '')
                              THEN EXCLUDED.maj ELSE wiki.maj END""",
             (fiche, c.nom.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
-             statut, c.region.strip(),
+             statut, c.region.strip(), c.variante,
              int(time.time()) if statut == "Nouveauté" else None,
              # Provenance anonyme, fixée à la création de la fiche (jamais modifiée ensuite).
              "sans-code" if c.ean.startswith("LOCAL-") else "code-barres",
@@ -1063,7 +1190,7 @@ def supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection =
 
 
 COLONNES_FICHE = (
-    "ean, nom, volume, categorie, gamme, flavor, " + _statut("") + " AS status, region, description, "
+    "ean, nom, volume, categorie, gamme, flavor, " + _statut("") + " AS status, region, variante, description, "
     "(photo IS NOT NULL) AS a_photo, maj, source, cree, corrigee, "
     "COALESCE((SELECT array_agg(k.ean ORDER BY k.ean) FROM wiki_codes k WHERE k.fiche = wiki.ean), '{}') AS codes, "
     "COALESCE((SELECT json_agg(json_build_object('id', s.id, 'motif', s.motif, 'cree', s.cree) ORDER BY s.id) "
@@ -1082,12 +1209,13 @@ def _fiche(r: dict, proprietaire: bool = False) -> dict:
     fiche = {
         "ean": r["ean"], "nom": r["nom"], "volume": r["volume"],
         "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
-        "region": r["region"],
+        "region": r["region"], "variante": r["variante"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
         "codes": list(r["codes"]),
     }
     if proprietaire:
         fiche["moderation"] = r["moderation"]
+        fiche["a_reprendre"] = _a_reprendre(r)
         fiche["provenance"] = {"source": r["source"], "cree": r["cree"], "corrigee": r["corrigee"]}
         fiche["signalements"] = r["signalements"]
         fiche["moderations"] = r["moderations"]
@@ -1118,7 +1246,10 @@ def _code_pris(cx: psycopg.Connection, code: str) -> bool:
 
 # Texte indexé d'une fiche (migration 10) : la requête doit reprendre exactement cette expression pour
 # que PostgreSQL utilise l'index trigramme.
-DOC_RECHERCHE = "sm_texte(nom || ' ' || flavor || ' ' || region || ' ' || COALESCE(NULLIF(categorie, ''), gamme) || ' ' || ean)"
+DOC_RECHERCHE = (
+    "sm_texte(nom || ' ' || flavor || ' ' || region || ' ' || COALESCE(NULLIF(categorie, ''), gamme) || ' ' || variante "
+    "|| ' ' || ean)"
+)
 PAR_PAGE_MAX = 60
 
 
@@ -1132,6 +1263,7 @@ def wiki_recherche(
     q: str = Query(default="", max_length=120),
     categorie: str = Query(default="", max_length=80),
     region: str = Query(default="", max_length=80),
+    variante: str = Query(default="", max_length=40),
     tri: Literal["pertinence", "nom", "recent"] = "pertinence",
     page: int = Query(default=1, ge=1, le=10_000),
     par_page: int = Query(default=24, ge=1, le=PAR_PAGE_MAX),
@@ -1166,6 +1298,9 @@ def wiki_recherche(
     if region:
         conditions.append("region = %s")
         params.append(region)
+    if variante:
+        conditions.append("variante = %s")
+        params.append(variante)
     if signalees and proprio:
         conditions.append("EXISTS (SELECT 1 FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL)")
     if a_verifier and proprio:
@@ -1236,6 +1371,18 @@ def wiki_liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(
     return {"peut_editer": proprio, "fiches": [_fiche(r, proprio) for r in lignes]}
 
 
+@router.get("/wiki/saveurs")
+def wiki_saveurs(cx: psycopg.Connection = Depends(connexion)) -> list[str]:
+    """Saveurs déjà connues (les plus fréquentes d'abord), proposées dans les formulaires."""
+    with cx.transaction():
+        lignes = cx.execute(
+            "SELECT flavor FROM wiki WHERE flavor <> '' AND length(flavor) <= %s AND moderation <> 'refusee' "
+            "GROUP BY flavor ORDER BY COUNT(*) DESC, lower(flavor) LIMIT 300",
+            (SAVEUR_MAX,),
+        ).fetchall()
+    return [r["flavor"] for r in lignes]
+
+
 @router.get("/wiki/{ean}/photo")
 def wiki_photo(ean: str, cx: psycopg.Connection = Depends(connexion)) -> Response:
     with cx.transaction():
@@ -1304,14 +1451,14 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
                 raise HTTPException(409, "ce code-barres existe déjà dans le Wiki")
         r = cx.execute(
             "UPDATE wiki SET ean = %s, nom = %s, "
-            "volume = %s, categorie = %s, flavor = %s, status = %s, region = %s, "
+            "volume = %s, categorie = %s, flavor = %s, status = %s, region = %s, variante = %s, "
             # Une Nouveauté encore en cours garde sa date ; sinon le délai de 30 jours (re)part maintenant.
             "nouveaute_depuis = CASE WHEN %s <> 'Nouveauté' THEN NULL "
             "WHEN status = 'Nouveauté' AND nouveaute_depuis >= %s THEN nouveaute_depuis ELSE %s END, "
             "description = %s, maj = %s, corrigee = %s "
             f"WHERE ean = %s RETURNING {COLONNES_FICHE}",
             (nouvel_ean, f.nom.strip(),
-             f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(), f.status, now - DUREE_NOUVEAUTE, now,
+             f.volume, f.categorie, f.flavor, f.status, f.region, f.variante, f.status, now - DUREE_NOUVEAUTE, now,
              f.description.strip(), maintenant(), maintenant(), ean),
         ).fetchone()
         if r is None:
@@ -1479,10 +1626,10 @@ def wiki_proposer(
             if proches:
                 raise HTTPException(409, "doublon probable : " + " ; ".join(proches))
         r = cx.execute(
-            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, region, photo, source, moderation, cree, maj)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, 'proposition', %s, %s, %s)
+            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, region, variante, photo, source, moderation, cree, maj)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'proposition', %s, %s, %s)
                RETURNING """ + COLONNES_FICHE,
-            (ean, prop.nom, prop.volume.strip(), prop.categorie.strip(), prop.flavor.strip(), prop.region.strip(),
+            (ean, prop.nom, prop.volume, prop.categorie, prop.flavor, prop.region, prop.variante,
              prop.photo, "acceptee" if proprio else "en_attente", maintenant(), maintenant()),
         ).fetchone()
     return _fiche(r, proprio)
@@ -1521,6 +1668,14 @@ def wiki_signalement_traite(ident: int, u: dict = Depends(utilisateur), cx: psyc
 
 
 app = FastAPI(title="StackMonsters", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_lisible(_: Request, e: RequestValidationError) -> JSONResponse:
+    """422 avec un message lisible (« volume attendu en ml… ») au lieu de la liste brute de Pydantic."""
+    messages = [str(err.get("msg", "")).removeprefix("Value error, ") for err in e.errors()]
+    return JSONResponse(status_code=422, content={"detail": " ; ".join(m for m in messages if m) or "données invalides"})
+
 for r in (auth, router):  # avec et sans le préfixe /api (selon ce que Vercel transmet)
     app.include_router(r)
     app.include_router(r, prefix="/api")

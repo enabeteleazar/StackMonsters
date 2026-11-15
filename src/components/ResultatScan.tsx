@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Camera as CameraIcon, CheckCircle2, ImageOff, Loader2, Plus, Sparkles, X } from 'lucide-react'
-import { categorieDuNom } from '../categories'
+import { categorieDuNom, varianteDuNom } from '../categories'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
@@ -90,6 +90,7 @@ export default function ResultatScan(p: Props) {
       flavor: fiche.flavor,
       status: fiche.status,
       region: fiche.region,
+      variante: fiche.variante,
       photo,
     })
   }
@@ -321,7 +322,7 @@ function CarteMini({
   )
 }
 
-type ChampsCreation = Pick<Canette, 'nom' | 'photo'> & Partial<Pick<Canette, 'categorie'>>
+type ChampsCreation = Pick<Canette, 'nom' | 'photo'> & Partial<Pick<Canette, 'categorie' | 'variante'>>
 
 function CreationRapide({
   occupe,
@@ -343,12 +344,13 @@ function CreationRapide({
   const propositions = fichesCorrespondantes(fichesExistantes, champs.nom)
   // Catégorie citée dans le nom (« … Ultra … ») : remplie automatiquement à la création de la fiche.
   const categorie = categorieDuNom(champs.nom)
+  const variante = varianteDuNom(champs.nom)
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        surValider({ ...champs, nom: champs.nom.trim(), ...(categorie ? { categorie } : {}) })
+        surValider({ ...champs, nom: champs.nom.trim(), ...(categorie ? { categorie } : {}), ...(variante ? { variante } : {}) })
       }}
     >
       <div className="bandeau-info">
@@ -366,9 +368,11 @@ function CreationRapide({
             value={champs.nom}
             onChange={(e) => maj('nom', e.target.value)}
           />
-          {categorie && (
+          {(categorie || variante) && (
             <p className="categorie-detectee" aria-live="polite">
-              Catégorie détectée : <b>{categorie}</b>
+              {categorie && <>Catégorie détectée : <b>{categorie}</b></>}
+              {categorie && variante && ' · '}
+              {variante && <>Variante : <b>{variante}</b></>}
             </p>
           )}
         </div>

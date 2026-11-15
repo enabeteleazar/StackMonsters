@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Ban, CheckCircle2, EyeOff, Flag, ImageOff, ImagePlus, ShieldQuestion, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
+import { ChampSaveur, ChampVariante, ChampVolume } from './ChampsFiche'
 import { reduirePhoto } from '../photo'
 import type { FicheWiki as Fiche, ModifFicheWiki } from '../types'
 import PhotoWiki from './PhotoWiki'
@@ -237,10 +238,23 @@ export default function FicheWiki({
                 <b>{fiche.volume || '—'}</b>
               </div>
               <div className="meta-item">
+                <span>Variante</span>
+                <b>{fiche.variante || '—'}</b>
+              </div>
+              <div className="meta-item">
                 <span>Status</span>
                 <b>{fiche.status || '—'}</b>
               </div>
             </div>
+
+            {peutEditer && !!fiche.a_reprendre?.length && (
+              <div className="fiche-moderation en_attente" role="status">
+                <ShieldQuestion size={18} />
+                <span>
+                  Fiche d’avant la normalisation : {fiche.a_reprendre.join(', ')} à reprendre (« Modifier la fiche »).
+                </span>
+              </div>
+            )}
 
             {peutEditer && fiche.moderation && fiche.moderation !== 'acceptee' && (
               <div className={`fiche-moderation ${fiche.moderation}`} role="status">
@@ -451,6 +465,7 @@ function Formulaire({
     flavor: fiche.flavor,
     status: fiche.status,
     region: fiche.region,
+    variante: fiche.variante ?? '',
     description: fiche.description,
   })
   const [occupe, setOccupe] = useState(false)
@@ -488,13 +503,7 @@ function Formulaire({
         </div>
         <div>
           <label htmlFor="w-volume">Volume</label>
-          <input
-            id="w-volume"
-            value={f.volume}
-            maxLength={40}
-            placeholder="500 ml"
-            onChange={(e) => champ('volume', e.target.value)}
-          />
+          <ChampVolume id="w-volume" valeur={f.volume} surChange={(v) => champ('volume', v)} />
         </div>
         <div>
           <label htmlFor="w-categorie">Catégorie</label>
@@ -511,12 +520,11 @@ function Formulaire({
         </div>
         <div>
           <label htmlFor="w-flavor">Saveur</label>
-          <input
-            id="w-flavor"
-            value={f.flavor}
-            maxLength={200}
-            onChange={(e) => champ('flavor', e.target.value)}
-          />
+          <ChampSaveur id="w-flavor" valeur={f.flavor} surChange={(v) => champ('flavor', v)} />
+        </div>
+        <div>
+          <label htmlFor="w-variante">Variante</label>
+          <ChampVariante id="w-variante" valeur={f.variante} surChange={(v) => champ('variante', v)} />
         </div>
         <div>
           <label htmlFor="w-status">Status</label>

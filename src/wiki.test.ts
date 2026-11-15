@@ -10,7 +10,7 @@ const f = (ean: string, nom: string): FicheWiki => ({
   categorie: '',
   flavor: '',
   status: '',
-  region: '',
+  region: '', variante: '',
   description: '',
   photo: null,
   codes: [],

@@ -9,7 +9,6 @@
 Tickets enregistrés, à prioriser ou à planifier.
 
 - [ ] [#1 — Auditer et renouveler les secrets d’environnement](https://github.com/enabeteleazar/StockMonsters/issues/1) · P0 · Sécurité
-- [ ] [#5 — Enrichir les fiches canettes](https://github.com/enabeteleazar/StockMonsters/issues/5) · P2 · Catalogue
 - [ ] [#6 — Gérer plusieurs photos par canette](https://github.com/enabeteleazar/StockMonsters/issues/6) · P2 · Collection
 - [ ] [#7 — Ajouter un historique des opérations](https://github.com/enabeteleazar/StockMonsters/issues/7) · P2 · Collection
 - [ ] [#11 — Améliorer le parcours après lecture du code-barres](https://github.com/enabeteleazar/StockMonsters/issues/11) · P2 · Scan
@@ -33,6 +32,10 @@ _Aucun ticket en validation._
 
 ### Terminé
 
+- [x] [#5 — Enrichir les fiches canettes](https://github.com/enabeteleazar/StockMonsters/issues/5) · P2 · Catalogue
+  — volume en ml (liste de formats + autre), saveur courte avec suggestions, catégorie, pays et nouvelle
+  variante en listes contrôlées, vérifiées par l'API ; formulaires, fiches, filtre et recherche à jour.
+  Migration 14 avec sauvegarde préalable : les anciennes fiches restent valides, le reste est « à reprendre ».
 - [x] [#3 — Suppression complète d’un compte](https://github.com/enabeteleazar/StockMonsters/issues/3) · P1 · Comptes
   — panneau de confirmation dans les réglages (conséquences détaillées, adresse du compte à saisir, vérifiée
   aussi par l'API) ; compte, collection, photos, notes, sessions de tous les appareils et codes effacés. Les

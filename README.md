@@ -126,6 +126,31 @@ API, la fenêtre montre le geste Partager → « Sur l'écran d'accueil » → �
   (`GET /api/cans/{ean}/photo`). Un `PUT /api/cans` sans champ `photo` conserve la photo existante.
 
 ## Wiki (catalogue partagé)
+### Champs d'une fiche (issue #5)
+| Champ | Règle | Valeurs |
+| --- | --- | --- |
+| Nom | obligatoire | texte, majuscule à chaque mot |
+| Code-barres | obligatoire (sinon code « 20… » tiré du nom) | EAN-8/13, UPC-A, codes supplémentaires |
+| Volume | facultatif | nombre de ml entre 50 et 3000, enregistré « 500 ml » ; formats proposés : 250, 355, 443, 473, 500, 550, 568, 710 ml, ou « Autre » (« 16 oz » est converti) |
+| Saveur | facultative | 60 caractères au plus, saveurs déjà connues proposées (`GET /api/wiki/saveurs`) ; les détails vont dans la description |
+| Catégorie (gamme) | facultative | `CATEGORIES` |
+| Pays / marché | facultatif | `REGIONS` |
+| Variante | facultative | `VARIANTES` : Standard, Zero Sugar, Shot, Édition limitée, Collaboration |
+| Statut | facultatif | Active, Stop, Nouveauté (30 jours, propriétaire seulement) |
+| Description | facultative | texte libre, propriétaire seulement |
+
+Les listes contrôlées sont dans `src/categories.ts` et `api/index.py` (un test vérifie qu'elles sont identiques).
+L'API refuse (422, message lisible) une valeur hors liste dans une fiche ou une proposition. L'ajout d'une
+canette à sa collection reste souple pour les anciennes versions de l'appli : volume mis au format s'il est
+lisible, variante inconnue ignorée. La variante est remplie depuis le nom à la création (« … Shot »,
+« Zero Sugar », collaborations connues), se filtre dans le Wiki et entre dans la recherche.
+
+Migration 14 : copie d'abord les valeurs d'avant dans `sauvegarde_migration_14`, puis met les volumes au
+format « 500 ml » (Wiki et collections), remplace le statut historique « Discontinued » par « Stop », déplace
+une saveur de plus de 60 caractères dans la description si celle-ci est vide, et remplit la variante depuis le
+nom. Ce qui ne peut pas être converti (volume illisible, saveur longue avec une description déjà remplie,
+valeur hors liste) reste tel quel : la fiche reste valide et le propriétaire la voit « à reprendre ».
+
 Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comptes confondus. Une vignette
 (photo + nom) ouvre la fiche : nom, version, volume, catégorie, saveur, statut et région.
 - Catégories et régions proposées dans le formulaire propriétaire : elles proviennent des valeurs distinctes

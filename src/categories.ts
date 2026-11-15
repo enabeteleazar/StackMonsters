@@ -39,6 +39,33 @@ export function categorieDuNom(nom: string): string {
 
 export const REGIONS = ['Global', 'US', 'Canada', 'Europe', 'Europe/Aus', 'US/Global', 'Japan'] as const
 
+/** Variante d'une référence (valeurs contrôlées, mêmes que VARIANTES dans api/index.py). */
+export const VARIANTES = ['Standard', 'Zero Sugar', 'Shot', 'Édition limitée', 'Collaboration'] as const
+
+/** Volumes les plus courants, en ml ; « Autre » permet de saisir un nombre. */
+export const VOLUMES_COURANTS = [250, 355, 443, 473, 500, 550, 568, 710] as const
+
+/** Longueur maximale d'une saveur : les détails vont dans la description. */
+export const SAVEUR_MAX = 60
+
+/** Volume en ml d'une valeur « 500 ml » (ou « 500 »), null si illisible ou vide. */
+export function volumeEnMl(volume: string): number | null {
+  const m = /^\s*(\d{2,4})\s*(ml)?\s*$/i.exec(volume)
+  return m ? Number(m[1]) : null
+}
+
+/**
+ * Variante citée dans le nom d'une canette : « … Shot » → Shot, « … Zero Sugar … » → Zero Sugar, une collaboration
+ * connue → Collaboration. Chaîne vide sinon (même règle que la migration 14 de l'API).
+ */
+export function varianteDuNom(nom: string): string {
+  const n = sansAccents(nom)
+  if (/\bshots?\b/.test(n)) return 'Shot'
+  if (/\bzero\b/.test(n)) return 'Zero Sugar'
+  if (/\b(vr46|rossi|lando|norris|mclaren)\b/.test(n) || /\s[x×]\s/.test(n)) return 'Collaboration'
+  return ''
+}
+
 export const STATUTS = ['Active', 'Stop', 'Nouveauté'] as const
 
 /** « Nouveauté » est réservée au propriétaire, depuis la fiche du Wiki. */

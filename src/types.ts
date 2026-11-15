@@ -6,6 +6,8 @@ export type Canette = {
   flavor: string
   status: string
   region: string
+  /** Variante de la référence (Standard, Zero Sugar, Shot…), venue du Wiki. */
+  variante?: string
   etat: string
   nb: number
   notes: string
@@ -49,9 +51,13 @@ export type FicheWiki = {
   flavor: string
   status: string
   region: string
+  /** Variante (valeurs contrôlées : VARIANTES), vide si non renseignée. */
+  variante: string
   description: string
   /** Marqueur de version de la photo (null : pas de photo). Les octets se chargent à part. */
   photo: string | null
+  /** Propriétaire seulement : champs hors des valeurs contrôlées, à corriger (fiches d'avant la normalisation). */
+  a_reprendre?: string[]
   /** Codes-barres supplémentaires (autre pays, autre format) qui désignent aussi cette fiche. */
   codes: string[]
   /** Propriétaire seulement : d'où vient la fiche (sans lien avec un compte) et sa dernière correction. */
@@ -92,6 +98,7 @@ export type PropositionWiki = {
   categorie: string
   flavor: string
   region: string
+  variante: string
   photo: string | null
   confirmer_doublon?: boolean
 }
@@ -100,5 +107,5 @@ export type TriWiki = 'pertinence' | 'nom' | 'recent'
 
 export type ModifFicheWiki = Pick<
   FicheWiki,
-  'ean' | 'nom' | 'volume' | 'categorie' | 'flavor' | 'status' | 'region' | 'description'
+  'ean' | 'nom' | 'volume' | 'categorie' | 'flavor' | 'status' | 'region' | 'variante' | 'description'
 >

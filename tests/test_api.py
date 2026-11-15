@@ -776,7 +776,7 @@ def test_migration_12_garde_l_echeance_des_sessions_existantes(env):
         expire = _session(h)["expire"]
         cx.execute("ALTER TABLE sessions DROP COLUMN cree, DROP COLUMN emis, DROP COLUMN remplacee")
         cx.execute("DELETE FROM schema_migrations WHERE version >= 12")
-        assert ix.appliquer_migrations(cx) == [12, 13]
+        assert ix.appliquer_migrations(cx) == [v for v, _ in ix.MIGRATIONS if v >= 12]
     s = _session(h)
     assert (s["expire"], s["cree"], s["emis"], s["remplacee"]) == (expire, expire - 30 * 86400, expire - 30 * 86400, None)
     assert c.get("/api/auth/moi", headers=h).status_code == 200
@@ -1086,7 +1086,7 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
     assert f["description"] == ""
     assert (f["categorie"], f["flavor"], f["status"], f["region"]) == ("", "", "", "")
     assert set(f) == {
-        "ean", "nom", "volume", "categorie", "flavor", "status", "region",
+        "ean", "nom", "volume", "categorie", "flavor", "status", "region", "variante",
         "description", "photo", "codes",
     }
     assert f["photo"]  # la fiche n'avait pas de photo : celle envoyée devient la sienne
@@ -1728,3 +1728,120 @@ def test_moderation_accepter_refuser_et_historique(env, monkeypatch):
     eans = [f["ean"] for f in r["fiches"]]
     assert "2000000000022" in eans and "2000000000015" not in eans and r["a_verifier"] == len(eans)
     assert all(f["moderation"] == "en_attente" for f in r["fiches"])
+
+
+# --- Fiches normalisées (issue #5) ----------------------------------------------------
+
+
+def test_normaliser_volume():
+    n = ix.normaliser_volume
+    assert [n("500"), n(" 500ml "), n("355 ML"), n("16 oz"), n("16 fl oz"), n("")] == [
+        "500 ml", "500 ml", "355 ml", "473 ml", "473 ml", ""]
+    assert n("grand") is None and n("5") is None and n("9999") is None
+
+
+def test_listes_controlees_identiques_au_front():
+    """Catégories, pays et variantes : mêmes valeurs dans l'API et dans src/categories.ts."""
+    import re
+    from pathlib import Path
+    ts = (Path(__file__).resolve().parent.parent / "src" / "categories.ts").read_text()
+
+    def liste(nom):
+        bloc = re.search(rf"export const {nom} = \[(.*?)\] as const", ts, re.S).group(1)
+        return tuple(re.findall(r"'([^']+)'", bloc))
+
+    assert liste("CATEGORIES") == ix.CATEGORIES
+    assert liste("REGIONS") == ix.REGIONS
+    assert liste("VARIANTES") == ix.VARIANTES
+
+
+def test_fiche_champs_controles(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+    url = "/api/wiki/2000000000015"
+    base = {"nom": "Mango Loco", "categorie": "Juiced", "region": "Europe", "flavor": "Mangue", "variante": "Zero Sugar"}
+    r = c.put(url, json={**base, "volume": "500"}, headers=ha)
+    assert r.status_code == 200 and r.json()["volume"] == "500 ml" and r.json()["a_reprendre"] == []
+    f = fiche(c, hb, "2000000000015")
+    assert (f["volume"], f["variante"], f["flavor"]) == ("500 ml", "Zero Sugar", "Mangue")  # visible des membres
+    r = c.put(url, json={**base, "volume": "grand"}, headers=ha)
+    assert r.status_code == 422 and r.json()["detail"].startswith("volume attendu en ml")
+    for mauvais in ({"volume": "grand"}, {"volume": "5"}, {"flavor": "x" * 61}, {"categorie": "Inconnue"},
+                    {"region": "Mars"}, {"variante": "Géante"}):
+        assert c.put(url, json={**base, **mauvais}, headers=ha).status_code == 422, mauvais
+    assert c.put(url, json={**base, "volume": "", "variante": ""}, headers=ha).json()["variante"] == ""
+
+
+def test_ajout_depuis_la_collection_normalise_sans_bloquer(env):
+    c, codes = env
+    h = connecter(c, codes, A)
+    # Une ancienne appli encore en cache envoie un volume nu ou illisible : accepté, mis au format si possible.
+    assert c.put("/api/cans", json=canette("2000000000015", nom="Mango", volume="500", variante="Shot"),
+                 headers=h).status_code == 200
+    assert c.put("/api/cans", json=canette("2000000000022", nom="Ultra", volume="un grand", variante="Géante"),
+                 headers=h).status_code == 200
+    f1, f2 = fiche(c, h, "2000000000015"), fiche(c, h, "2000000000022")
+    assert (f1["volume"], f1["variante"]) == ("500 ml", "Shot")
+    assert (f2["volume"], f2["variante"]) == ("un grand", "")
+    assert next(x for x in c.get("/api/cans", headers=h).json() if x["ean"] == "2000000000015")["variante"] == "Shot"
+
+
+def test_proposition_champs_controles(env):
+    c, codes = env
+    h = connecter(c, codes, A)
+    corps = {"nom": "Ultra Fiesta", "volume": "355 ml", "variante": "Édition limitée", "region": "US"}
+    assert c.post("/api/wiki/propositions", json={**corps, "volume": "beaucoup"}, headers=h).status_code == 422
+    r = c.post("/api/wiki/propositions", json=corps, headers=h)
+    assert r.status_code == 201 and (r.json()["volume"], r.json()["variante"]) == ("355 ml", "Édition limitée")
+
+
+def test_recherche_par_variante_et_suggestions_de_saveurs(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    h = connecter(c, codes, A)
+    c.put("/api/cans", json=canette("2000000000015", nom="Vanilla Espresso", flavor="Vanille", variante="Shot"), headers=h)
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra Vanille", flavor="Vanille"), headers=h)
+    c.put("/api/cans", json=canette("2000000000039", nom="Mango", flavor="Mangue"), headers=h)
+    noms = lambda r: [f["nom"] for f in r["fiches"]]
+    assert noms(_rechercher(c, h, variante="Shot")) == ["Vanilla Espresso"]
+    assert "Vanilla Espresso" in noms(_rechercher(c, h, q="shot"))  # la variante entre dans la recherche
+    assert c.get("/api/wiki/saveurs").status_code == 401
+    saveurs = c.get("/api/wiki/saveurs", headers=h).json()
+    assert saveurs.index("Vanille") < saveurs.index("Mangue")  # la plus fréquente d'abord
+
+
+def test_migration_14_normalise_les_anciennes_fiches_sans_perte(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    h = connecter(c, codes, A)
+    longue = "Sucré et salé, avec une pointe de vanille onctueuse et une finale caramel."
+    anciennes = [
+        ("2000000000015", "Monster Energy Zero Sugar Vanilla Shot", "500", longue, "", "Active"),
+        ("2000000000022", "Monster VR46 Rossi", "355ml", longue, "Déjà une description", "Discontinued"),
+        ("2000000000039", "Monster Ultra White", "un grand", "Agrumes", "", ""),
+        ("2000000000046", "Monster Energy X McLaren", "", "", "", ""),
+    ]
+    with ix.connecter() as cx:
+        for ean, nom, volume, flavor, description, status in anciennes:
+            cx.execute("INSERT INTO wiki (ean, nom, volume, flavor, description, status, cree, maj) "
+                       "VALUES (%s, %s, %s, %s, %s, %s, 'x', 'x')", (ean, nom, volume, flavor, description, status))
+        cx.execute("UPDATE wiki SET variante = '' WHERE ean LIKE '200000000%'")
+        cx.execute("DROP TABLE IF EXISTS sauvegarde_migration_14")
+        cx.execute("DELETE FROM schema_migrations WHERE version = 14")
+        assert ix.appliquer_migrations(cx) == [14]
+        sauvegarde = {r["ean"]: r for r in cx.execute(
+            "SELECT * FROM sauvegarde_migration_14 WHERE source = 'wiki' AND ean LIKE '200000000%'").fetchall()}
+    assert sauvegarde["2000000000015"]["volume"] == "500" and sauvegarde["2000000000015"]["flavor"] == longue
+    fiches = {f["ean"]: f for f in _rechercher(c, h, q="200000000", par_page=60)["fiches"]}
+    shot, vr46, ultra, mclaren = (fiches[e] for e, *_ in anciennes)
+    assert (shot["volume"], shot["flavor"], shot["description"], shot["variante"]) == ("500 ml", "", longue, "Shot")
+    # Description déjà remplie : la saveur longue reste, signalée à reprendre.
+    assert (vr46["volume"], vr46["flavor"], vr46["status"], vr46["variante"]) == ("355 ml", longue, "Stop", "Collaboration")
+    assert vr46["a_reprendre"] == ["saveur"]
+    assert (ultra["volume"], ultra["a_reprendre"], ultra["variante"]) == ("un grand", ["volume"], "")
+    assert mclaren["variante"] == "Collaboration"
+    # Les anciennes fiches restent modifiables et valides.
+    r = c.put("/api/wiki/2000000000039", json={"nom": "Monster Ultra White", "volume": "500"}, headers=h)
+    assert r.status_code == 200 and r.json()["a_reprendre"] == []
