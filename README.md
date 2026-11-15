@@ -229,8 +229,8 @@ v0.4.1, qui ne savait plus créer de session ; la migration 13 rend ces colonnes
    l'application pour appliquer le nouveau mode. En local, le même réglage se fait dans `.env.local`.
 3. Variables d'environnement (voir `.env.example`) : `SESSION_SECRET`, `RESEND_API_KEY`,
    `MAIL_FROM`, `OWNER_EMAIL`. Supprime `API_TOKEN`, devenu inutile.
-   La page de maintenance utilise aussi `VITE_MAINTENANCE_START_DATE` et
-   `VITE_MAINTENANCE_TARGET_DATE` (dates ISO 8601 avec fuseau horaire) pour calculer sa progression.
+   La page de maintenance n'affiche ni date ni compte à rebours : `VITE_MAINTENANCE_START_DATE` et
+   `VITE_MAINTENANCE_TARGET_DATE` ne servent plus.
 4. Compte **Resend** pour l'envoi des codes. Configure `MAIL_FROM` avec une adresse d'un
    domaine vérifié dans Resend. L'expéditeur de test (`onboarding@resend.dev`) ne livre
    qu'à l'adresse e-mail du compte Resend.
