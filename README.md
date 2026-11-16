@@ -225,8 +225,12 @@ v0.4.1, qui ne savait plus créer de session ; la migration 13 rend ces colonnes
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).
 2. Dans Vercel → Settings → Environment Variables, configure `STATUS_APP` avec `MAINTENANCE`
    pour afficher la page de maintenance ou `PRODUCTION` pour afficher l'application (valeur par
-   défaut si la variable est absente). Après chaque changement de valeur sur Vercel, redéploie
-   l'application pour appliquer le nouveau mode. En local, le même réglage se fait dans `.env.local`.
+   défaut si la variable est absente). La valeur est lue au build : après chaque changement, il faut
+   redéployer. `scripts/maintenance.sh` fait les deux d'un coup : il propose MAINTENANCE ou PRODUCTION,
+   enregistre `STATUS_APP` en Production puis reconstruit le dernier déploiement de production
+   (`vercel redeploy` : même code, nouveau mode ; le dossier local n'est pas envoyé). `SIMULATION=1`
+   affiche les commandes sans rien modifier ; `SANS_REDEPLOIEMENT=1` change seulement la variable
+   (jour de release, avant `vercel --prod`). En local, le même réglage se fait dans `.env.local`.
 3. Variables d'environnement (voir `.env.example`) : `SESSION_SECRET`, `RESEND_API_KEY`,
    `MAIL_FROM`, `OWNER_EMAIL`. Supprime `API_TOKEN`, devenu inutile.
    La page de maintenance n'affiche ni date ni compte à rebours : `VITE_MAINTENANCE_START_DATE` et
