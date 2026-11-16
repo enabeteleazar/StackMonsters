@@ -6,7 +6,7 @@ type Props = {
   serviceIndisponible: boolean
 }
 
-/** Page d'accueil des visiteurs sans session : accroche, canette mise en scène, puis inscription. */
+/** Page d'accueil des visiteurs sans session : accroche puis inscription. */
 export default function AccueilPublic({ surConnexion, serviceIndisponible }: Props) {
   return (
     <div className="accueil-public">
@@ -22,7 +22,7 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
       </header>
 
       <main className="accueil-public-contenu">
-        <section className="accueil-public-hero">
+        <section className="accueil-public-hero accueil-public-hero-seul">
           <div className="accueil-public-texte">
             <h1 className="accueil-public-description">
               Compte, scanne et explore ta collection <b>Monster.</b>
@@ -44,13 +44,6 @@ export default function AccueilPublic({ surConnexion, serviceIndisponible }: Pro
             </ul>
           </div>
 
-          <figure className="accueil-public-canette" aria-hidden="true">
-            <span className="accueil-public-fumee" />
-            <span className="accueil-public-canette-cadre">
-              <img src="/images/monster-mega-detouree.webp" alt="" width={200} height={579} />
-            </span>
-            <span className="accueil-public-sol" />
-          </figure>
         </section>
 
         {serviceIndisponible && (

@@ -26,7 +26,9 @@ from pathlib import Path
 from typing import Iterator, Literal
 
 import psycopg
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from psycopg.rows import dict_row
 from pydantic import BaseModel, Field, field_validator
 
@@ -47,7 +49,7 @@ def _version() -> str:
 
 VERSION = _version()
 logger = logging.getLogger(__name__)
-COLONNES = "ean, nom, edition, volume, etat, nb, notes, photo, ajout"
+COLONNES = "ean, nom, volume, etat, nb, notes, photo, ajout"
 DUREE_NOUVEAUTE = 30 * 86400
 
 
@@ -63,13 +65,14 @@ def _statut(prefixe: str) -> str:
 # description, photo...). Ses propres valeurs ne servent que lorsque le Wiki n'en a pas
 # (canette LOCAL-, fiche retirée, champ vide). État, quantité et notes restent personnels.
 COLONNES_COLLECTION = (
-    "c.ean, COALESCE(NULLIF(w.nom, ''), c.nom) AS nom, COALESCE(NULLIF(w.edition, ''), c.edition) AS edition, "
+    "c.ean, COALESCE(NULLIF(w.nom, ''), c.nom) AS nom, "
     "COALESCE(NULLIF(w.volume, ''), c.volume) AS volume, c.etat, c.nb, c.notes, c.ajout, "
     "CASE WHEN w.photo IS NOT NULL THEN 'wiki-' || w.maj WHEN c.photo IS NOT NULL THEN c.maj END AS photo_version, "
     "COALESCE(w.photo IS NOT NULL, false) AS photo_wiki, (w.ean IS NOT NULL) AS dans_wiki, "
     "COALESCE(w.description, '') AS description, "
     "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
-    "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region"
+    "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region, "
+    "COALESCE(w.variante, '') AS variante"
 )
 # Fiche du Wiki d'une ligne de collection : par son code, par la fiche dont c'est un code secondaire,
 # ou par celle qui a remplacé ce code (wiki_exclus.vers).
@@ -77,9 +80,21 @@ JOINTURE_WIKI = (
     "LEFT JOIN wiki w ON w.ean = COALESCE((SELECT k.fiche FROM wiki_codes k WHERE k.ean = c.ean), "
     "(SELECT x.vers FROM wiki_exclus x WHERE x.ean = c.ean), c.ean)"
 )
-DUREE_CODE, DUREE_SESSION, ESSAIS_MAX, DEMANDES_MAX = 600, 30 * 86400, 5, 5
+DUREE_CODE, ESSAIS_MAX, DEMANDES_MAX = 600, 5, 5
+# Sessions (issue #4, voir « Sessions » dans le README) : expiration glissante après 30 jours sans utilisation,
+# 90 jours au plus après la connexion, jeton renouvelé une fois par jour d'usage. L'ancien jeton reste
+# valable quelques minutes après son remplacement (requêtes déjà parties, autre onglet).
+INACTIVITE_SESSION, DUREE_MAX_SESSION = 30 * 86400, 90 * 86400
+ROTATION_SESSION, GRACE_ROTATION = 86400, 600
+PROLONGATION_MIN = 3600  # une session n'est réécrite en base qu'une fois par heure d'usage au plus
 FENETRE_DEMANDES = 3600
 DEMANDES_MAX_IP, VERIFICATIONS_MAX_IP = 20, 60
+# Limites complémentaires (issue #2). Voir « Limites anti-abus » dans le README pour les seuils et le déblocage.
+FENETRE_JOUR = 86400
+DEMANDES_MAX_IP_JOUR = 60  # demandes de code par IP sur 24 h ; SM_DEMANDES_MAX_IP(_JOUR) pour l'heure et le jour
+COMPTES_MAX_IP_JOUR = 5  # nouveaux comptes par IP sur 24 h ; SM_COMPTES_MAX_IP_JOUR
+DEMANDES_MAX_HEURE, COMPTES_MAX_HEURE = 300, 30  # tous visiteurs confondus ; SM_DEMANDES_MAX_HEURE, SM_COMPTES_MAX_HEURE
+INSCRIPTIONS_LIMITEES = "inscriptions limitées"
 DUREE_EMPREINTES_IP = 395 * 86400  # 13 mois : durée de conservation annoncée dans la politique de confidentialité
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # Les photos sont stockées en data URL ; seuls ces formats sont servis par /wiki/{ean}/photo.
@@ -103,6 +118,86 @@ def _photo_valide(photo: str) -> bool:
 
 # Début de mot : début du nom, ou lettre précédée d'un espace, tiret, barre, point ou parenthèse.
 DEBUT_MOT_RE = re.compile(r"(^|[\s\-/.(\[])(\w)")
+
+
+# Fiches normalisées (issue #5, voir « Champs d'une fiche » dans le README). Mêmes listes que src/categories.ts
+# (un test vérifie qu'elles restent identiques).
+CATEGORIES = ("Original", "Ultra", "Juiced", "Reserve", "Special", "Java", "Killer Brew", "Rehab", "Nitro", "Water",
+              "Asia")
+REGIONS = ("Global", "US", "Canada", "Europe", "Europe/Aus", "US/Global", "Japan")
+VARIANTES = ("Standard", "Zero Sugar", "Shot", "Édition limitée", "Collaboration")
+SAVEUR_MAX = 60
+VOLUME_RE = re.compile(r"^\s*(\d{2,4})(?:[.,]\d+)?\s*(ml|oz|fl\.?\s*oz)?\s*$", re.IGNORECASE)
+VOLUME_NORMAL_RE = re.compile(r"^\d{2,4} ml$")
+
+
+def normaliser_volume(texte: str) -> str | None:
+    """« 500 », « 500ml », « 16 oz » → « 500 ml » / « 473 ml » ; chaîne vide gardée ; None si illisible."""
+    if not texte.strip():
+        return ""
+    m = VOLUME_RE.match(texte)
+    if not m:
+        return None
+    n = int(m.group(1))
+    if m.group(2) and m.group(2).lower() != "ml":
+        n = round(n * 29.5735)  # once liquide américaine
+    return f"{n} ml" if 50 <= n <= 3000 else None
+
+
+def _valeur_controlee(valeur: str, permises: tuple[str, ...], champ: str) -> str:
+    valeur = valeur.strip()
+    if valeur and valeur not in permises:
+        raise ValueError(f"{champ} inconnu(e) : {valeur}")
+    return valeur
+
+
+def _a_reprendre(r: dict) -> list[str]:
+    """Champs d'une fiche ancienne hors des valeurs contrôlées (à corriger par le propriétaire)."""
+    champs = []
+    if r["volume"] and not VOLUME_NORMAL_RE.match(r["volume"]):
+        champs.append("volume")
+    if len(r["flavor"]) > SAVEUR_MAX:
+        champs.append("saveur")
+    if (r["categorie"] or r["gamme"]) and (r["categorie"] or r["gamme"]) not in CATEGORIES:
+        champs.append("catégorie")
+    if r["region"] and r["region"] not in REGIONS:
+        champs.append("pays")
+    return champs
+
+
+class ChampsControles(BaseModel):
+    """Volume en ml, saveur courte, gamme, pays et variante pris dans leurs listes (fiche, proposition)."""
+
+    @field_validator("volume", check_fields=False)
+    @classmethod
+    def volume_normalise(cls, volume: str) -> str:
+        v = normaliser_volume(volume)
+        if v is None:
+            raise ValueError("volume attendu en ml, entre 50 et 3000 (ex. : 500)")
+        return v
+
+    @field_validator("flavor", check_fields=False)
+    @classmethod
+    def saveur_courte(cls, flavor: str) -> str:
+        flavor = " ".join(flavor.split())
+        if len(flavor) > SAVEUR_MAX:
+            raise ValueError(f"saveur trop longue ({SAVEUR_MAX} caractères au plus) : la description sert aux détails")
+        return flavor
+
+    @field_validator("categorie", check_fields=False)
+    @classmethod
+    def categorie_connue(cls, categorie: str) -> str:
+        return _valeur_controlee(categorie, CATEGORIES, "catégorie")
+
+    @field_validator("region", check_fields=False)
+    @classmethod
+    def region_connue(cls, region: str) -> str:
+        return _valeur_controlee(region, REGIONS, "pays")
+
+    @field_validator("variante", check_fields=False)
+    @classmethod
+    def variante_connue(cls, variante: str) -> str:
+        return _valeur_controlee(variante, VARIANTES, "variante")
 
 
 def formater_nom(nom: str) -> str:
@@ -138,8 +233,8 @@ CHAMPS = """ean TEXT NOT NULL, nom TEXT NOT NULL DEFAULT '', edition TEXT NOT NU
 # elles avaient été envoyées comme privées. Aucune ligne de collection n'est modifiée.
 FICHES_MANQUANTES = """
 DELETE FROM wiki_exclus x WHERE EXISTS (SELECT 1 FROM collection c WHERE c.ean = x.ean);
-INSERT INTO wiki (ean, nom, edition, volume, cree, maj)
-    SELECT DISTINCT ON (c.ean) c.ean, c.nom, c.edition, c.volume, c.ajout, c.maj FROM collection c
+INSERT INTO wiki (ean, nom, volume, source, cree, maj)
+    SELECT DISTINCT ON (c.ean) c.ean, c.nom, c.volume, 'migration', c.ajout, c.maj FROM collection c
     WHERE NOT EXISTS (SELECT 1 FROM wiki w WHERE w.ean = c.ean)
       AND NOT EXISTS (SELECT 1 FROM wiki_codes k WHERE k.ean = c.ean)
     ORDER BY c.ean, (c.nom = ''), c.ajout
@@ -207,6 +302,94 @@ ON CONFLICT (ean) DO NOTHING;
     # Code remplacé (code interne → vrai code, correction) : « vers » mène à la fiche qui le porte désormais.
     # Vide pour une fiche supprimée par le propriétaire.
     (8, "ALTER TABLE wiki_exclus ADD COLUMN IF NOT EXISTS vers TEXT;"),
+    # Provenance anonyme d'une fiche (comment elle a été créée, dernière correction du propriétaire) et
+    # signalements d'erreurs envoyés par les comptes, sans lien avec eux.
+    (9, """
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT '';
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS corrigee TEXT;
+CREATE TABLE IF NOT EXISTS wiki_signalements (id BIGSERIAL PRIMARY KEY,
+    fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE,
+    motif TEXT NOT NULL, cree TEXT NOT NULL, traite TEXT);
+CREATE INDEX IF NOT EXISTS wiki_signalements_fiche ON wiki_signalements (fiche);
+"""),
+    # Recherche dans le catalogue : texte sans accents ni majuscules (sm_texte, IMMUTABLE pour pouvoir
+    # l'indexer) et index trigramme sur nom, saveur, pays, gamme et code-barres. Voir DOC_RECHERCHE.
+    (10, """
+CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA public;
+CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA public;
+-- Noms complets (public.…) : PostgreSQL 17+ restreint le search_path pendant la création d'un index.
+CREATE OR REPLACE FUNCTION public.sm_texte(t text) RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE
+    AS $$ SELECT pg_catalog.lower(public.unaccent('public.unaccent'::regdictionary, coalesce(t, ''))) $$;
+CREATE INDEX IF NOT EXISTS wiki_recherche ON wiki USING gin (
+    sm_texte(nom || ' ' || flavor || ' ' || region || ' ' || COALESCE(NULLIF(categorie, ''), gamme) || ' ' || ean)
+    gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS wiki_recherche_nom ON wiki USING gin (sm_texte(nom) gin_trgm_ops);
+"""),
+    # Modération des fiches créées par les membres (« à vérifier » jusqu'à la décision du propriétaire) et
+    # historique des décisions. Les fiches existantes sont considérées comme acceptées. Pas d'auteur gardé.
+    (11, """
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS moderation TEXT NOT NULL DEFAULT 'acceptee'
+    CHECK (moderation IN ('en_attente', 'acceptee', 'refusee'));
+CREATE TABLE IF NOT EXISTS wiki_moderations (id BIGSERIAL PRIMARY KEY,
+    fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE,
+    decision TEXT NOT NULL CHECK (decision IN ('acceptee', 'refusee')), motif TEXT NOT NULL DEFAULT '',
+    cree TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS wiki_moderations_fiche ON wiki_moderations (fiche);
+CREATE INDEX IF NOT EXISTS wiki_moderation_en_attente ON wiki (moderation) WHERE moderation <> 'acceptee';
+"""),
+    # Sessions : date de connexion (plafond de 90 jours), date d'émission du jeton (rotation) et date de
+    # remplacement (délai de grâce). Les sessions existantes gardent leur échéance : elles sont datées de
+    # leur connexion supposée (échéance - 30 jours), personne n'est déconnecté.
+    (12, """
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cree BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS emis BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS remplacee BIGINT;
+UPDATE sessions SET cree = expire - 2592000 WHERE cree IS NULL;
+UPDATE sessions SET emis = cree WHERE emis IS NULL;
+ALTER TABLE sessions ALTER COLUMN cree SET NOT NULL;
+ALTER TABLE sessions ALTER COLUMN emis SET NOT NULL;
+CREATE INDEX IF NOT EXISTS sessions_user ON sessions (user_id);
+"""),
+    # Compatibilité avec la version précédente de l'API, qui crée ses sessions sans « cree » ni « emis » :
+    # sans valeur par défaut, sa connexion échouait (NOT NULL) dès que la base passait en version 12.
+    (13, """
+ALTER TABLE sessions ALTER COLUMN cree SET DEFAULT (EXTRACT(EPOCH FROM now())::BIGINT);
+ALTER TABLE sessions ALTER COLUMN emis SET DEFAULT (EXTRACT(EPOCH FROM now())::BIGINT);
+"""),
+    # Fiches normalisées (issue #5). Rien n'est perdu : les valeurs d'avant sont copiées dans
+    # sauvegarde_migration_14 ; une saveur trop longue ne part dans la description que si celle-ci est vide ;
+    # un volume illisible reste tel quel (signalé « à reprendre » au propriétaire).
+    (14, r"""
+CREATE TABLE IF NOT EXISTS sauvegarde_migration_14 AS
+    SELECT 'wiki' AS source, NULL::bigint AS user_id, ean, volume, flavor, description, status FROM wiki
+    UNION ALL SELECT 'collection', user_id, ean, volume, '', '', '' FROM collection;
+ALTER TABLE wiki ADD COLUMN IF NOT EXISTS variante TEXT NOT NULL DEFAULT '';
+UPDATE wiki SET volume = substring(volume FROM '^\s*(\d{2,4})') || ' ml'
+    WHERE volume ~* '^\s*\d{2,4}\s*(ml)?\s*$' AND volume !~ '^\d{2,4} ml$'
+      AND substring(volume FROM '^\s*(\d{2,4})')::int BETWEEN 50 AND 3000;
+UPDATE collection SET volume = substring(volume FROM '^\s*(\d{2,4})') || ' ml'
+    WHERE volume ~* '^\s*\d{2,4}\s*(ml)?\s*$' AND volume !~ '^\d{2,4} ml$'
+      AND substring(volume FROM '^\s*(\d{2,4})')::int BETWEEN 50 AND 3000;
+UPDATE wiki SET status = 'Stop' WHERE status = 'Discontinued';
+UPDATE wiki SET description = flavor, flavor = '' WHERE length(flavor) > 60 AND description = '';
+UPDATE wiki SET variante = CASE
+        WHEN nom ~* '\mshots?\M' THEN 'Shot'
+        WHEN nom ~* '\mzero\M' THEN 'Zero Sugar'
+        WHEN nom ~* '\m(vr46|rossi|lando|norris|mclaren)\M' OR nom ~* '\s[x×]\s' THEN 'Collaboration'
+        ELSE '' END
+    WHERE variante = '';
+DROP INDEX IF EXISTS wiki_recherche;
+CREATE INDEX wiki_recherche ON wiki USING gin (
+    sm_texte(nom || ' ' || flavor || ' ' || region || ' ' || COALESCE(NULLIF(categorie, ''), gamme) || ' ' || variante
+             || ' ' || ean) gin_trgm_ops);
+"""),
+    # Variante : « Limited » / « Édition limitée » → Édition limitée, sinon Standard, pour les fiches nommées dont
+    # la variante est encore vide (mêmes règles que varianteDuNom dans src/categories.ts). Une variante déjà
+    # remplie ne change pas ; seules des valeurs vides sont complétées.
+    (15, r"""
+UPDATE wiki SET variante = CASE WHEN sm_texte(nom) ~ '\m(limited|limitee)\M' THEN 'Édition limitée' ELSE 'Standard' END
+    WHERE variante = '' AND btrim(nom) <> '';
+"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -218,12 +401,12 @@ ON CONFLICT (ean) DO NOTHING;
 class Canette(BaseModel):
     ean: str = Field(min_length=1, max_length=64)
     nom: str = Field(default="", max_length=200)
-    edition: str = Field(default="", max_length=200)
     volume: str = Field(default="", max_length=40)
     categorie: str = Field(default="", max_length=80)
     flavor: str = Field(default="", max_length=200)
     status: Literal["", "Active", "Stop", "Nouveauté"] = ""
     region: str = Field(default="", max_length=80)
+    variante: str = Field(default="", max_length=40)
     etat: str = Field(default="", max_length=40)
     nb: int = Field(default=1, ge=1, le=9999)
     notes: str = Field(default="", max_length=4000)
@@ -242,18 +425,30 @@ class Canette(BaseModel):
     def formater(cls, nom: str) -> str:
         return formater_nom(nom)
 
+    @field_validator("volume")
+    @classmethod
+    def volume_normalise(cls, volume: str) -> str:
+        """Ajout depuis la collection : volume mis au format « 500 ml » s'il est lisible, gardé sinon."""
+        v = normaliser_volume(volume)
+        return volume.strip() if v is None else v
 
-class FicheWiki(BaseModel):
+    @field_validator("variante")
+    @classmethod
+    def variante_connue(cls, variante: str) -> str:
+        return variante.strip() if variante.strip() in VARIANTES else ""
+
+
+class FicheWiki(ChampsControles):
     """Champs d'une fiche du Wiki modifiables par le propriétaire."""
 
     ean: str | None = Field(default=None, min_length=1, max_length=64)
     nom: str = Field(default="", max_length=200)
-    edition: str | None = Field(default=None, max_length=200)
     volume: str = Field(default="", max_length=40)
     categorie: str = Field(default="", max_length=80)
     flavor: str = Field(default="", max_length=200)
     status: Literal["", "Active", "Stop", "Nouveauté"] = ""
     region: str = Field(default="", max_length=80)
+    variante: str = Field(default="", max_length=40)
     description: str = Field(default="", max_length=4000)
 
     @field_validator("nom")
@@ -270,6 +465,57 @@ class PhotoFiche(BaseModel):
     photo: str = Field(max_length=300_000)
 
 
+class Signalement(BaseModel):
+    """Erreur signalée sur une fiche du Wiki ; le motif est transmis sans lien avec le compte."""
+
+    motif: str = Field(min_length=3, max_length=500)
+
+    @field_validator("motif")
+    @classmethod
+    def nettoyer(cls, motif: str) -> str:
+        motif = " ".join(motif.split())
+        if len(motif) < 3:
+            raise ValueError("motif trop court")
+        return motif
+
+
+class Proposition(ChampsControles):
+    """Canette proposée au catalogue par un membre, sans l'ajouter à sa collection."""
+
+    ean: str = Field(default="", max_length=64)
+    nom: str = Field(min_length=1, max_length=200)
+    volume: str = Field(default="", max_length=40)
+    categorie: str = Field(default="", max_length=80)
+    flavor: str = Field(default="", max_length=200)
+    region: str = Field(default="", max_length=80)
+    variante: str = Field(default="", max_length=40)
+    photo: str | None = Field(default=None, max_length=300_000)
+    # Envoyée après avoir vu les fiches proches : le membre confirme qu'il ne s'agit pas d'un doublon.
+    confirmer_doublon: bool = False
+
+    @field_validator("nom")
+    @classmethod
+    def formater(cls, nom: str) -> str:
+        nom = formater_nom(nom)
+        if not nom:
+            raise ValueError("nom obligatoire")
+        return nom
+
+    @field_validator("photo")
+    @classmethod
+    def verifier_photo(cls, photo: str | None) -> str | None:
+        if photo is not None and not _photo_valide(photo):
+            raise ValueError("format de photo refusé")
+        return photo
+
+
+class Decision(BaseModel):
+    """Décision du propriétaire sur une fiche à vérifier."""
+
+    decision: Literal["acceptee", "refusee"]
+    motif: str = Field(default="", max_length=500)
+
+
 class Delta(BaseModel):
     delta: int = Field(ge=-99, le=99)
 
@@ -280,6 +526,16 @@ class Demande(BaseModel):
 
 class Verification(Demande):
     code: str = Field(min_length=6, max_length=6)
+
+
+class Vidage(BaseModel):
+    """Confirmation explicite du vidage de la collection."""
+    confirmation: Literal["vider"]
+
+
+class Suppression(BaseModel):
+    """Confirmation explicite : l'adresse du compte, saisie par l'utilisateur."""
+    confirmation: str = Field(max_length=254)
 
 
 # --- base --------------------------------------------------------------------
@@ -319,8 +575,16 @@ def _verifier_schema(cx: psycopg.Connection) -> None:
         version = cx.execute("SELECT COALESCE(MAX(version), 0) AS v FROM schema_migrations").fetchone()["v"]
     cx.commit()
     if version < MIGRATIONS[-1][0]:
-        logger.error("Schéma en version %d, attendu %d : lancer scripts/migrer_schema.py", version, MIGRATIONS[-1][0])
-        raise HTTPException(503, "Base de données à mettre à jour.")
+        # Déploiement Preview de Vercel : l'API ne se met elle-même à jour que si SM_MIGRATION_AUTO=1 (Preview
+        # sur une base de test). Sinon, et toujours en production, le schéma ne change que par le script : une
+        # Preview qui partage la base de production ne doit pas la migrer avant le déploiement du code qui va avec.
+        if os.environ.get("VERCEL_ENV") == "preview" and os.environ.get("SM_MIGRATION_AUTO") == "1":
+            with cx.transaction():
+                appliquees = appliquer_migrations(cx)
+            logger.warning("Preview (SM_MIGRATION_AUTO=1) : migrations appliquées automatiquement %s", appliquees)
+        else:
+            logger.error("Schéma en version %d, attendu %d : lancer scripts/migrer_schema.py", version, MIGRATIONS[-1][0])
+            raise HTTPException(503, "Base de données à mettre à jour.")
     _schema_pret = True
 
 
@@ -387,31 +651,121 @@ def _empreinte_ip(adresse: str) -> str:
     return hmac.new(_secret(), f"unique-ip:{adresse}".encode(), hashlib.sha256).hexdigest()
 
 
-def _limiter_ip(cx: psycopg.Connection, request: Request, action: str, maximum: int, now: int) -> None:
-    """Compte l'appel pour cette IP (fenêtre fixe d'une heure) et répond 429 au-delà du maximum."""
+def _adresse_limitee(adresse: str) -> str:
+    """Adresse retenue pour les limites : un abonné IPv6 dispose en général d'un /64 entier."""
+    if ":" in adresse:
+        return str(ipaddress.ip_network(f"{adresse}/64", strict=False).network_address)
+    return adresse
+
+
+def _cle_limite(action: str, adresse: str | None = None) -> str:
+    """Clé HMAC d'un compteur : par IP, ou globale (sans adresse). L'IP n'est jamais stockée en clair."""
+    sujet = f"limite-ip:{action}:{_adresse_limitee(adresse)}" if adresse else f"limite-globale:{action}"
+    return hmac.new(_secret(), sujet.encode(), hashlib.sha256).hexdigest()
+
+
+def _compter(
+    cx: psycopg.Connection, cle: str, maximum: int, fenetre: int, now: int,
+    detail: str = "trop de tentatives", consommer: bool = True,
+) -> None:
+    """Compteur à fenêtre fixe : 429 au-delà du maximum.
+
+    Sans « consommer », vérifie seulement qu'il reste de la place (l'appel sera compté s'il aboutit).
+    """
+    expiree = now - fenetre
+    if consommer:
+        n = cx.execute(
+            """INSERT INTO limites_ip (cle, debut, n) VALUES (%s, %s, 1)
+               ON CONFLICT (cle) DO UPDATE SET
+                 n = CASE WHEN limites_ip.debut <= %s THEN 1 ELSE limites_ip.n + 1 END,
+                 debut = CASE WHEN limites_ip.debut <= %s THEN EXCLUDED.debut ELSE limites_ip.debut END
+               RETURNING n, debut""",
+            (cle, now, expiree, expiree),
+        ).fetchone()
+        cx.commit()  # le compteur doit survivre au 429 qui suit
+        depasse = n["n"] > maximum
+    else:
+        n = cx.execute("SELECT n, debut FROM limites_ip WHERE cle = %s AND debut > %s", (cle, expiree)).fetchone()
+        depasse = bool(n) and n["n"] >= maximum
+    if depasse:
+        raise _trop_de_tentatives(n["debut"] + fenetre - now, detail)
+
+
+def _limiter_ip(
+    cx: psycopg.Connection, request: Request, action: str, maximum: int, now: int,
+    fenetre: int = FENETRE_DEMANDES, detail: str = "trop de tentatives", consommer: bool = True,
+) -> None:
+    """Compte l'appel pour cette IP (fenêtre fixe, une heure par défaut) et répond 429 au-delà du maximum."""
     adresse = _adresse_ip(request)
-    if not adresse:
-        return
-    if ":" in adresse:  # un abonné IPv6 dispose en général d'un /64 entier
-        adresse = str(ipaddress.ip_network(f"{adresse}/64", strict=False).network_address)
-    cle = hmac.new(_secret(), f"limite-ip:{action}:{adresse}".encode(), hashlib.sha256).hexdigest()
-    expiree = now - FENETRE_DEMANDES
-    n = cx.execute(
-        """INSERT INTO limites_ip (cle, debut, n) VALUES (%s, %s, 1)
-           ON CONFLICT (cle) DO UPDATE SET
-             n = CASE WHEN limites_ip.debut <= %s THEN 1 ELSE limites_ip.n + 1 END,
-             debut = CASE WHEN limites_ip.debut <= %s THEN EXCLUDED.debut ELSE limites_ip.debut END
-           RETURNING n, debut""",
-        (cle, now, expiree, expiree),
-    ).fetchone()
-    cx.commit()  # le compteur doit survivre au 429 qui suit
-    if n["n"] > maximum:
-        raise _trop_de_tentatives(n["debut"] + FENETRE_DEMANDES - now)
+    if adresse:
+        _compter(cx, _cle_limite(action, adresse), maximum, fenetre, now, detail, consommer)
 
 
-def _trop_de_tentatives(attente: int) -> HTTPException:
+def _seuil(nom: str, defaut: int) -> int:
+    """Seuil global réglable sans changer le code (variable d'environnement), sinon valeur par défaut."""
+    try:
+        return max(1, int(os.environ.get(nom, "")))
+    except ValueError:
+        return defaut
+
+
+def _trop_de_tentatives(attente: int, detail: str = "trop de tentatives") -> HTTPException:
     """429 commun à toutes les limites, avec le délai réel avant de pouvoir réessayer."""
-    return HTTPException(429, "trop de tentatives", headers={"Retry-After": str(max(1, attente))})
+    return HTTPException(429, detail, headers={"Retry-After": str(max(1, attente))})
+
+
+def _url_site() -> str:
+    """Adresse publique du site, pour les liens et images du mail (une image de mail doit être en ligne)."""
+    return (os.environ.get("SITE_URL") or "https://canstackmonsters.vercel.app").rstrip("/")
+
+
+def mail_code_html(code: str) -> str:
+    """Mail du code de connexion, dans le style du site : fond noir, vert lumineux, code en grand.
+
+    HTML d'e-mail : mise en page en tableaux et styles sur chaque balise (Gmail et Outlook ignorent
+    les feuilles de style), polices de repli, image PNG en ligne (le SVG n'est pas affiché par Gmail).
+    """
+    site = _url_site()
+    chiffres = "".join(
+        f'<td style="padding:0 2px"><div style="width:34px;height:50px;line-height:50px;border:2px solid #9EE818;'
+        f'border-radius:11px;background:#050603;color:#C6FF4D;font:700 28px/50px Arial,Helvetica,sans-serif;'
+        f'text-align:center">{c}</div></td>'
+        for c in code
+    )
+    return f"""<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark light"><meta name="supported-color-schemes" content="dark light">
+<title>Ton code StackMonsters</title></head>
+<body style="margin:0;padding:0;background:#000000">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0">Ton code {code} est valable 10 minutes.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#000000">
+<tr><td align="center" style="padding:24px 8px">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="max-width:480px;background:#0B0D08;border:1px solid #2E3A12;border-radius:22px">
+    <tr><td align="center" style="padding:28px 12px 8px">
+      <img src="{site}/images/logo-mail.png" width="64" height="64" alt="" style="display:block;border:0">
+      <div style="margin-top:12px;font:700 20px Arial,Helvetica,sans-serif;letter-spacing:3px;color:#F2F4EC">
+        STACK<span style="color:#9EE818">MONSTERS</span></div>
+    </td></tr>
+    <tr><td align="center" style="padding:20px 12px 4px">
+      <div style="font:italic 700 24px Arial,Helvetica,sans-serif;color:#F2F4EC">Ton code de
+        <span style="color:#9EE818">connexion.</span></div>
+      <div style="width:160px;height:3px;margin:14px auto 0;background:#9EE818;border-radius:3px"></div>
+    </td></tr>
+    <tr><td align="center" style="padding:24px 4px 8px">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>{chiffres}</tr></table>
+    </td></tr>
+    <tr><td align="center" style="padding:12px 28px 28px;font:15px/1.5 Arial,Helvetica,sans-serif;color:#9AA394">
+      Saisis-le dans l'application. Il est valable <b style="color:#F2F4EC">10&nbsp;minutes</b>.
+    </td></tr>
+    <tr><td style="padding:0 28px"><div style="height:1px;background:#2E3A12"></div></td></tr>
+    <tr><td align="center" style="padding:18px 28px 28px;font:12px/1.6 Arial,Helvetica,sans-serif;color:#9AA394">
+      Si tu n'es pas à l'origine de cette demande, ignore ce message&nbsp;: personne ne peut se connecter sans ce code.<br>
+      <a href="{site}" style="color:#9EE818;text-decoration:none">{site.removeprefix("https://")}</a>
+    </td></tr>
+  </table>
+</td></tr></table>
+</body></html>"""
 
 
 def envoyer_code(email: str, code: str) -> None:
@@ -426,6 +780,7 @@ def envoyer_code(email: str, code: str) -> None:
         "to": [email],
         "subject": f"Ton code StackMonsters : {code}",
         "text": f"Ton code de connexion : {code}\nIl est valable 10 minutes. Si tu n'es pas à l'origine de cette demande, ignore ce message.",
+        "html": mail_code_html(code),
     }
     req = urllib.request.Request(
         "https://api.resend.com/emails", data=json.dumps(corps).encode(), method="POST",
@@ -469,15 +824,33 @@ def connexion(authorization: str | None = Header(default=None)) -> Iterator[psyc
 def utilisateur(
     authorization: str | None = Header(default=None), cx: psycopg.Connection = Depends(connexion),
 ) -> dict:
-    h = _hash_session(_jeton(authorization))
+    h, now = _hash_session(_jeton(authorization)), int(time.time())
     u = cx.execute(
-        "SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id "
-        "WHERE s.hash = %s AND s.expire > %s", (h, int(time.time())),
+        "SELECT u.id, u.email, s.expire, s.cree, s.emis, s.remplacee FROM sessions s "
+        "JOIN users u ON u.id = s.user_id WHERE s.hash = %s AND s.expire > %s", (h, now),
     ).fetchone()
+    if u and u["remplacee"] is None:
+        # Expiration glissante : chaque usage repousse l'échéance, sans dépasser le plafond depuis la connexion.
+        echeance = _echeance_session(u["cree"], now)
+        if echeance - u["expire"] >= PROLONGATION_MIN:
+            cx.execute("UPDATE sessions SET expire = %s WHERE hash = %s", (echeance, h))
     cx.commit()  # les routes ouvrent ensuite leur propre transaction
     if u:
-        return {**u, "hash": h}
+        return {"id": u["id"], "email": u["email"], "hash": h, "cree": u["cree"], "emis": u["emis"],
+                "remplacee": u["remplacee"]}
     raise HTTPException(401, "connexion requise")
+
+
+def _echeance_session(cree: int, now: int) -> int:
+    return min(now + INACTIVITE_SESSION, cree + DUREE_MAX_SESSION)
+
+
+def _ouvrir_session(cx: psycopg.Connection, user_id: int, cree: int, now: int) -> str:
+    """Crée un jeton ; seule son empreinte est stockée."""
+    token = secrets.token_urlsafe(32)
+    cx.execute("INSERT INTO sessions (hash, user_id, expire, cree, emis) VALUES (%s, %s, %s, %s, %s)",
+               (_hash_session(token), user_id, _echeance_session(cree, now), cree, now))
+    return token
 
 
 # --- routes publiques : connexion ----------------------------------------------
@@ -493,8 +866,11 @@ def demande(d: Demande, request: Request) -> dict:
     now = int(time.time())
     code = f"{secrets.randbelow(10**6):06d}"
     with base() as cx:
-        _limiter_ip(cx, request, "demande", DEMANDES_MAX_IP, now)
-        cx.execute("DELETE FROM limites_ip WHERE debut <= %s", (now - FENETRE_DEMANDES,))
+        # Mêmes limites que l'adresse ait un compte ou non : la réponse ne révèle rien.
+        _limiter_ip(cx, request, "demande", _seuil("SM_DEMANDES_MAX_IP", DEMANDES_MAX_IP), now)
+        _limiter_ip(cx, request, "demande-jour", _seuil("SM_DEMANDES_MAX_IP_JOUR", DEMANDES_MAX_IP_JOUR), now, FENETRE_JOUR)
+        _compter(cx, _cle_limite("demande"), _seuil("SM_DEMANDES_MAX_HEURE", DEMANDES_MAX_HEURE), FENETRE_DEMANDES, now)
+        cx.execute("DELETE FROM limites_ip WHERE debut <= %s", (now - FENETRE_JOUR,))
         # Un code expiré compte encore dans la limite : il n'est purgé qu'une fois la fenêtre passée.
         cx.execute("DELETE FROM codes WHERE cree <= %s", (now - FENETRE_DEMANDES,))
         cx.execute("DELETE FROM sessions WHERE expire < %s", (now,))
@@ -536,6 +912,15 @@ def verification(v: Verification, request: Request) -> dict:
             raise HTTPException(401, "code invalide ou expiré")
         if not hmac.compare_digest(c["hash"], _hash_code(email, v.code)):
             raise HTTPException(401, "code invalide ou expiré")
+        if not cx.execute("SELECT 1 FROM users WHERE email = %s", (email,)).fetchone():
+            # Création de compte : limitée seulement ici, une fois le code validé. Seul le titulaire de
+            # l'adresse apprend qu'elle n'avait pas de compte ; le code reste utilisable jusqu'à expiration.
+            comptes_heure = _seuil("SM_COMPTES_MAX_HEURE", COMPTES_MAX_HEURE)
+            comptes_ip = _seuil("SM_COMPTES_MAX_IP_JOUR", COMPTES_MAX_IP_JOUR)
+            _limiter_ip(cx, request, "compte", comptes_ip, now, FENETRE_JOUR, INSCRIPTIONS_LIMITEES, False)
+            _compter(cx, _cle_limite("compte"), comptes_heure, FENETRE_DEMANDES, now, INSCRIPTIONS_LIMITEES, False)
+            _limiter_ip(cx, request, "compte", comptes_ip, now, FENETRE_JOUR, INSCRIPTIONS_LIMITEES)
+            _compter(cx, _cle_limite("compte"), comptes_heure, FENETRE_DEMANDES, now, INSCRIPTIONS_LIMITEES)
         cx.execute("DELETE FROM codes WHERE email = %s", (email,))
         u = cx.execute("INSERT INTO users (email, cree) VALUES (%s, %s) ON CONFLICT (email) DO NOTHING RETURNING id",
                        (email, now)).fetchone()
@@ -554,9 +939,7 @@ def verification(v: Verification, request: Request) -> dict:
                 "ON CONFLICT (ip_hash) DO NOTHING",
                 (_empreinte_ip(adresse), now),
             )
-        token = secrets.token_urlsafe(32)
-        cx.execute("INSERT INTO sessions (hash, user_id, expire) VALUES (%s, %s, %s)",
-                   (_hash_session(token), u["id"], now + DUREE_SESSION))
+        token = _ouvrir_session(cx, u["id"], now, now)
     return {"token": token, "email": email}
 
 
@@ -568,6 +951,26 @@ router = APIRouter(dependencies=[Depends(utilisateur)])
 @router.get("/auth/moi")
 def moi(u: dict = Depends(utilisateur)) -> dict:
     return {"email": u["email"]}
+
+
+@router.post("/auth/renouveler")
+def renouveler(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Rotation : au plus une fois par jour, remplace le jeton par un nouveau (même date de connexion).
+
+    Renvoie {"token": null} si le jeton est encore récent, ou s'il a déjà été remplacé.
+    """
+    now = int(time.time())
+    if u["remplacee"] is not None or now - u["emis"] < ROTATION_SESSION:
+        return {"token": None}
+    with cx.transaction():
+        # Condition sur « remplacee » : deux appels simultanés ne créent pas deux jetons.
+        if not cx.execute(
+            "UPDATE sessions SET remplacee = %s, expire = LEAST(expire, %s) WHERE hash = %s AND remplacee IS NULL "
+            "RETURNING hash", (now, now + GRACE_ROTATION, u["hash"]),
+        ).fetchone():
+            return {"token": None}
+        token = _ouvrir_session(cx, u["id"], u["cree"], now)
+    return {"token": token}
 
 
 @router.post("/auth/deconnexion", status_code=204)
@@ -584,10 +987,18 @@ def deconnexion_partout(u: dict = Depends(utilisateur), cx: psycopg.Connection =
 
 
 @router.delete("/auth/compte", status_code=204)
-def supprimer_compte(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
-    """Efface le compte, sa collection et ses sessions ; le Wiki, anonyme, est conservé."""
+def supprimer_compte(
+    s: Suppression, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> None:
+    """Efface le compte, sa collection (photos et notes comprises), ses sessions et ses codes.
+
+    Le Wiki, anonyme, est conservé : ses fiches n'ont aucun lien avec le compte. Les sessions et la collection
+    partent par ON DELETE CASCADE.
+    """
     if _est_proprietaire(u["email"]):  # il récupérerait la collection historique à sa prochaine connexion
         raise HTTPException(403, "le compte propriétaire ne peut pas être supprimé")
+    if s.confirmation.strip().lower() != u["email"]:
+        raise HTTPException(422, "confirmation différente de l'adresse du compte")
     with cx.transaction():
         cx.execute("DELETE FROM codes WHERE email = %s", (u["email"],))
         cx.execute("DELETE FROM users WHERE id = %s", (u["id"],))
@@ -705,11 +1116,11 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
         fiche = (_fiche_de_la_ligne(cx, ean) if deja_la else None) or ean
         cx.execute("DELETE FROM wiki_exclus WHERE ean = %s", (fiche,))
         cx.execute(
-            """INSERT INTO wiki (ean, nom, edition, volume, categorie, flavor, status, region, nouveaute_depuis, cree, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, status, region, variante, nouveaute_depuis, source,
+                                 moderation, cree, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (ean) DO UPDATE SET
                   nom = CASE WHEN wiki.nom = '' THEN EXCLUDED.nom ELSE wiki.nom END,
-                  edition = CASE WHEN wiki.edition = '' THEN EXCLUDED.edition ELSE wiki.edition END,
                   volume = CASE WHEN wiki.volume = '' THEN EXCLUDED.volume ELSE wiki.volume END,
                   categorie = CASE WHEN COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = ''
                                    THEN EXCLUDED.categorie ELSE wiki.categorie END,
@@ -718,17 +1129,22 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                   nouveaute_depuis = CASE WHEN wiki.status = '' THEN EXCLUDED.nouveaute_depuis
                                           ELSE wiki.nouveaute_depuis END,
                   region = CASE WHEN wiki.region = '' THEN EXCLUDED.region ELSE wiki.region END,
+                  variante = CASE WHEN wiki.variante = '' THEN EXCLUDED.variante ELSE wiki.variante END,
                   maj = CASE WHEN (wiki.nom = '' AND EXCLUDED.nom <> '')
-                              OR (wiki.edition = '' AND EXCLUDED.edition <> '')
                               OR (wiki.volume = '' AND EXCLUDED.volume <> '')
                               OR (COALESCE(NULLIF(wiki.categorie, ''), wiki.gamme, '') = '' AND EXCLUDED.categorie <> '')
                               OR (wiki.flavor = '' AND EXCLUDED.flavor <> '')
                               OR (wiki.status = '' AND EXCLUDED.status <> '')
                               OR (wiki.region = '' AND EXCLUDED.region <> '')
+                              OR (wiki.variante = '' AND EXCLUDED.variante <> '')
                              THEN EXCLUDED.maj ELSE wiki.maj END""",
-            (fiche, c.nom.strip(), c.edition.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
-             statut, c.region.strip(),
-             int(time.time()) if statut == "Nouveauté" else None, maintenant(), maintenant()),
+            (fiche, c.nom.strip(), c.volume.strip(), c.categorie.strip(), c.flavor.strip(),
+             statut, c.region.strip(), c.variante,
+             int(time.time()) if statut == "Nouveauté" else None,
+             # Provenance anonyme, fixée à la création de la fiche (jamais modifiée ensuite).
+             "sans-code" if c.ean.startswith("LOCAL-") else "code-barres",
+             # Une fiche créée par un membre est « à vérifier » ; une fiche existante garde son statut.
+             "acceptee" if _est_proprietaire(u["email"]) else "en_attente", maintenant(), maintenant()),
         )
         # Une photo envoyée devient celle de la fiche du Wiki si elle n'en a pas encore (visible par tous).
         if c.photo:
@@ -737,13 +1153,13 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
                 (c.photo, maintenant(), fiche),
             )
         cx.execute(
-            """INSERT INTO collection (user_id, ean, nom, edition, volume, etat, nb, notes, photo, ajout, maj)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """INSERT INTO collection (user_id, ean, nom, volume, etat, nb, notes, photo, ajout, maj)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (user_id, ean) DO UPDATE SET
-                  nom=EXCLUDED.nom, edition=EXCLUDED.edition, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
+                  nom=EXCLUDED.nom, volume=EXCLUDED.volume, etat=EXCLUDED.etat,
                   nb=EXCLUDED.nb, notes=EXCLUDED.notes, maj=EXCLUDED.maj,
                   photo = CASE WHEN %s THEN EXCLUDED.photo ELSE collection.photo END""",
-            (u["id"], ean, c.nom, c.edition, c.volume, c.etat, c.nb, c.notes, c.photo,
+            (u["id"], ean, c.nom, c.volume, c.etat, c.nb, c.notes, c.photo,
              c.ajout or maintenant(), maintenant(), "photo" in c.model_fields_set),  # champ absent : photo conservée
         )
         return _canette(cx, u["id"], ean)
@@ -761,6 +1177,14 @@ def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur), cx: psycopg.Conn
     return r
 
 
+@router.delete("/cans")
+def vider_collection(v: Vidage, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Retire toutes les canettes de la collection (quantités, états, notes, photos). Le compte et le Wiki restent."""
+    with cx.transaction():
+        n = cx.execute("DELETE FROM collection WHERE user_id = %s", (u["id"],)).rowcount
+    return {"retirees": n}
+
+
 @router.delete("/cans/{ean}", status_code=204)
 def supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
     with cx.transaction():
@@ -773,21 +1197,36 @@ def supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection =
 
 
 COLONNES_FICHE = (
-    "ean, nom, edition, volume, categorie, gamme, flavor, " + _statut("") + " AS status, region, description, "
-    "(photo IS NOT NULL) AS a_photo, maj, "
-    "COALESCE((SELECT array_agg(k.ean ORDER BY k.ean) FROM wiki_codes k WHERE k.fiche = wiki.ean), '{}') AS codes"
+    "ean, nom, volume, categorie, gamme, flavor, " + _statut("") + " AS status, region, variante, description, "
+    "(photo IS NOT NULL) AS a_photo, maj, source, cree, corrigee, "
+    "COALESCE((SELECT array_agg(k.ean ORDER BY k.ean) FROM wiki_codes k WHERE k.fiche = wiki.ean), '{}') AS codes, "
+    "COALESCE((SELECT json_agg(json_build_object('id', s.id, 'motif', s.motif, 'cree', s.cree) ORDER BY s.id) "
+    "FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL), '[]') AS signalements, moderation, "
+    "COALESCE((SELECT json_agg(json_build_object('decision', m.decision, 'motif', m.motif, 'cree', m.cree) "
+    "ORDER BY m.id) FROM wiki_moderations m WHERE m.fiche = wiki.ean), '[]') AS moderations"
 )
 
 
-def _fiche(r: dict) -> dict:
-    """Forme publique d'une fiche ; « photo » n'est qu'un marqueur de version."""
-    return {
-        "ean": r["ean"], "nom": r["nom"], "edition": r["edition"], "volume": r["volume"],
+def _fiche(r: dict, proprietaire: bool = False) -> dict:
+    """Forme publique d'une fiche ; « photo » n'est qu'un marqueur de version.
+
+    Le propriétaire reçoit en plus le statut de modération, la provenance (anonyme) et les signalements
+    encore ouverts : les membres ne voient pas qu'une fiche est à vérifier.
+    """
+    fiche = {
+        "ean": r["ean"], "nom": r["nom"], "volume": r["volume"],
         "categorie": r["categorie"] or r["gamme"], "flavor": r["flavor"], "status": r["status"],
-        "region": r["region"],
+        "region": r["region"], "variante": r["variante"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
         "codes": list(r["codes"]),
     }
+    if proprietaire:
+        fiche["moderation"] = r["moderation"]
+        fiche["a_reprendre"] = _a_reprendre(r)
+        fiche["provenance"] = {"source": r["source"], "cree": r["cree"], "corrigee": r["corrigee"]}
+        fiche["signalements"] = r["signalements"]
+        fiche["moderations"] = r["moderations"]
+    return fiche
 
 
 def _fiche_du_code(cx: psycopg.Connection, code: str) -> str | None:
@@ -812,14 +1251,143 @@ def _code_pris(cx: psycopg.Connection, code: str) -> bool:
     ).fetchone() is not None
 
 
+# Texte indexé d'une fiche (migration 10) : la requête doit reprendre exactement cette expression pour
+# que PostgreSQL utilise l'index trigramme.
+DOC_RECHERCHE = (
+    "sm_texte(nom || ' ' || flavor || ' ' || region || ' ' || COALESCE(NULLIF(categorie, ''), gamme) || ' ' || variante "
+    "|| ' ' || ean)"
+)
+PAR_PAGE_MAX = 60
+
+
+def _motif_like(mot: str) -> str:
+    """Mot de recherche utilisable dans LIKE : % et _ y sont des caractères ordinaires."""
+    return "%" + mot.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+@router.get("/wiki/recherche")
+def wiki_recherche(
+    q: str = Query(default="", max_length=120),
+    categorie: str = Query(default="", max_length=80),
+    region: str = Query(default="", max_length=80),
+    variante: str = Query(default="", max_length=40),
+    tri: Literal["pertinence", "nom", "recent"] = "pertinence",
+    page: int = Query(default=1, ge=1, le=10_000),
+    par_page: int = Query(default=24, ge=1, le=PAR_PAGE_MAX),
+    signalees: bool = False,
+    a_verifier: bool = False,
+    sans_categorie: bool = False,
+    nouveautes: bool = False,
+    u: dict = Depends(utilisateur),
+    cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Recherche paginée dans le catalogue partagé (jamais dans les collections).
+
+    Chaque mot saisi doit apparaître dans le nom, la saveur, le pays, la gamme ou le code-barres, sans tenir
+    compte des accents ni des majuscules ; un code-barres exact trouve aussi la fiche par ses codes secondaires.
+    Sans résultat, des noms proches sont proposés (« Tu cherchais… ? »).
+    """
+    proprio = _est_proprietaire(u["email"])
+    q = " ".join(q.split())
+    mots = q.split(" ") if q else []
+    conditions, params = [], []
+    for mot in mots:
+        conditions.append(f"({DOC_RECHERCHE} LIKE sm_texte(%s) "
+                          "OR EXISTS (SELECT 1 FROM wiki_codes k WHERE k.fiche = wiki.ean AND k.ean = %s))")
+        params += [_motif_like(mot), mot]
+    if categorie:
+        conditions.append("COALESCE(NULLIF(categorie, ''), gamme) = %s")
+        params.append(categorie)
+    if nouveautes:  # statut « Nouveauté » encore affiché (30 jours), quelle que soit la catégorie
+        conditions.append(f"{_statut('')} = 'Nouveauté'")
+    if sans_categorie and proprio:  # fiches à compléter (ni catégorie, ni ancienne « gamme ») ; ignoré pour un membre
+        conditions.append("COALESCE(NULLIF(categorie, ''), gamme, '') = ''")
+    if region:
+        conditions.append("region = %s")
+        params.append(region)
+    if variante:
+        conditions.append("variante = %s")
+        params.append(variante)
+    if signalees and proprio:
+        conditions.append("EXISTS (SELECT 1 FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL)")
+    if a_verifier and proprio:
+        conditions.append("moderation = 'en_attente'")
+    if not proprio:  # une fiche refusée n'apparaît plus dans le catalogue des membres
+        conditions.append("moderation <> 'refusee'")
+    visibles = "" if proprio else " WHERE moderation <> 'refusee'"
+    ou = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+    if tri == "recent":
+        ordre, params_ordre = "cree DESC, ean", []
+    elif tri == "pertinence" and q:
+        # Code-barres exact, puis nom identique, puis nom qui commence par la saisie, puis les plus proches.
+        ordre = ("CASE WHEN ean = %s OR EXISTS (SELECT 1 FROM wiki_codes k WHERE k.fiche = wiki.ean AND k.ean = %s) "
+                 "THEN 0 WHEN sm_texte(nom) = sm_texte(%s) THEN 1 WHEN sm_texte(nom) LIKE sm_texte(%s) THEN 2 ELSE 3 END, "
+                 "similarity(sm_texte(nom), sm_texte(%s)) DESC, (nom = ''), lower(nom), ean")
+        params_ordre = [q, q, q, q.replace("%", "").replace("_", "") + "%", q]
+    else:
+        ordre, params_ordre = "(nom = ''), lower(nom), ean", []
+
+    with cx.transaction():
+        lignes = cx.execute(
+            f"SELECT {COLONNES_FICHE}, COUNT(*) OVER () AS total_filtre FROM wiki{ou} ORDER BY {ordre} "
+            "LIMIT %s OFFSET %s",
+            (*params, *params_ordre, par_page, (page - 1) * par_page),
+        ).fetchall()
+        total = lignes[0]["total_filtre"] if lignes else (
+            cx.execute(f"SELECT COUNT(*) AS n FROM wiki{ou}", params).fetchone()["n"] if page > 1 else 0
+        )
+        total_catalogue = cx.execute(f"SELECT COUNT(*) AS n FROM wiki{visibles}").fetchone()["n"]
+        suggestions = []
+        if total == 0 and q:
+            suggestions = [r["nom"] for r in cx.execute(
+                "SELECT nom, GREATEST(similarity(sm_texte(nom), sm_texte(%s)), "
+                "word_similarity(sm_texte(%s), sm_texte(nom)), word_similarity(sm_texte(nom), sm_texte(%s))) AS score FROM wiki "
+                "WHERE nom <> ''" + ("" if proprio else " AND moderation <> 'refusee'")
+                + " ORDER BY score DESC, lower(nom) LIMIT 3",
+                (q, q, q),
+            ).fetchall() if r["score"] >= 0.3]
+        nb_signalees = cx.execute(
+            "SELECT COUNT(DISTINCT fiche) AS n FROM wiki_signalements WHERE traite IS NULL"
+        ).fetchone()["n"] if proprio else 0
+        nb_a_verifier = cx.execute(
+            "SELECT COUNT(*) AS n FROM wiki WHERE moderation = 'en_attente'"
+        ).fetchone()["n"] if proprio else 0
+    return {
+        "peut_editer": proprio,
+        "fiches": [_fiche(r, proprio) for r in lignes],
+        "total": total,
+        "total_catalogue": total_catalogue,
+        "page": page,
+        "pages": max(1, -(-total // par_page)),
+        "suggestions": suggestions,
+        "signalees": nb_signalees,
+        "a_verifier": nb_a_verifier,
+    }
+
+
 @router.get("/wiki")
 def wiki_liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     """Toutes les fiches, sans les photos (servies à part, pour garder la réponse légère)."""
     with cx.transaction():
+        proprio = _est_proprietaire(u["email"])
+        visibles = "" if proprio else " WHERE moderation <> 'refusee'"
         lignes = cx.execute(
-            f"SELECT {COLONNES_FICHE} FROM wiki ORDER BY (nom = ''), lower(nom), ean"
+            f"SELECT {COLONNES_FICHE} FROM wiki{visibles} ORDER BY (nom = ''), lower(nom), ean"
         ).fetchall()
-    return {"peut_editer": _est_proprietaire(u["email"]), "fiches": [_fiche(r) for r in lignes]}
+    return {"peut_editer": proprio, "fiches": [_fiche(r, proprio) for r in lignes]}
+
+
+@router.get("/wiki/saveurs")
+def wiki_saveurs(cx: psycopg.Connection = Depends(connexion)) -> list[str]:
+    """Saveurs déjà connues (les plus fréquentes d'abord), proposées dans les formulaires."""
+    with cx.transaction():
+        lignes = cx.execute(
+            "SELECT flavor FROM wiki WHERE flavor <> '' AND length(flavor) <= %s AND moderation <> 'refusee' "
+            "GROUP BY flavor ORDER BY COUNT(*) DESC, lower(flavor) LIMIT 300",
+            (SAVEUR_MAX,),
+        ).fetchall()
+    return [r["flavor"] for r in lignes]
 
 
 @router.get("/wiki/{ean}/photo")
@@ -853,7 +1421,7 @@ def wiki_photo_remplacer(ean: str, p: PhotoFiche, u: dict = Depends(utilisateur)
         ).fetchone()
     if r is None:
         raise HTTPException(404, "fiche inconnue")
-    return _fiche(r)
+    return _fiche(r, proprietaire=True)
 
 
 @router.delete("/wiki/{ean}/photo")
@@ -868,7 +1436,7 @@ def wiki_photo_retirer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Con
         ).fetchone()
     if r is None:
         raise HTTPException(404, "fiche inconnue")
-    return _fiche(r)
+    return _fiche(r, proprietaire=True)
 
 
 @router.put("/wiki/{ean}")
@@ -889,16 +1457,16 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
             if _code_pris(cx, nouvel_ean):
                 raise HTTPException(409, "ce code-barres existe déjà dans le Wiki")
         r = cx.execute(
-            "UPDATE wiki SET ean = %s, nom = %s, edition = COALESCE(%s, edition), "
-            "volume = %s, categorie = %s, flavor = %s, status = %s, region = %s, "
+            "UPDATE wiki SET ean = %s, nom = %s, "
+            "volume = %s, categorie = %s, flavor = %s, status = %s, region = %s, variante = %s, "
             # Une Nouveauté encore en cours garde sa date ; sinon le délai de 30 jours (re)part maintenant.
             "nouveaute_depuis = CASE WHEN %s <> 'Nouveauté' THEN NULL "
             "WHEN status = 'Nouveauté' AND nouveaute_depuis >= %s THEN nouveaute_depuis ELSE %s END, "
-            "description = %s, maj = %s "
+            "description = %s, maj = %s, corrigee = %s "
             f"WHERE ean = %s RETURNING {COLONNES_FICHE}",
-            (nouvel_ean, f.nom.strip(), f.edition.strip() if f.edition is not None else None,
-             f.volume.strip(), f.categorie.strip(), f.flavor.strip(), f.status, f.region.strip(), f.status, now - DUREE_NOUVEAUTE, now,
-             f.description.strip(), maintenant(), ean),
+            (nouvel_ean, f.nom.strip(),
+             f.volume, f.categorie, f.flavor, f.status, f.region, f.variante, f.status, now - DUREE_NOUVEAUTE, now,
+             f.description.strip(), maintenant(), maintenant(), ean),
         ).fetchone()
         if r is None:
             raise HTTPException(404, "fiche inconnue")
@@ -906,7 +1474,7 @@ def wiki_modifier(ean: str, f: FicheWiki, u: dict = Depends(utilisateur), cx: ps
             _suivre_changement_de_code(cx, ean, nouvel_ean)
             # Relecture : les codes supplémentaires ne suivent le nouveau code qu'en fin d'instruction.
             r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (nouvel_ean,)).fetchone()
-    return _fiche(r)
+    return _fiche(r, proprietaire=True)
 
 
 def _suivre_changement_de_code(cx: psycopg.Connection, ancien: str, nouveau: str) -> None:
@@ -1012,7 +1580,109 @@ def wiki_supprimer(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connect
     return Response(status_code=204)
 
 
+@router.post("/wiki/{ean}/signalement", status_code=201)
+def wiki_signaler(
+    ean: str, sig: Signalement, request: Request,
+    u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Signale une erreur sur une fiche. Le motif est gardé sans lien avec le compte (comme la fiche)."""
+    _limiter_ip(cx, request, "signalement", 20, int(time.time()))
+    with cx.transaction():
+        if not cx.execute("SELECT 1 FROM wiki WHERE ean = %s", (ean,)).fetchone():
+            raise HTTPException(404, "fiche inconnue")
+        cx.execute(
+            "INSERT INTO wiki_signalements (fiche, motif, cree) VALUES (%s, %s, %s)", (ean, sig.motif, maintenant()),
+        )
+    return {"ok": True}
+
+
+def _doublons_probables(cx: psycopg.Connection, nom: str) -> list[str]:
+    """Noms de fiches très proches du nom proposé (doublon probable), hors fiches refusées."""
+    # word_similarity : un nom existant contenu, à une faute près, dans le nom proposé (« Monster Mango Loko »
+    # contient presque « Mango Loco »), sans pénaliser les mots en plus comme « Monster ».
+    return [r["nom"] for r in cx.execute(
+        "SELECT nom, GREATEST(similarity(sm_texte(nom), sm_texte(%s)), word_similarity(sm_texte(nom), sm_texte(%s))) AS score "
+        "FROM wiki WHERE moderation <> 'refusee' AND nom <> '' ORDER BY score DESC, lower(nom) LIMIT 3",
+        (nom, nom),
+    ).fetchall() if r["score"] >= 0.6]
+
+
+@router.post("/wiki/propositions", status_code=201)
+def wiki_proposer(
+    prop: Proposition, request: Request, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Un membre propose une canette au catalogue : elle est créée « à vérifier » (acceptée si c'est le propriétaire).
+
+    Sans code-barres, le code est tiré du nom (convert.py). Un code déjà connu est refusé ; un nom très proche
+    d'une fiche existante demande une confirmation (confirmer_doublon) pour éviter les doublons.
+    """
+    _limiter_ip(cx, request, "proposition", 30, int(time.time()))
+    proprio = _est_proprietaire(u["email"])
+    if prop.ean.strip():
+        ean = _normaliser_code(prop.ean.strip())
+        if ean is None or ean.startswith("LOCAL-"):
+            raise HTTPException(422, "code-barres invalide")
+    else:
+        ean = convert.nom_en_13_chiffres(prop.nom)
+    with cx.transaction():
+        if _code_pris(cx, ean) or cx.execute("SELECT 1 FROM wiki_exclus WHERE ean = %s", (ean,)).fetchone():
+            raise HTTPException(409, "cette canette existe déjà dans le Wiki" if prop.ean.strip()
+                                else "une canette du même nom existe déjà dans le Wiki")
+        if not prop.confirmer_doublon:
+            proches = _doublons_probables(cx, prop.nom)
+            if proches:
+                raise HTTPException(409, "doublon probable : " + " ; ".join(proches))
+        r = cx.execute(
+            """INSERT INTO wiki (ean, nom, volume, categorie, flavor, region, variante, photo, source, moderation, cree, maj)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'proposition', %s, %s, %s)
+               RETURNING """ + COLONNES_FICHE,
+            (ean, prop.nom, prop.volume, prop.categorie, prop.flavor, prop.region, prop.variante,
+             prop.photo, "acceptee" if proprio else "en_attente", maintenant(), maintenant()),
+        ).fetchone()
+    return _fiche(r, proprio)
+
+
+@router.post("/wiki/{ean}/moderation")
+def wiki_moderer(ean: str, d: Decision, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Le propriétaire accepte ou refuse une fiche ; chaque décision est gardée dans l'historique."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    with cx.transaction():
+        if cx.execute("UPDATE wiki SET moderation = %s, maj = %s WHERE ean = %s", (d.decision, maintenant(), ean)).rowcount == 0:
+            raise HTTPException(404, "fiche inconnue")
+        cx.execute(
+            "INSERT INTO wiki_moderations (fiche, decision, motif, cree) VALUES (%s, %s, %s, %s)",
+            (ean, d.decision, " ".join(d.motif.split()), maintenant()),
+        )
+        r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (ean,)).fetchone()
+    return _fiche(r, proprietaire=True)
+
+
+@router.post("/wiki/signalements/{ident}/traite")
+def wiki_signalement_traite(ident: int, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Le propriétaire classe un signalement (corrigé ou rejeté) ; renvoie la fiche à jour."""
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+    with cx.transaction():
+        s = cx.execute(
+            "UPDATE wiki_signalements SET traite = %s WHERE id = %s AND traite IS NULL RETURNING fiche",
+            (maintenant(), ident),
+        ).fetchone()
+        if s is None:
+            raise HTTPException(404, "signalement inconnu ou déjà traité")
+        r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (s["fiche"],)).fetchone()
+    return _fiche(r, proprietaire=True)
+
+
 app = FastAPI(title="StackMonsters", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_lisible(_: Request, e: RequestValidationError) -> JSONResponse:
+    """422 avec un message lisible (« volume attendu en ml… ») au lieu de la liste brute de Pydantic."""
+    messages = [str(err.get("msg", "")).removeprefix("Value error, ") for err in e.errors()]
+    return JSONResponse(status_code=422, content={"detail": " ; ".join(m for m in messages if m) or "données invalides"})
+
 for r in (auth, router):  # avec et sans le préfixe /api (selon ce que Vercel transmet)
     app.include_router(r)
     app.include_router(r, prefix="/api")

@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { BookOpen, Home, LayoutGrid, ScanLine, Settings2 } from 'lucide-react'
-import { api, jeton, NonAutorise } from './api'
+import { api, jeton, NonAutorise, renouvelerJeton } from './api'
 import AccueilPublic from './components/AccueilPublic'
 import Acces from './components/Acces'
 import HorsLigne from './components/HorsLigne'
+import InvitationInstallation from './components/InvitationInstallation'
 import Camera from './components/Camera'
 import Collection from './components/Collection'
 import Confidentialite from './components/Confidentialite'
 import Dashboard from './components/Dashboard'
-import Logo from './components/Logo'
 import ResultatScan from './components/ResultatScan'
 import { viderPhotos } from './components/PhotoWiki'
 import Settings from './components/Settings'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
 import Wiki from './components/Wiki'
-import { moteurNatif } from './scanner'
+import { inviterAInstaller } from './installation'
 import { suivre } from './suivi'
 import type { Canette } from './types'
 
@@ -37,6 +37,8 @@ export default function App() {
     jeton.lire() ? 'verification' : 'accueil',
   )
   const [refuse, setRefuse] = useState(false)
+  // Invitation à installer l'appli : une seule fois par appareil, juste après la première connexion.
+  const [invitation, setInvitation] = useState(false)
   const [serviceIndisponible, setServiceIndisponible] = useState(false)
   const [confidentialite, setConfidentialite] = useState(() => window.location.hash === '#confidentialite')
 
@@ -81,6 +83,7 @@ export default function App() {
     setRefuse(false)
     setServiceIndisponible(false)
     setEtatAcces('prive')
+    setInvitation(inviterAInstaller())
     void recharger()
   }, [recharger])
 
@@ -92,6 +95,7 @@ export default function App() {
       try {
         const utilisateur = await api.moi()
         if (!active) return
+        void renouvelerJeton()
         setEmailUtilisateur(utilisateur.email)
         setNomUtilisateur(utilisateur.email.split('@', 1)[0])
         const collection = await api.liste()
@@ -134,6 +138,16 @@ export default function App() {
       active = false
     }
   }, [etatAcces, verrouiller])
+
+  // Application restée ouverte plusieurs jours (PWA) : rotation du jeton à chaque retour au premier plan.
+  useEffect(() => {
+    if (etatAcces !== 'prive') return
+    const auRetour = () => {
+      if (document.visibilityState === 'visible') void renouvelerJeton()
+    }
+    document.addEventListener('visibilitychange', auRetour)
+    return () => document.removeEventListener('visibilitychange', auRetour)
+  }, [etatAcces])
 
   const ouvrirConnexion = () => {
     setServiceIndisponible(false)
@@ -188,7 +202,9 @@ export default function App() {
       <>
         <header>
           <div className="logo">
-            <Logo />
+            <span className="accueil-public-marque">
+              <img src="/favicon.svg" alt="" />
+            </span>
             <div className="logo-marque">
               Stack<em>Monsters</em>
             </div>
@@ -224,7 +240,9 @@ export default function App() {
     <>
       <header>
         <div className="logo">
-          <Logo />
+          <span className="accueil-public-marque">
+            <img src="/favicon.svg" alt="" />
+          </span>
           <div className="logo-marque">
             Stack<em>Monsters</em>
           </div>
@@ -246,11 +264,16 @@ export default function App() {
         {vue === 'wiki' && <Wiki surNonAutorise={verrouiller} />}
         {vue === 'reglages' && (
           <Settings
-            canettes={canettes}
             emailUtilisateur={emailUtilisateur}
             joignable={joignable}
             surVerrouiller={verrouiller}
             surStats={() => setVue('stats')}
+            nbCanettes={canettes.length}
+            surCollectionVidee={(retirees) => {
+              viderPhotos()
+              void recharger()
+              toast(retirees > 1 ? `Collection vidée : ${retirees} canettes retirées` : 'Collection vidée')
+            }}
           />
         )}
         {vue === 'stats' && <Stats surRetour={() => setVue('reglages')} />}
@@ -258,11 +281,6 @@ export default function App() {
         {!joignable && vue === 'accueil' && (
           <p className="sous" style={{ marginTop: 18 }}>
             Le service ne répond pas. Vérifie ta connexion, puis recharge la page.
-          </p>
-        )}
-        {!moteurNatif() && vue === 'accueil' && (
-          <p className="sous" style={{ marginTop: 18 }}>
-            Lecteur ZXing chargé au premier scan.
           </p>
         )}
       </main>
@@ -341,6 +359,7 @@ export default function App() {
       )}
 
       {message && <div className="toast">{message}</div>}
+      {invitation && <InvitationInstallation surFermeture={() => setInvitation(false)} />}
     </>
   )
 }

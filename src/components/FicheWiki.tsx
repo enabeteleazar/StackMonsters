@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { ImageOff, ImagePlus, Trash2, X } from 'lucide-react'
+import { Ban, CheckCircle2, EyeOff, Flag, ImageOff, ImagePlus, ShieldQuestion, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
+import { ChampSaveur, ChampVariante, ChampVolume } from './ChampsFiche'
 import { reduirePhoto } from '../photo'
 import type { FicheWiki as Fiche, ModifFicheWiki } from '../types'
 import PhotoWiki from './PhotoWiki'
+
+/** Libellé de la provenance (anonyme) d'une fiche, pour le propriétaire. */
+const SOURCES: Record<string, string> = {
+  'code-barres': 'ajout par code-barres',
+  'sans-code': 'ajout sans code-barres',
+  migration: 'reprise d’une collection existante',
+  restauration: 'restauration d’une sauvegarde',
+}
+const dateCourte = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('fr-FR') : '')
 
 type Props = {
   fiche: Fiche
@@ -26,10 +36,65 @@ export default function FicheWiki({
   const [edition, setEdition] = useState(false)
   const [suppressionOccupe, setSuppressionOccupe] = useState(false)
   const [erreurSuppression, setErreurSuppression] = useState<string | null>(null)
+  // Suppression refusée (canette encore dans une collection) : la fiche peut être masquée à la place.
+  const [masquable, setMasquable] = useState(false)
   const [codeOccupe, setCodeOccupe] = useState(false)
   const [photoOccupee, setPhotoOccupee] = useState(false)
   const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
   const photoInput = useRef<HTMLInputElement>(null)
+  // Signalement d'une erreur (tous les comptes) et traitement des signalements (propriétaire).
+  const [signalementOuvert, setSignalementOuvert] = useState(false)
+  const [motif, setMotif] = useState('')
+  const [etatSignalement, setEtatSignalement] = useState<{ ok: boolean; texte: string } | null>(null)
+  const [signalementOccupe, setSignalementOccupe] = useState(false)
+
+  const signaler = async () => {
+    setSignalementOccupe(true)
+    setEtatSignalement(null)
+    try {
+      await api.wikiSignaler(fiche.ean, motif.trim())
+      setSignalementOuvert(false)
+      setMotif('')
+      setEtatSignalement({ ok: true, texte: 'Merci : ton signalement a été transmis.' })
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+      else setEtatSignalement({
+        ok: false,
+        texte: e instanceof ErreurAPI && e.status === 429
+          ? 'Trop de signalements pour le moment, réessaie plus tard.'
+          : 'Signalement non envoyé, réessaie.',
+      })
+    } finally {
+      setSignalementOccupe(false)
+    }
+  }
+
+  // Modération (propriétaire) : accepter ou refuser la fiche, avec un motif facultatif.
+  const [motifRefus, setMotifRefus] = useState('')
+  const [refusOuvert, setRefusOuvert] = useState(false)
+  const moderer = async (decision: 'acceptee' | 'refusee') => {
+    setSignalementOccupe(true)
+    try {
+      surEnregistree(fiche.ean, await api.wikiModerer(fiche.ean, decision, decision === 'refusee' ? motifRefus.trim() : ''))
+      setRefusOuvert(false)
+      setMotifRefus('')
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+    } finally {
+      setSignalementOccupe(false)
+    }
+  }
+
+  const traiter = async (id: number) => {
+    setSignalementOccupe(true)
+    try {
+      surEnregistree(fiche.ean, await api.wikiSignalementTraite(id))
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+    } finally {
+      setSignalementOccupe(false)
+    }
+  }
 
   const changerPhoto = async (action: () => Promise<Fiche>) => {
     setPhotoOccupee(true)
@@ -62,14 +127,37 @@ export default function FicheWiki({
     if (!confirm(`Supprimer la fiche « ${fiche.nom || fiche.ean} » du Wiki ? Ce n’est possible que si aucune collection ne la contient.`)) return
     setSuppressionOccupe(true)
     setErreurSuppression(null)
+    setMasquable(false)
     try {
       await api.wikiSupprimer(fiche.ean)
       surSupprimee(fiche.ean)
     } catch (e) {
       if (e instanceof NonAutorise) surNonAutorise()
-      else setErreurSuppression(
+      else if (e instanceof ErreurAPI && e.status === 409) {
+        setMasquable(true)
+        setErreurSuppression(
+          fiche.moderation === 'refusee'
+            ? 'Suppression impossible : cette canette est dans au moins une collection. La fiche est déjà masquée du Wiki des membres.'
+            : 'Suppression impossible : cette canette est dans au moins une collection. Tu peux la masquer du Wiki : les membres ne la verront plus, mais la gardent dans leur collection.',
+        )
+      } else setErreurSuppression(
         e instanceof ErreurAPI ? `Suppression refusée — ${e.detail}` : 'Suppression impossible, réessaie.',
       )
+      setSuppressionOccupe(false)
+    }
+  }
+
+  /** Masquer = refuser la fiche : elle disparaît du Wiki des membres ; « Accepter la fiche » la fait revenir. */
+  const masquer = async () => {
+    setSuppressionOccupe(true)
+    try {
+      surEnregistree(fiche.ean, await api.wikiModerer(fiche.ean, 'refusee', 'Masquée : encore dans une collection'))
+      setMasquable(false)
+      setErreurSuppression(null)
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+      else setErreurSuppression('Masquage impossible, réessaie avec le réseau.')
+    } finally {
       setSuppressionOccupe(false)
     }
   }
@@ -97,6 +185,13 @@ export default function FicheWiki({
           {/* Codes-barres réservés au propriétaire : les autres comptes ne voient que la fiche. */}
           {peutEditer && <div className="ean">{fiche.ean}</div>}
           <h2>{fiche.nom || 'Sans nom'}</h2>
+          {peutEditer && fiche.provenance && (
+            <p className="fiche-provenance">
+              {fiche.provenance.cree ? `Créée le ${dateCourte(fiche.provenance.cree)}` : 'Créée'} —{' '}
+              {SOURCES[fiche.provenance.source] ?? 'avant le suivi de la provenance'}
+              {fiche.provenance.corrigee && ` · corrigée le ${dateCourte(fiche.provenance.corrigee)}`}
+            </p>
+          )}
           {peutEditer && fiche.codes.length > 0 && (
             <div className="autres-codes">
               <span>Autres codes-barres</span>
@@ -124,28 +219,120 @@ export default function FicheWiki({
           />
         ) : (
           <>
+            {/* Même ordre que la fiche de collection (sans État ni Quantité, propres à chaque collection). */}
             <div className="meta-grille">
-              <div className="meta-item">
-                <span>Volume</span>
-                <b>{fiche.volume || '—'}</b>
+              <div className="meta-item meta-item-large">
+                <span>Saveur</span>
+                <b>{fiche.flavor || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>Catégorie</span>
                 <b>{fiche.categorie || '—'}</b>
               </div>
               <div className="meta-item">
-                <span>Flavor</span>
-                <b>{fiche.flavor || '—'}</b>
+                <span>Pays</span>
+                <b>{fiche.region || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Volume</span>
+                <b>{fiche.volume || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Variante</span>
+                <b>{fiche.variante || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>Status</span>
                 <b>{fiche.status || '—'}</b>
               </div>
-              <div className="meta-item">
-                <span>Region</span>
-                <b>{fiche.region || '—'}</b>
-              </div>
             </div>
+
+            {peutEditer && !!fiche.a_reprendre?.length && (
+              <div className="fiche-moderation en_attente" role="status">
+                <ShieldQuestion size={18} />
+                <span>
+                  Fiche d’avant la normalisation : {fiche.a_reprendre.join(', ')} à reprendre (« Modifier la fiche »).
+                </span>
+              </div>
+            )}
+
+            {peutEditer && fiche.moderation && fiche.moderation !== 'acceptee' && (
+              <div className={`fiche-moderation ${fiche.moderation}`} role="status">
+                {fiche.moderation === 'en_attente' ? <ShieldQuestion size={18} /> : <Ban size={18} />}
+                <span>
+                  {fiche.moderation === 'en_attente'
+                    ? 'Fiche à vérifier : ajoutée par un membre, pas encore validée.'
+                    : 'Fiche refusée ou masquée : elle n’apparaît plus dans le Wiki des membres. « Accepter la fiche » la fait revenir.'}
+                </span>
+              </div>
+            )}
+
+            {peutEditer && (
+              <div className="fiche-moderer" role="region" aria-label="Modération">
+                {fiche.moderation !== 'acceptee' && (
+                  <button
+                    className="btn btn-primaire actions-principal"
+                    disabled={signalementOccupe}
+                    onClick={() => void moderer('acceptee')}
+                  >
+                    <CheckCircle2 size={18} /> Accepter la fiche
+                  </button>
+                )}
+                {fiche.moderation !== 'refusee' &&
+                  (refusOuvert ? (
+                    <div className="champs">
+                      <div>
+                        <label htmlFor="w-refus">Motif du refus (facultatif)</label>
+                        <textarea
+                          id="w-refus"
+                          maxLength={500}
+                          placeholder="Ex. : doublon de Mango Loco"
+                          value={motifRefus}
+                          onChange={(e) => setMotifRefus(e.target.value)}
+                        />
+                      </div>
+                      <button className="btn btn-fantome btn-danger" disabled={signalementOccupe} onClick={() => void moderer('refusee')}>
+                        <Ban size={17} /> Confirmer le refus
+                      </button>
+                      <button className="btn btn-fantome" onClick={() => setRefusOuvert(false)}>
+                        Annuler
+                      </button>
+                    </div>
+                  ) : (
+                    <button className="btn btn-fantome btn-danger" onClick={() => setRefusOuvert(true)}>
+                      <Ban size={17} /> Refuser la fiche
+                    </button>
+                  ))}
+                {!!fiche.moderations?.length && (
+                  <ul className="fiche-historique" aria-label="Historique de modération">
+                    {fiche.moderations.map((m, i) => (
+                      <li key={i}>
+                        <small>{dateCourte(m.cree)}</small> {m.decision === 'acceptee' ? 'Acceptée' : 'Refusée'}
+                        {m.motif && ` — ${m.motif}`}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {peutEditer && !!fiche.signalements?.length && (
+              <div className="fiche-signalements" role="region" aria-label="Erreurs signalées">
+                <span className="etiquette">
+                  <Flag size={14} /> Erreurs signalées ({fiche.signalements.length})
+                </span>
+                {fiche.signalements.map((s) => (
+                  <div className="fiche-signalement" key={s.id}>
+                    <p>
+                      <small>{dateCourte(s.cree)}</small> {s.motif}
+                    </p>
+                    <button className="btn btn-fantome" disabled={signalementOccupe} onClick={() => void traiter(s.id)}>
+                      <CheckCircle2 size={16} /> Marquer comme traité
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="fiche-description">
               <span className="etiquette">Description</span>
@@ -206,6 +393,50 @@ export default function FicheWiki({
                   {suppressionOccupe ? 'Suppression…' : 'Supprimer la fiche du Wiki'}
                 </button>
                 {erreurSuppression && <p className="sous" role="alert">{erreurSuppression}</p>}
+                {masquable && fiche.moderation !== 'refusee' && (
+                  <button className="btn btn-fantome btn-danger" disabled={suppressionOccupe} onClick={() => void masquer()}>
+                    <EyeOff size={17} />
+                    Masquer du Wiki
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!peutEditer && (
+              <div className="actions fiche-signaler">
+                {signalementOuvert ? (
+                  <div className="champs">
+                    <div>
+                      <label htmlFor="w-signalement">Quelle erreur as-tu repérée ?</label>
+                      <textarea
+                        id="w-signalement"
+                        maxLength={500}
+                        placeholder="Ex. : le volume est 355 ml, pas 500 ml."
+                        value={motif}
+                        onChange={(e) => setMotif(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      className="btn btn-primaire actions-principal"
+                      disabled={signalementOccupe || motif.trim().length < 3}
+                      onClick={() => void signaler()}
+                    >
+                      {signalementOccupe ? 'Envoi…' : 'Envoyer le signalement'}
+                    </button>
+                    <button className="btn btn-fantome" onClick={() => setSignalementOuvert(false)}>
+                      Annuler
+                    </button>
+                  </div>
+                ) : (
+                  <button className="btn btn-fantome" onClick={() => { setSignalementOuvert(true); setEtatSignalement(null) }}>
+                    <Flag size={17} /> Signaler une erreur
+                  </button>
+                )}
+                {etatSignalement && (
+                  <p className={etatSignalement.ok ? 'sous' : 'sous fiche-alerte'} role="status">
+                    {etatSignalement.texte}
+                  </p>
+                )}
               </div>
             )}
           </>
@@ -229,12 +460,12 @@ function Formulaire({
   const [f, setF] = useState<ModifFicheWiki>({
     ean: fiche.ean,
     nom: fiche.nom,
-    edition: fiche.edition,
     volume: fiche.volume,
     categorie: fiche.categorie,
     flavor: fiche.flavor,
     status: fiche.status,
     region: fiche.region,
+    variante: fiche.variante ?? '',
     description: fiche.description,
   })
   const [occupe, setOccupe] = useState(false)
@@ -272,13 +503,7 @@ function Formulaire({
         </div>
         <div>
           <label htmlFor="w-volume">Volume</label>
-          <input
-            id="w-volume"
-            value={f.volume}
-            maxLength={40}
-            placeholder="500 ml"
-            onChange={(e) => champ('volume', e.target.value)}
-          />
+          <ChampVolume id="w-volume" valeur={f.volume} surChange={(v) => champ('volume', v)} />
         </div>
         <div>
           <label htmlFor="w-categorie">Catégorie</label>
@@ -294,13 +519,12 @@ function Formulaire({
           </select>
         </div>
         <div>
-          <label htmlFor="w-flavor">Flavor</label>
-          <input
-            id="w-flavor"
-            value={f.flavor}
-            maxLength={200}
-            onChange={(e) => champ('flavor', e.target.value)}
-          />
+          <label htmlFor="w-flavor">Saveur</label>
+          <ChampSaveur id="w-flavor" valeur={f.flavor} surChange={(v) => champ('flavor', v)} />
+        </div>
+        <div>
+          <label htmlFor="w-variante">Variante</label>
+          <ChampVariante id="w-variante" valeur={f.variante} surChange={(v) => champ('variante', v)} />
         </div>
         <div>
           <label htmlFor="w-status">Status</label>
@@ -316,7 +540,7 @@ function Formulaire({
           </select>
         </div>
         <div>
-          <label htmlFor="w-region">Region</label>
+          <label htmlFor="w-region">Pays</label>
           <select
             id="w-region"
             value={f.region}

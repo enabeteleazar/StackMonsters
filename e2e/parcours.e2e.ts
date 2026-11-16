@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
+import { devices, expect, test, type Browser, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 
 const JOURNAL_API = 'e2e-results/api.log' // écrit par le serveur d'API (playwright.config.ts)
@@ -31,6 +31,9 @@ async function connecter(page: Page, adresse: string) {
   await page.fill('#f-code', codes(adresse).at(-1)!)
   await page.getByRole('button', { name: 'Se connecter' }).click()
   await expect(nav(page, 'Réglages')).toBeVisible()
+  // Invitation à installer l'appli (première connexion sur cet appareil) : refermée pour la suite du parcours.
+  const invitation = page.getByRole('dialog', { name: /Installe StackMonsters/ })
+  if (await invitation.isVisible()) await invitation.getByRole('button', { name: /Compris|Plus tard/ }).click()
 }
 
 const nav = (page: Page, nom: string) => page.locator('nav.nav-bas').getByRole('button', { name: nom })
@@ -99,9 +102,11 @@ test('une canette sans code-barres reçoit un code tiré de son nom et rejoint l
   await page.getByRole('button', { name: 'Modifier la fiche' }).click()
   // Le nom vient désormais du Wiki : il ne se modifie plus depuis la collection.
   await expect(page.locator('#f-nom')).toBeDisabled()
-  await page.fill('#f-volume', '500 ml')
+  await page.selectOption('#f-volume', '500') // volume pris dans la liste des formats (en ml)
   await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await expect(page.getByText('Fiche enregistrée')).toBeVisible()
+  await page.getByRole('button', { name: nom }).click()
+  await expect(page.locator('.meta-item', { hasText: 'Volume' })).toContainText('500 ml')
 })
 
 test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async ({ page }) => {
@@ -119,44 +124,155 @@ test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async
   await expect(page.locator('.photo-hero img')).toHaveCount(0)
 })
 
-test('« Se déconnecter partout » ferme les autres appareils', async ({ page, browser }) => {
-  const adresse = email()
-  page.on('dialog', (d) => d.accept())
-  await connecter(page, adresse)
-  const autre = await nouvellePage(browser)
-  await connecter(autre, adresse)
+test('une fiche encore dans une collection se masque du Wiki au lieu d’être supprimée', async ({ page, browser }) => {
+  const nom = `Masquee ${unique()}`
+  const membre = await nouvellePage(browser)
+  await connecter(membre, email())
+  await ajouterParCode(membre, ean13(), nom)
+  await nav(membre, 'Wiki').click()
+  await expect(membre.getByRole('radio', { name: 'Sans catégorie' })).toHaveCount(0) // filtre du propriétaire
 
-  await nav(page, 'Réglages').click()
-  await page.getByRole('button', { name: 'Se déconnecter partout' }).click()
-  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
-  await autre.reload()
-  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
+  page.on('dialog', (d) => d.accept())
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Wiki').click()
+  await expect(page.getByRole('radio', { name: 'Sans catégorie' })).toBeVisible()
+  await page.getByLabel('Chercher dans le Wiki').fill(nom)
+  await page.getByText(nom).click()
+  await page.getByRole('button', { name: 'Supprimer la fiche du Wiki' }).click()
+  await expect(page.getByText('Suppression impossible')).toBeVisible()
+  await page.getByRole('button', { name: 'Masquer du Wiki' }).click()
+  await expect(page.getByText('Fiche refusée ou masquée')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Masquer du Wiki' })).toHaveCount(0)
+
+  await membre.reload()
+  await nav(membre, 'Wiki').click()
+  await membre.getByLabel('Chercher dans le Wiki').fill(nom)
+  await expect(membre.locator('.wiki-grille').getByText(nom)).toHaveCount(0)
+  await nav(membre, 'Collection').click()
+  await expect(membre.getByText(nom)).toBeVisible() // gardée dans sa collection
 })
 
-test('la suppression du compte exige l’adresse et efface la collection', async ({ page }) => {
+test('vider sa collection garde le compte et le Wiki', async ({ page }) => {
+  const nom = `A vider ${unique()}`
+  await connecter(page, email())
+  await ajouterParCode(page, ean13(), nom)
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Vider ma collection' }).click()
+  await expect(page.getByText('La canette de ta collection sera retirée')).toBeVisible()
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  await nav(page, 'Collection').click()
+  await expect(page.getByText(nom)).toBeVisible() // annulé : rien n'a bougé
+
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Vider ma collection' }).click()
+  await page.getByRole('button', { name: 'Vider', exact: true }).click()
+  await expect(page.getByText('Collection vidée')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Collection déjà vide' })).toBeDisabled()
+  await nav(page, 'Collection').click()
+  await expect(page.getByText(nom)).toHaveCount(0)
+  await nav(page, 'Wiki').click()
+  await page.getByLabel('Chercher dans le Wiki').fill(nom)
+  await expect(page.locator('.wiki-grille').getByText(nom)).toBeVisible() // la fiche du Wiki reste
+})
+
+test('la suppression du compte exige l’adresse et efface la collection', async ({ page, browser }) => {
   const adresse = email()
   const nom = `À effacer ${unique()}`
   await connecter(page, adresse)
   await ajouterParCode(page, ean13(), nom)
   await nav(page, 'Réglages').click()
 
-  page.once('dialog', (d) => d.accept('mauvaise@example.com'))
-  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
-  await expect(page.getByText('le compte n’a pas été supprimé')).toBeVisible()
+  const autre = await nouvellePage(browser)
+  await connecter(autre, adresse)
 
-  page.once('dialog', (d) => d.accept(adresse))
+  // Annuler ne supprime rien.
   await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
+  await expect(page.getByText('ta collection : canettes, quantités, états, notes et photos')).toBeVisible()
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  await expect(page.getByRole('button', { name: 'Supprimer définitivement' })).toHaveCount(0)
+
+  // Le bouton reste inactif tant que l'adresse saisie n'est pas celle du compte.
+  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
+  const confirmer = page.getByRole('button', { name: 'Supprimer définitivement' })
+  await page.getByLabel(/Pour confirmer/).fill('mauvaise@example.com')
+  await expect(confirmer).toBeDisabled()
+  await page.getByLabel(/Pour confirmer/).fill(adresse.toUpperCase())
+  await confirmer.click()
   await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
+
+  await autre.reload() // l'autre appareil perd aussi l'accès
+  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
 
   await connecter(page, adresse)
   await nav(page, 'Collection').click()
   await expect(page.getByText(nom)).toHaveCount(0)
 })
 
+test('déconnexion : cet appareil seulement, puis tous les appareils', async ({ page, browser }) => {
+  const adresse = email()
+  const autre = await nouvellePage(browser)
+  const troisieme = await nouvellePage(browser)
+  await connecter(page, adresse)
+  await connecter(autre, adresse)
+  await connecter(troisieme, adresse)
+
+  await nav(troisieme, 'Réglages').click()
+  await troisieme.getByRole('button', { name: 'Se déconnecter', exact: true }).click()
+  await expect(troisieme.getByRole('button', { name: 'Entrez' })).toBeVisible()
+  await autre.reload()
+  await expect(nav(autre, 'Réglages')).toBeVisible() // les autres appareils restent connectés
+
+  await nav(page, 'Réglages').click()
+  page.once('dialog', (d) => d.dismiss())
+  await page.getByRole('button', { name: 'Déconnecter tous les appareils' }).click()
+  await expect(nav(page, 'Réglages')).toBeVisible() // annulé : rien ne change
+  page.once('dialog', (d) => d.accept())
+  await page.getByRole('button', { name: 'Déconnecter tous les appareils' }).click()
+  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
+  await autre.reload()
+  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
+})
+
+test('l’invitation à installer l’appli s’affiche une seule fois, après la première connexion', async ({ page, browser }) => {
+  const adresse = email()
+  const avant = codes(adresse).length
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Entrez' }).click()
+  await page.fill('#f-email', adresse)
+  await page.getByRole('button', { name: 'Recevoir le code' }).click()
+  await expect.poll(() => codes(adresse).length).toBeGreaterThan(avant)
+  await page.fill('#f-code', codes(adresse).at(-1)!)
+  await page.getByRole('button', { name: 'Se connecter' }).click()
+  const invitation = page.getByRole('dialog', { name: /Installe StackMonsters/ })
+  await expect(invitation).toBeVisible()
+  await expect(invitation.getByText('Installer l’application')).toBeVisible() // Android : menu du navigateur
+  await invitation.getByRole('button', { name: 'Compris' }).click()
+  await expect(invitation).toHaveCount(0)
+
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Se déconnecter', exact: true }).click()
+  await connecter(page, adresse) // même appareil : plus d'invitation
+  await expect(invitation).toHaveCount(0)
+
+  // iPhone : les gestes de Safari (Partager → Sur l'écran d'accueil).
+  const iphone = await (await browser.newContext({ ...devices['iPhone 13'], baseURL: test.info().project.use.baseURL })).newPage()
+  const avantIphone = codes(adresse).length
+  await iphone.goto('/')
+  await iphone.getByRole('button', { name: 'Entrez' }).click()
+  await iphone.fill('#f-email', adresse)
+  await iphone.getByRole('button', { name: 'Recevoir le code' }).click()
+  await expect.poll(() => codes(adresse).length).toBeGreaterThan(avantIphone)
+  await iphone.fill('#f-code', codes(adresse).at(-1)!)
+  await iphone.getByRole('button', { name: 'Se connecter' }).click()
+  const surIphone = iphone.getByRole('dialog', { name: /Installe StackMonsters/ })
+  await expect(surIphone.getByText('Sur l’écran d’accueil')).toBeVisible()
+})
+
 test('la politique de confidentialité est accessible sans compte', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('link', { name: 'Confidentialité' }).click()
-  await expect(page.getByText('NABET Eleazar')).toBeVisible()
+  // Le nom figure deux fois (responsable du traitement, mentions légales) : on vérifie le premier.
+  await expect(page.getByText('NABET Eleazar').first()).toBeVisible()
   await page.getByRole('button', { name: 'Retour' }).click()
   await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
 })

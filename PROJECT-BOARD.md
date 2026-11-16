@@ -9,15 +9,8 @@
 Tickets enregistrés, à prioriser ou à planifier.
 
 - [ ] [#1 — Auditer et renouveler les secrets d’environnement](https://github.com/enabeteleazar/StockMonsters/issues/1) · P0 · Sécurité
-- [ ] [#2 — Protection contre les créations de comptes abusives](https://github.com/enabeteleazar/StockMonsters/issues/2) · P0 · Sécurité
-- [ ] [#3 — Suppression complète d’un compte](https://github.com/enabeteleazar/StockMonsters/issues/3) · P1 · Comptes
-- [ ] [#4 — Renforcer la gestion et la révocation des sessions](https://github.com/enabeteleazar/StockMonsters/issues/4) · P1 · Auth
-- [ ] [#5 — Enrichir les fiches canettes](https://github.com/enabeteleazar/StockMonsters/issues/5) · P2 · Catalogue
 - [ ] [#6 — Gérer plusieurs photos par canette](https://github.com/enabeteleazar/StockMonsters/issues/6) · P2 · Collection
 - [ ] [#7 — Ajouter un historique des opérations](https://github.com/enabeteleazar/StockMonsters/issues/7) · P2 · Collection
-- [ ] [#8 — Créer un catalogue mondial partagé](https://github.com/enabeteleazar/StockMonsters/issues/8) · P3 · Catalogue
-- [ ] [#9 — Proposer une nouvelle référence au catalogue](https://github.com/enabeteleazar/StockMonsters/issues/9) · P3 · Catalogue
-- [ ] [#10 — Rechercher dans le catalogue global](https://github.com/enabeteleazar/StockMonsters/issues/10) · P3 · Recherche
 - [ ] [#11 — Améliorer le parcours après lecture du code-barres](https://github.com/enabeteleazar/StockMonsters/issues/11) · P2 · Scan
 - [ ] [#12 — Ajouter des statistiques avancées](https://github.com/enabeteleazar/StockMonsters/issues/12) · P4 · Statistiques
 - [ ] [#13 — Ajouter badges et niveaux](https://github.com/enabeteleazar/StockMonsters/issues/13) · P4 · Gamification
@@ -39,7 +32,34 @@ _Aucun ticket en validation._
 
 ### Terminé
 
-_Aucun ticket déclaré terminé dans cette roadmap._
+- [x] [#5 — Enrichir les fiches canettes](https://github.com/enabeteleazar/StockMonsters/issues/5) · P2 · Catalogue
+  — volume en ml (liste de formats + autre), saveur courte avec suggestions, catégorie, pays et nouvelle
+  variante en listes contrôlées, vérifiées par l'API ; formulaires, fiches, filtre et recherche à jour.
+  Migration 14 avec sauvegarde préalable : les anciennes fiches restent valides, le reste est « à reprendre ».
+- [x] [#3 — Suppression complète d’un compte](https://github.com/enabeteleazar/StockMonsters/issues/3) · P1 · Comptes
+  — panneau de confirmation dans les réglages (conséquences détaillées, adresse du compte à saisir, vérifiée
+  aussi par l'API) ; compte, collection, photos, notes, sessions de tous les appareils et codes effacés. Les
+  contributions au Wiki, jamais liées à un compte, restent anonymes.
+- [x] [#4 — Renforcer la gestion et la révocation des sessions](https://github.com/enabeteleazar/StockMonsters/issues/4) · P1 · Auth
+  — expiration après 30 jours d'inactivité, 90 jours au plus, rotation quotidienne du jeton (10 min de grâce),
+  « Déconnecter tous les appareils » ; migration 12 sans déconnexion. Jeton Bearer conservé pour la release :
+  le passage au cookie HttpOnly (CSRF, migration, PWA) est documenté dans le README et prévu après.
+- [x] [#2 — Protection contre les créations de comptes abusives](https://github.com/enabeteleazar/StockMonsters/issues/2) · P0 · Sécurité
+  — limites par IP sur 24 h, nouveaux comptes limités par IP et globalement (après un code valide, sans
+  révéler l'existence d'un compte), plafond global de demandes de code, seuils réglables et script de
+  déblocage (`scripts/debloquer.py`), documentés dans le README. Ralentit l'inscription en masse sans
+  l'empêcher (pas de CAPTCHA).
+- [x] [#8 — Créer un catalogue mondial partagé](https://github.com/enabeteleazar/StockMonsters/issues/8) · P3 · Catalogue
+  — le Wiki est la référence commune, les collections en sont les exemplaires. EAN absents (code « 20… » tiré
+  du nom) et multiples (codes secondaires) gérés ; un EAN réutilisé selon les marchés reste lié à une seule fiche
+  (choix assumé, cas jugé trop rare). Provenance anonyme et signalement des erreurs ajoutés ensuite.
+- [x] [#9 — Proposer une nouvelle référence au catalogue](https://github.com/enabeteleazar/StockMonsters/issues/9) · P3 · Catalogue
+  — formulaire « Proposer une canette » (EAN, nom, pays, saveur, volume, photo), statuts à vérifier / acceptée /
+  refusée, prévention des doublons et historique des décisions. L'auteur n'est pas enregistré (choix assumé :
+  les fiches restent sans lien avec les comptes).
+- [x] [#10 — Rechercher dans le catalogue global](https://github.com/enabeteleazar/StockMonsters/issues/10) · P3 · Recherche
+  — recherche côté serveur (nom, saveur, pays, gamme, code-barres, sans accents), index trigramme, filtres,
+  tri, pagination et suggestions ; ne lit que le catalogue, jamais les collections.
 
 ## Conventions
 

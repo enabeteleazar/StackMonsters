@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Sparkles, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
-import { CATEGORIES, libelleStatut, REGIONS, STATUTS_COLLECTION } from '../categories'
+import { CATEGORIES, categorieDuNom, libelleStatut, REGIONS, STATUTS_COLLECTION, varianteDuNom } from '../categories'
+import { ChampSaveur, ChampVariante, ChampVolume } from './ChampsFiche'
 import { normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
 import { CANETTE_VIDE, ETATS, type Canette, type FicheWiki } from '../types'
@@ -114,30 +115,35 @@ export default function Verdict(p: Props) {
           />
         ) : (
           <>
+            {/* Ordre : Saveur (pleine largeur), Catégorie, Pays, État, Volume, puis Status et Quantité. */}
             <div className="meta-grille">
-              <div className="meta-item">
-                <span>Volume</span>
-                <b>{p.existante!.volume || '—'}</b>
+              <div className="meta-item meta-item-large">
+                <span>Saveur</span>
+                <b>{p.existante!.flavor || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>Catégorie</span>
                 <b>{p.existante!.categorie || '—'}</b>
               </div>
               <div className="meta-item">
-                <span>Flavor</span>
-                <b>{p.existante!.flavor || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Status</span>
-                <b>{p.existante!.status || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Region</span>
+                <span>Pays</span>
                 <b>{p.existante!.region || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>État</span>
                 <b>{p.existante!.etat || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Volume</span>
+                <b>{p.existante!.volume || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Variante</span>
+                <b>{p.existante!.variante || '—'}</b>
+              </div>
+              <div className="meta-item">
+                <span>Status</span>
+                <b>{p.existante!.status || '—'}</b>
               </div>
               <div className="meta-item">
                 <span>Quantité</span>
@@ -150,7 +156,11 @@ export default function Verdict(p: Props) {
                 <p>{p.existante!.description}</p>
               </div>
             )}
-            {p.existante!.notes && <p className="sous">Notes : {p.existante!.notes}</p>}
+            {/* Notes personnelles : masquées quand elles répètent la description du Wiki, déjà affichée. */}
+            {p.existante!.notes &&
+              p.existante!.notes.trim() !== (p.existante!.description ?? '').trim() && (
+                <p className="sous">Notes : {p.existante!.notes}</p>
+              )}
 
             <div className="actions">
               <input
@@ -275,8 +285,8 @@ function Formulaire({
   const champsWiki = codeBarresLocal || !c.ean.startsWith('LOCAL-')
   // Le Wiki garde la première valeur saisie : un champ déjà rempli ne se modifie pas depuis une collection.
   const valeursWiki = nouvelle ? fiches?.find((fiche) => fiche.ean === ficheChoisie) : depart
-  const verrouille = (k: 'categorie' | 'flavor' | 'status' | 'region') => !!valeursWiki?.[k]
-  const champsVerrouilles = (['categorie', 'flavor', 'status', 'region'] as const).some(verrouille)
+  const verrouille = (k: 'categorie' | 'flavor' | 'status' | 'region' | 'variante') => !!valeursWiki?.[k]
+  const champsVerrouilles = (['categorie', 'flavor', 'status', 'region', 'variante'] as const).some(verrouille)
   // Nom et volume affichés viennent du Wiki : les modifier ici n'aurait aucun effet visible.
   const texteVerrouille = (k: 'nom' | 'volume') => !nouvelle && !!depart.dans_wiki && !!depart[k]
   // Le code n'est contrôlé qu'à la création : une fiche existante reste toujours modifiable.
@@ -285,6 +295,11 @@ function Formulaire({
   const quantiteInvalide = !Number.isInteger(c.nb) || c.nb < 1 || c.nb > 9999
   // Sans code-barres, le code de la fiche est tiré du nom : il est obligatoire.
   const nomRequis = codeBarresLocal && !c.nom.trim()
+  // Le message n'apparaît qu'après un passage dans le champ : rien de rouge à l'ouverture du formulaire.
+  const [nomQuitte, setNomQuitte] = useState(false)
+  // Dernière catégorie remplie automatiquement depuis le nom (une catégorie choisie à la main n'est jamais écrasée).
+  const categorieAuto = useRef('')
+  const varianteAuto = useRef('')
   const choixFicheRequis =
     nouvelle && !!ficheCodeDisponible && ficheChoisie !== ficheCodeDisponible.ean
   const rechercheActive = c.nom.trim().length >= 2 || (c.ean.trim().length >= 2 && !c.ean.startsWith('LOCAL-'))
@@ -300,12 +315,12 @@ function Formulaire({
         ...prec,
         ean: fiche.ean,
         nom: fiche.nom,
-        edition: fiche.edition,
         volume: fiche.volume,
         categorie: fiche.categorie,
         flavor: fiche.flavor,
         status: fiche.status,
         region: fiche.region,
+        variante: fiche.variante,
         photo,
       }))
       setFicheChoisie(fiche.ean)
@@ -350,7 +365,22 @@ function Formulaire({
             value={c.nom}
             placeholder="Monster Mango Loco"
             disabled={texteVerrouille('nom')}
-            onChange={(e) => champ('nom', e.target.value)}
+            onChange={(e) => {
+              const nom = e.target.value
+              champ('nom', nom)
+              // Catégorie citée dans le nom : remplie seule, sauf si elle a été choisie à la main ou vient du Wiki.
+              if (nouvelle && !verrouille('categorie') && (!c.categorie || c.categorie === categorieAuto.current)) {
+                const detectee = categorieDuNom(nom)
+                categorieAuto.current = detectee
+                champ('categorie', detectee)
+              }
+              if (nouvelle && !verrouille('variante') && (!c.variante || c.variante === varianteAuto.current)) {
+                const detectee = varianteDuNom(nom)
+                varianteAuto.current = detectee
+                champ('variante', detectee)
+              }
+            }}
+            onBlur={() => setNomQuitte(true)}
           />
         </div>
         {nouvelle && rechercheActive && (
@@ -399,19 +429,18 @@ function Formulaire({
         )}
         <div>
           <label htmlFor="f-volume">Volume</label>
-          <input
+          <ChampVolume
             id="f-volume"
-            value={c.volume}
-            placeholder="500 ml"
-            disabled={texteVerrouille('volume')}
-            onChange={(e) => champ('volume', e.target.value)}
+            valeur={c.volume}
+            desactive={texteVerrouille('volume')}
+            surChange={(v) => champ('volume', v)}
           />
         </div>
         {champsWiki && (
           <>
             {(champsVerrouilles || texteVerrouille('nom')) && (
               <p className="sous">
-                Nom, volume, catégorie, saveur, statut et région viennent du Wiki partagé : seuls les champs
+                Nom, volume, catégorie, saveur, variante, statut et région viennent du Wiki partagé : seuls les champs
                 encore vides peuvent être complétés ici.
               </p>
             )}
@@ -430,13 +459,21 @@ function Formulaire({
               </select>
             </div>
             <div>
-              <label htmlFor="f-flavor">Flavor</label>
-              <input
+              <label htmlFor="f-flavor">Saveur</label>
+              <ChampSaveur
                 id="f-flavor"
-                value={c.flavor}
-                disabled={verrouille('flavor')}
-                maxLength={200}
-                onChange={(e) => champ('flavor', e.target.value)}
+                valeur={c.flavor}
+                desactive={verrouille('flavor')}
+                surChange={(v) => champ('flavor', v)}
+              />
+            </div>
+            <div>
+              <label htmlFor="f-variante">Variante</label>
+              <ChampVariante
+                id="f-variante"
+                valeur={c.variante ?? ''}
+                desactive={verrouille('variante')}
+                surChange={(v) => champ('variante', v)}
               />
             </div>
             <div className="duo">
@@ -451,7 +488,7 @@ function Formulaire({
                 </select>
               </div>
               <div>
-                <label htmlFor="f-region">Region</label>
+                <label htmlFor="f-region">Pays</label>
                 <select id="f-region" value={c.region} disabled={verrouille('region')} onChange={(e) => champ('region', e.target.value)}>
                   <option value="">Non renseignée</option>
                   {REGIONS.map((region) => (
@@ -513,10 +550,10 @@ function Formulaire({
       </div>
       {codeBarresInvalide && (
         <p className="suggestions-wiki-erreur" role="alert">
-          Code-barres invalide : il doit compter 8, 12 ou 13 chiffres, clé de contrôle comprise.
+          Code-barres invalide : il doit compter 8, 12 ou 13 chiffres, clé de contrôle comprise.
         </p>
       )}
-      {nomRequis && (
+      {nomRequis && nomQuitte && (
         <p className="suggestions-wiki-erreur" role="alert">
           Donne un nom à la canette, c’est lui qui identifie sa fiche dans le Wiki.
         </p>

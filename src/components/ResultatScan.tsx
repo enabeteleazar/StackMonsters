@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Camera as CameraIcon, CheckCircle2, ImageOff, Loader2, Plus, Sparkles, X } from 'lucide-react'
+import { categorieDuNom, varianteDuNom } from '../categories'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
@@ -84,12 +85,12 @@ export default function ResultatScan(p: Props) {
     await ajouter({
       ...CANETTE_VIDE(fiche.ean),
       nom: fiche.nom,
-      edition: fiche.edition,
       volume: fiche.volume,
       categorie: fiche.categorie,
       flavor: fiche.flavor,
       status: fiche.status,
       region: fiche.region,
+      variante: fiche.variante,
       photo,
     })
   }
@@ -137,11 +138,11 @@ export default function ResultatScan(p: Props) {
   const associer = (fiche: FicheWiki) =>
     proteger(async () => {
       const question = estCodeInterne(fiche.ean)
-        ? `Donner le code-barres ${code} à « ${fiche.nom} » ? Il servira à tous les collectionneurs.`
-        : `Ajouter ${code} comme autre code-barres de « ${fiche.nom} » ? Il servira à tous les collectionneurs.`
+        ? `Donner le code-barres ${code} à « ${fiche.nom} » ? Il servira à tous les collectionneurs.`
+        : `Ajouter ${code} comme autre code-barres de « ${fiche.nom} » ? Il servira à tous les collectionneurs.`
       if (!confirm(question)) return
       const maj = await api.wikiAssocierCode(fiche.ean, code)
-      setInfo(`Code-barres associé à « ${maj.nom} » dans le Wiki. Merci, pionnier !`)
+      setInfo(`Code-barres associé à « ${maj.nom} » dans le Wiki. Merci, pionnier !`)
       if (await montrerSiPossedee(maj.ean)) {
         await p.surCollectionChangee()
         return
@@ -200,10 +201,10 @@ export default function ResultatScan(p: Props) {
               photo={<PhotoWiki source="collection" ean={connue.ean} version={connue.photo_version} />}
             >
               <span key={ajouts} className={`scan-quantite${ajouts ? ' scan-quantite-plus' : ''}`}>
-                Quantité : <b>{nb}</b>
+                Quantité : <b>{nb}</b>
               </span>
             </CarteMini>
-            <p className="sous">Un exemplaire de plus pour tes échanges ?</p>
+            <p className="sous">Un exemplaire de plus pour tes échanges ?</p>
             <div className="actions">
               <button className="btn btn-primaire actions-principal" disabled={occupe} onClick={() => void plusUn()}>
                 <Plus size={19} /> Ajouter un doublon / +1
@@ -226,7 +227,7 @@ export default function ResultatScan(p: Props) {
               photo={etape.apercu ? <img src={etape.apercu} alt="" /> : <ImageOff size={26} />}
             />
             <div className="scan-etat" role="group" aria-labelledby="titre-etat">
-              <h3 id="titre-etat">Dans quel état est-elle ?</h3>
+              <h3 id="titre-etat">Dans quel état est-elle ?</h3>
               <div className="choix-etat">
                 {ETATS.map((etat) => (
                   <button key={etat} disabled={occupe} onClick={() => void choisirEtat(etape.canette, etat)}>
@@ -321,7 +322,7 @@ function CarteMini({
   )
 }
 
-type ChampsCreation = Pick<Canette, 'nom' | 'photo'>
+type ChampsCreation = Pick<Canette, 'nom' | 'photo'> & Partial<Pick<Canette, 'categorie' | 'variante'>>
 
 function CreationRapide({
   occupe,
@@ -341,17 +342,20 @@ function CreationRapide({
   const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
   const maj = <K extends keyof ChampsCreation>(k: K, v: ChampsCreation[K]) => setChamps((c) => ({ ...c, [k]: v }))
   const propositions = fichesCorrespondantes(fichesExistantes, champs.nom)
+  // Catégorie citée dans le nom (« … Ultra … ») : remplie automatiquement à la création de la fiche.
+  const categorie = categorieDuNom(champs.nom)
+  const variante = varianteDuNom(champs.nom)
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        surValider({ ...champs, nom: champs.nom.trim() })
+        surValider({ ...champs, nom: champs.nom.trim(), ...(categorie ? { categorie } : {}), ...(variante ? { variante } : {}) })
       }}
     >
       <div className="bandeau-info">
         <h2>Nouvelle fiche</h2>
-        <p>Le nom rejoint le Wiki ; la photo reste dans ta collection.</p>
+        <p>Le nom rejoint le Wiki ; si la fiche n’a pas encore de photo, la tienne y sera publiée.</p>
       </div>
       <div className="champs">
         <div>
@@ -364,12 +368,19 @@ function CreationRapide({
             value={champs.nom}
             onChange={(e) => maj('nom', e.target.value)}
           />
+          {(categorie || variante) && (
+            <p className="categorie-detectee" aria-live="polite">
+              {categorie && <>Catégorie détectée : <b>{categorie}</b></>}
+              {categorie && variante && ' · '}
+              {variante && <>Variante : <b>{variante}</b></>}
+            </p>
+          )}
         </div>
         {propositions.length > 0 && (
           <div className="suggestions-wiki" aria-live="polite">
-            <div className="suggestions-wiki-titre">Déjà dans le Wiki ?</div>
+            <div className="suggestions-wiki-titre">Déjà dans le Wiki ?</div>
             <p className="sous">
-              C’est la même canette ? Associe-lui le code que tu viens de scanner plutôt que de créer un doublon.
+              C’est la même canette ? Associe-lui le code que tu viens de scanner plutôt que de créer un doublon.
             </p>
             <div className="suggestions-wiki-liste">
               {propositions.map((fiche) => (

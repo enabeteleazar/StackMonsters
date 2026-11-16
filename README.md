@@ -9,12 +9,103 @@ Front React + TypeScript (Vite), API FastAPI (`api/index.py`), Postgres (Neon), 
 - [Issues GitHub](https://github.com/enabeteleazar/StockMonsters/issues)
 
 ## Comptes
-Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais, 5 demandes par heure et
-par adresse). Par adresse IP et par heure : 20 demandes de code et 60 vérifications au maximum (table
-`limites_ip`, empreintes HMAC uniquement). Pas de mot de passe. Une session dure 30 jours et se révoque avec « Se déconnecter ».
+Connexion par **e-mail + code à 6 chiffres** (valable 10 min, 5 essais) ; un compte se crée à la
+première vérification réussie. Les limites anti-abus sont détaillées plus bas. Pas de mot de passe. Sessions : voir plus bas.
 La page d'accueil publique présente le service ; la collection privée n'est affichée qu'après
 validation de la session par l'API.
 Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id` + `ean`).
+
+### Sessions
+Modèle actuel (issue #4) : jeton aléatoire de 256 bits gardé dans `localStorage` (clé historique
+`canstack-jeton`) et envoyé en `Authorization: Bearer`. La base ne garde que son empreinte SHA-256
+(table `sessions` : `cree` = connexion, `emis` = émission du jeton, `remplacee`, `expire`).
+
+| Règle | Valeur |
+| --- | --- |
+| Inactivité | expire après 30 jours sans utilisation ; chaque usage repousse l'échéance (réécrite au plus une fois par heure) |
+| Durée maximale | 90 jours après la connexion, même en usage continu : un nouveau code est alors demandé |
+| Rotation | `POST /api/auth/renouveler`, appelé à l'ouverture de l'application et à chaque retour au premier plan : au plus une fois par jour, un nouveau jeton remplace l'ancien (même date de connexion) |
+| Délai de grâce | l'ancien jeton reste valable 10 minutes après son remplacement (requêtes en vol, autre onglet), sans être prolongé ni renouvelé |
+| Déconnexion | « Se déconnecter » (`POST /api/auth/deconnexion`) : cet appareil seulement, cache hors ligne vidé |
+| Révocation | « Déconnecter tous les appareils » (`POST /api/auth/deconnexion-partout`) : toutes les sessions du compte, jetons renouvelés compris |
+
+Migration 12 : ajoute `cree`, `emis` et `remplacee`. Les sessions existantes sont datées de leur connexion
+supposée (échéance - 30 jours) et gardent leur échéance : personne n'est déconnecté par la mise à jour, et
+le plafond de 90 jours court à partir de cette date.
+
+**Cible : cookie `HttpOnly` (prévue après la release du 16 novembre 2026).** Le jeton ne serait plus lisible
+par JavaScript : une faille XSS ne pourrait plus le voler.
+- Cookie `__Host-sm_session` : `HttpOnly; Secure; SameSite=Strict; Path=/`, durée calée sur l'échéance de
+  la session, renvoyé à chaque prolongation et rotation (la rotation devient transparente pour le front).
+  Possible sans configuration CORS : le site et l'API sont sur la même origine (`/api`, réécriture Vercel ;
+  proxy Vite en développement).
+- CSRF : `SameSite=Strict`, plus, sur toute requête qui modifie (POST, PUT, PATCH, DELETE), contrôle de
+  l'en-tête `Origin` (même origine exigée) et d'un en-tête `X-StackMonsters: 1` que les formulaires d'un
+  autre site ne peuvent pas poser.
+- Migration sans reconnexion : pendant une période de transition, l'API accepte encore le `Bearer`. Au
+  démarrage, le front qui trouve un ancien jeton appelle une route d'échange qui révoque ce jeton et pose
+  le cookie (même date de connexion), puis efface `localStorage`.
+- PWA : le front ne voit plus le jeton ; il garde dans `localStorage` un simple indicateur « session
+  ouverte » (aucun secret) pour démarrer hors ligne et choisir l'écran d'accueil. Le service worker
+  ne change pas : les requêtes `/api` de même origine emportent le cookie, et la liste mise en cache reste
+  lisible hors ligne ; la déconnexion continue de vider ce cache. `GET /api/auth/moi` reste la seule
+  vérification de session au démarrage.
+- Sur iOS, une PWA installée a son propre stockage : la session y est déjà séparée de Safari, cookie ou
+  non ; aucune différence pour l'utilisateur.
+
+### Limites anti-abus
+Toutes appliquées par l'API (fenêtres fixes, table `limites_ip` : empreintes HMAC, jamais l'IP en clair,
+purgées après 24 h). Au-delà : réponse `429` avec `Retry-After` (secondes avant de pouvoir réessayer).
+
+| Limite | Seuil | Fenêtre |
+| --- | --- | --- |
+| Demandes de code par adresse e-mail | 5 | 1 h |
+| Essais par code | 5 | durée du code (10 min) |
+| Demandes de code par IP | 20 / 60 (`SM_DEMANDES_MAX_IP`, `SM_DEMANDES_MAX_IP_JOUR`) | 1 h / 24 h |
+| Vérifications de code par IP | 60 | 1 h |
+| Nouveaux comptes par IP | 5 (`SM_COMPTES_MAX_IP_JOUR`) | 24 h |
+| Nouveaux comptes, tous visiteurs | 30 (`SM_COMPTES_MAX_HEURE`) | 1 h |
+| Demandes de code, tous visiteurs | 300 (`SM_DEMANDES_MAX_HEURE`) | 1 h |
+| Signalements / propositions au Wiki par IP | 20 / 30 | 1 h |
+
+Une IPv6 compte pour son /64. Les réponses ne révèlent pas si une adresse a déjà un compte : la demande
+de code répond toujours `{"ok": true}` et ses limites ne dépendent pas de l'existence du compte. Les limites
+de création ne s'appliquent qu'après un code valide (seul le titulaire de l'adresse l'apprend, `429`
+« inscriptions limitées ») et ne bloquent jamais la connexion d'un membre existant ; un refus ne consomme
+pas le code, utilisable depuis une autre IP ou plus tard tant qu'il n'a pas expiré.
+
+**Débloquer** (membre légitime bloqué, pic d'inscriptions attendu) :
+- attendre la fin de la fenêtre (`Retry-After`, message affiché à l'écran) ;
+- ou effacer les compteurs avec `scripts/debloquer.py`, lancé avec la `DATABASE_URL` **et** le
+  `SESSION_SECRET` de l'environnement visé (les clés sont des HMAC). Sans `--appliquer`, simple aperçu :
+  ```bash
+  python scripts/debloquer.py --ip 203.0.113.7           # toutes les limites de cette IP
+  python scripts/debloquer.py --email membre@exemple.fr  # ses demandes et essais de code
+  python scripts/debloquer.py --inscriptions --demandes --appliquer   # limites globales
+  ```
+  Le script n'efface que des compteurs et des codes, jamais un compte ;
+- ou relever un seuil dans Vercel (`SM_DEMANDES_MAX_IP`, `SM_DEMANDES_MAX_IP_JOUR`, `SM_COMPTES_MAX_IP_JOUR`,
+  `SM_COMPTES_MAX_HEURE`, `SM_DEMANDES_MAX_HEURE`),
+  puis redéployer.
+  Les autres seuils sont des constantes de `api/index.py`.
+
+### Suppression du compte
+Réglages → « Supprimer mon compte » ouvre un panneau qui détaille les conséquences ; il faut y saisir
+l'adresse du compte. L'API (`DELETE /api/auth/compte`, corps `{"confirmation": "<adresse>"}`) vérifie elle
+aussi cette adresse (422 sinon) et refuse le compte `OWNER_EMAIL` (403). Effacés immédiatement, dans une
+transaction : le compte, la collection (notes et photos comprises), toutes les sessions (tous les appareils)
+et les codes de connexion en cours ; le front vide ensuite la copie hors ligne de l'appareil.
+Le Wiki n'est pas touché : ses fiches, photos données, propositions et signalements n'ont jamais été liés
+à un compte (aucun auteur enregistré), ils restent donc, anonymes. Ne sont pas non plus liés au compte : les
+compteurs anti-abus (empreintes d'IP, 24 h) et les empreintes d'IP des connexions uniques (13 mois).
+Une nouvelle inscription avec la même adresse repart de zéro.
+
+### Invitation à installer l'appli
+Juste après la première connexion sur un téléphone ou une tablette, une fenêtre invite à installer l'appli
+(`src/installation.ts`, `InvitationInstallation.tsx`), une seule fois par appareil (`localStorage`,
+`sm_invitation_installation`) et jamais si l'appli est déjà ouverte depuis l'écran d'accueil. Android : bouton
+« Installer » quand le navigateur le permet (`beforeinstallprompt`), sinon le chemin par son menu. iOS : aucune
+API, la fenêtre montre le geste Partager → « Sur l'écran d'accueil » → « Ajouter ».
 
 ## Collection
 - Après un scan (ou un code saisi à la main) : canette déjà possédée → fiche miniature et « +1 » ;
@@ -33,10 +124,38 @@ Chaque utilisateur ne voit que sa collection (table `collection`, clé `user_id`
   le scanner. Une fiche déjà en base reste modifiable même si son code est ancien.
 - `GET /api/cans` ne transporte pas les photos, seulement `photo_version` ; l'image se charge à la demande
   (`GET /api/cans/{ean}/photo`). Un `PUT /api/cans` sans champ `photo` conserve la photo existante.
-- « Sauvegarde JSON » contient toutes les données de collection et les photos ; elle s'annule si une photo
-  ne peut pas être lue.
 
 ## Wiki (catalogue partagé)
+### Champs d'une fiche (issue #5)
+| Champ | Règle | Valeurs |
+| --- | --- | --- |
+| Nom | obligatoire | texte, majuscule à chaque mot |
+| Code-barres | obligatoire (sinon code « 20… » tiré du nom) | EAN-8/13, UPC-A, codes supplémentaires |
+| Volume | facultatif | nombre de ml entre 50 et 3000, enregistré « 500 ml » ; formats proposés : 250, 355, 443, 473, 500, 550, 568, 710 ml, ou « Autre » (« 16 oz » est converti) |
+| Saveur | facultative | 60 caractères au plus, saveurs déjà connues proposées (`GET /api/wiki/saveurs`) ; les détails vont dans la description |
+| Catégorie (gamme) | facultative | `CATEGORIES` |
+| Pays / marché | facultatif | `REGIONS` |
+| Variante | facultative | `VARIANTES` : Standard, Zero Sugar, Shot, Édition limitée, Collaboration |
+| Statut | facultatif | Active, Stop, Nouveauté (30 jours, propriétaire seulement) |
+| Description | facultative | texte libre, propriétaire seulement |
+
+Les listes contrôlées sont dans `src/categories.ts` et `api/index.py` (un test vérifie qu'elles sont identiques).
+L'API refuse (422, message lisible) une valeur hors liste dans une fiche ou une proposition. L'ajout d'une
+canette à sa collection reste souple pour les anciennes versions de l'appli : volume mis au format s'il est
+lisible, variante inconnue ignorée. La variante est remplie depuis le nom à la création, comme la catégorie
+(`varianteDuNom`, dans cet ordre) : « Shot » → Shot, « Zero » → Zero Sugar, collaboration connue (VR46, Lando
+Norris, McLaren, « … X … ») → Collaboration, « Limited » / « Édition limitée » → Édition limitée, sinon
+Standard. Un choix fait à la main ou venu du Wiki n'est jamais écrasé. Elle se filtre dans le Wiki et entre
+dans la recherche.
+
+Migration 14 : copie d'abord les valeurs d'avant dans `sauvegarde_migration_14`, puis met les volumes au
+format « 500 ml » (Wiki et collections), remplace le statut historique « Discontinued » par « Stop », déplace
+une saveur de plus de 60 caractères dans la description si celle-ci est vide, et remplit la variante depuis le
+nom. Ce qui ne peut pas être converti (volume illisible, saveur longue avec une description déjà remplie,
+valeur hors liste) reste tel quel : la fiche reste valide et le propriétaire la voit « à reprendre ».
+Migration 15 : complète les variantes encore vides des fiches nommées (Édition limitée ou Standard), sans
+toucher une variante déjà remplie.
+
 Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comptes confondus. Une vignette
 (photo + nom) ouvre la fiche : nom, version, volume, catégorie, saveur, statut et région.
 - Catégories et régions proposées dans le formulaire propriétaire : elles proviennent des valeurs distinctes
@@ -44,8 +163,8 @@ Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comp
   après avoir été choisie (calcul à la lecture, colonne `nouveaute_depuis`).
 - Table `wiki` (une ligne par `ean`), séparée des collections : elle ne contient ni propriétaire, ni
   quantité, ni état, ni notes. Elle est alimentée à l'ajout d'une canette (champs descriptifs) et ne
-  prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Les photos des comptes et
-  les canettes sans code-barres (`LOCAL-…`) n'y sont jamais envoyées. Retirer une canette de sa
+  prend que ce qui manque : un compte ne peut pas écraser une fiche existante. Une photo envoyée devient
+  celle de la fiche si elle n'en a pas encore ; les canettes sans code-barres (`LOCAL-…`) n'y sont jamais envoyées. Retirer une canette de sa
   collection ne la retire pas du Wiki. À la première création de la table, elle est amorcée depuis les
   collections existantes (une seule fois). Une fiche supprimée ou dont le code-barres a changé est notée
   dans `wiki_exclus` et n'est plus recréée ; un changement de code-barres est reporté dans les collections.
@@ -55,14 +174,6 @@ Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comp
   (`PUT` et `DELETE /api/wiki/{ean}/photo`, 403 pour tout autre compte).
 - Routes : `GET /api/wiki` (liste sans photos), `GET /api/wiki/{ean}/photo` (image, chargée à la demande
   quand la vignette approche de l'écran), toutes derrière la session. Le Wiki exige la connexion réseau.
-
-## Catalogue Open Food Facts
-Le catalogue de référence est `monster_database.json` (liste JSON). Pour l'actualiser avec les produits de la marque Monster Energy :
-`python3 scripts/import_openfoodfacts.py`. Le script récupère toutes les pages de l'API Open Food Facts,
-fusionne les produits par code-barres et conserve les entrées et champs descriptifs déjà présents.
-L'import est écrit atomiquement : une erreur réseau ou une réponse vide ne remplace pas le fichier.
-Les produits importés gardent leurs données source et l'attribution [Open Food Facts](https://world.openfoodfacts.org/)
-sous licence [ODbL](https://opendatacommons.org/licenses/odbl/1-0/).
 
 ## Référencement
 `public/robots.txt` autorise l'indexation du site, sauf l'API et la page de maintenance, et annonce
@@ -101,18 +212,29 @@ L'API ne modifie jamais le schéma : les migrations sont listées dans `MIGRATIO
 l'ordre, et appliquées une seule fois par `DATABASE_URL=… python scripts/migrer_schema.py`. **À lancer sur
 chaque base avant de déployer une version qui ajoute une migration** : sinon l'API répond 503. Ne jamais
 modifier une migration déjà déployée, en ajouter une nouvelle, et ne jamais réattribuer un numéro, même
-retiré avant livraison (une base de développement a pu l'enregistrer). `./dev.sh` l'exécute automatiquement.
+retiré avant livraison (une base de développement a pu l'enregistrer).
+
+Mise à jour automatique **seulement avec `SM_MIGRATION_AUTO=1`** : une Preview Vercel (`VERCEL_ENV=preview`)
+se migre alors elle-même, et `./dev.sh` lance le script au démarrage. Sans cette variable (cas par défaut,
+obligatoire quand la Preview ou `.env.local` désignent la base de production), le schéma ne change que par
+le script : la base de production ne doit passer à une nouvelle version qu'au déploiement du code qui va avec.
+Exemple : le 14 novembre 2026, la base de production est passée en version 12 alors que le site était en
+v0.4.1, qui ne savait plus créer de session ; la migration 13 rend ces colonnes compatibles avec l'ancien code.
 
 ## Déployer
 1. Vercel → Storage → **Neon** (injecte `DATABASE_URL`).
 2. Dans Vercel → Settings → Environment Variables, configure `STATUS_APP` avec `MAINTENANCE`
    pour afficher la page de maintenance ou `PRODUCTION` pour afficher l'application (valeur par
-   défaut si la variable est absente). Après chaque changement de valeur sur Vercel, redéploie
-   l'application pour appliquer le nouveau mode. En local, le même réglage se fait dans `.env.local`.
+   défaut si la variable est absente). La valeur est lue au build : après chaque changement, il faut
+   redéployer. `scripts/maintenance.sh` fait les deux d'un coup : il propose MAINTENANCE ou PRODUCTION,
+   enregistre `STATUS_APP` en Production puis reconstruit le dernier déploiement de production
+   (`vercel redeploy` : même code, nouveau mode ; le dossier local n'est pas envoyé). `SIMULATION=1`
+   affiche les commandes sans rien modifier ; `SANS_REDEPLOIEMENT=1` change seulement la variable
+   (jour de release, avant `vercel --prod`). En local, le même réglage se fait dans `.env.local`.
 3. Variables d'environnement (voir `.env.example`) : `SESSION_SECRET`, `RESEND_API_KEY`,
    `MAIL_FROM`, `OWNER_EMAIL`. Supprime `API_TOKEN`, devenu inutile.
-   La page de maintenance utilise aussi `VITE_MAINTENANCE_START_DATE` et
-   `VITE_MAINTENANCE_TARGET_DATE` (dates ISO 8601 avec fuseau horaire) pour calculer sa progression.
+   La page de maintenance n'affiche ni date ni compte à rebours : `VITE_MAINTENANCE_START_DATE` et
+   `VITE_MAINTENANCE_TARGET_DATE` ne servent plus.
 4. Compte **Resend** pour l'envoi des codes. Configure `MAIL_FROM` avec une adresse d'un
    domaine vérifié dans Resend. L'expéditeur de test (`onboarding@resend.dev`) ne livre
    qu'à l'adresse e-mail du compte Resend.
@@ -121,7 +243,7 @@ retiré avant livraison (une base de développement a pu l'enregistrer). `./dev.
 
 Import d'anciennes données : `scripts/migrer.py` écrit dans `canettes` ; fais-le **avant** la
 première connexion du propriétaire.
-Restauration d'une « Sauvegarde JSON » dans un compte existant :
+Restauration d'une ancienne « Sauvegarde JSON » (export retiré de l'appli) dans un compte existant :
 `python scripts/migrer.py sauvegarde.json --email moi@exemple.fr`.
 
 ## Développer
@@ -137,7 +259,9 @@ Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetabl
 `E2E_DATABASE_URL=… E2E_PYTHON=.venv/bin/python pnpm exec playwright test`.
 
 ## Limites assumées
-- Aucune protection contre l'inscription en masse (un compte se crée à la première vérification).
-- Session stockée dans `localStorage`, envoyée en `Bearer` (pas de cookie).
-- Pas de suppression de compte ni de partage de collection.
+- Les limites par IP ralentissent l'inscription en masse sans l'empêcher (réseaux de nombreuses IP) ; pas de
+  CAPTCHA. Plusieurs personnes derrière la même IP (CGNAT mobile, école) partagent les compteurs.
+- Session stockée dans `localStorage`, envoyée en `Bearer`, donc lisible par un script injecté (XSS) ; le passage
+  au cookie `HttpOnly` est décrit dans « Sessions ».
+- Pas de partage de collection.
 - Hors ligne : lecture seule de la dernière liste ; « Se déconnecter » vide ce cache.

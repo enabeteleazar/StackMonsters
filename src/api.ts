@@ -1,5 +1,5 @@
 import { API_URL, CLE_JETON } from './config'
-import type { Canette, FicheWiki, ModifFicheWiki, ReponseWiki } from './types'
+import type { Canette, FicheWiki, ModifFicheWiki, PropositionWiki, ReponseWiki, ResultatRechercheWiki, TriWiki } from './types'
 
 /** Levée quand le service répond 401 : jeton absent ou refusé. */
 export class NonAutorise extends Error {
@@ -32,6 +32,16 @@ function blobEnDataUrl(blob: Blob): Promise<string> {
 }
 
 // localStorage peut lever une exception (navigation privée de Safari, par exemple).
+/** Remplace le jeton s'il a plus d'un jour ; sans effet hors ligne ou si le serveur le garde. */
+export async function renouvelerJeton(): Promise<void> {
+  try {
+    const { token } = await api.renouveler()
+    if (token) jeton.ecrire(token)
+  } catch {
+    /* l'ancien jeton reste valable ; nouvel essai à la prochaine ouverture */
+  }
+}
+
 export const jeton = {
   lire: (): string => {
     try {
@@ -90,6 +100,9 @@ export const api = {
   ajuster: (ean: string, delta: number) =>
     requete<Canette>(`/cans/${encodeURIComponent(ean)}/nb`, { method: 'PATCH', body: JSON.stringify({ delta }) }),
   lire: (ean: string) => requete<Canette>(`/cans/${encodeURIComponent(ean)}`),
+  /** Retire toutes les canettes de la collection ; renvoie leur nombre. */
+  viderCollection: () =>
+    requete<{ retirees: number }>('/cans', { method: 'DELETE', body: JSON.stringify({ confirmation: 'vider' }) }),
   supprimer: (ean: string) =>
     requete<void>(`/cans/${encodeURIComponent(ean)}`, { method: 'DELETE' }),
   demande: (email: string) =>
@@ -101,12 +114,36 @@ export const api = {
     }),
   moi: () => requete<{ email: string }>('/auth/moi'),
   deconnexion: () => requete<void>('/auth/deconnexion', { method: 'POST' }),
+  /** Révoque toutes les sessions du compte (tous les appareils), celle-ci comprise. */
   deconnexionPartout: () => requete<void>('/auth/deconnexion-partout', { method: 'POST' }),
-  supprimerCompte: () => requete<void>('/auth/compte', { method: 'DELETE' }),
+  /** Rotation du jeton (au plus une fois par jour) : null si le jeton actuel reste valable. */
+  renouveler: () => requete<{ token: string | null }>('/auth/renouveler', { method: 'POST' }),
+  /** « confirmation » : l'adresse du compte, saisie par l'utilisateur ; vérifiée aussi par le serveur. */
+  supprimerCompte: (confirmation: string) =>
+    requete<void>('/auth/compte', { method: 'DELETE', body: JSON.stringify({ confirmation }) }),
   stats: () =>
     requete<{ utilisateurs: number; references: number; connexions_uniques: number }>('/stats'),
   sante: () => requete<{ status: string; version: string; references: number }>('/health'),
   wiki: () => requete<ReponseWiki>('/wiki'),
+  /** Saveurs déjà connues dans le Wiki, les plus fréquentes d'abord (suggestions des formulaires). */
+  wikiSaveurs: () => requete<string[]>('/wiki/saveurs'),
+  /** Recherche paginée côté serveur dans le catalogue partagé. */
+  wikiRecherche: (p: {
+    q?: string
+    categorie?: string
+    region?: string
+    tri?: TriWiki
+    page?: number
+    signalees?: boolean
+    a_verifier?: boolean
+    sans_categorie?: boolean
+    variante?: string
+    nouveautes?: boolean
+  }) => {
+    const params = new URLSearchParams()
+    for (const [cle, valeur] of Object.entries(p)) if (valeur) params.set(cle, String(valeur))
+    return requete<ResultatRechercheWiki>(`/wiki/recherche?${params}`)
+  },
   wikiModifier: (ean: string, f: ModifFicheWiki) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}`, { method: 'PUT', body: JSON.stringify(f) }),
   wikiSupprimer: (ean: string) =>
@@ -121,12 +158,29 @@ export const api = {
     }),
   wikiRetirerCode: (ean: string, code: string) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/code-barres/${encodeURIComponent(code)}`, { method: 'DELETE' }),
+  /** Propose une canette au catalogue : créée « à vérifier » (acceptée d'emblée pour le propriétaire). */
+  wikiProposer: (p: PropositionWiki) =>
+    requete<FicheWiki>('/wiki/propositions', { method: 'POST', body: JSON.stringify(p) }),
+  /** Propriétaire : accepte ou refuse une fiche. */
+  wikiModerer: (ean: string, decision: 'acceptee' | 'refusee', motif = '') =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/moderation`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, motif }),
+    }),
+  /** Signale une erreur sur une fiche ; le motif est transmis sans lien avec le compte. */
+  wikiSignaler: (ean: string, motif: string) =>
+    requete<{ ok: boolean }>(`/wiki/${encodeURIComponent(ean)}/signalement`, {
+      method: 'POST',
+      body: JSON.stringify({ motif }),
+    }),
+  /** Propriétaire : classe un signalement (corrigé ou rejeté) et récupère la fiche à jour. */
+  wikiSignalementTraite: (id: number) =>
+    requete<FicheWiki>(`/wiki/signalements/${id}/traite`, { method: 'POST' }),
   wikiPhotoRetirer: (ean: string) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/photo`, { method: 'DELETE' }),
   wikiPhoto: (ean: string, version: string) => photoLocale('wiki', ean, version),
   wikiPhotoData: (ean: string, version: string) => photoEnDataUrl('wiki', ean, version),
   photo: (ean: string, version: string) => photoLocale('cans', ean, version),
-  photoData: (ean: string, version: string) => photoEnDataUrl('cans', ean, version),
 }
 
 async function photoBlob(espace: 'wiki' | 'cans', ean: string, version: string): Promise<Blob> {
