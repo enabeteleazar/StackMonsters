@@ -96,6 +96,7 @@ export default function Confidentialite() {
                 <li>Sessions : 30 jours sans utilisation, 90 jours au plus après la connexion, ou jusqu’à la déconnexion.</li>
                 <li>Codes de connexion : une heure environ ; compteurs de limitation (empreintes, jamais l’IP en clair) : 24 heures au plus.</li>
                 <li>Empreintes d’IP des connexions uniques : 13 mois.</li>
+                <li>Événements de mesure d’audience : 25 mois.</li>
                 <li>Ton choix sur la mesure d’audience : 6 mois s’il s’agit d’un refus, 13 mois pour un accord ; la
                   question t’est ensuite reposée.</li>
               </ul>
@@ -117,7 +118,6 @@ export default function Confidentialite() {
                 <li>Vercel Inc. — hébergement du site et de l’API, mesure d’audience.</li>
                 <li>Neon Inc. — base de données.</li>
                 <li>Resend — envoi des codes de connexion par e-mail.</li>
-                <li>ntfy.sh — réception des événements de mesure d’audience, si tu l’acceptes.</li>
               </ul>
               <p>
                 La base de données et l’API sont hébergées aux États-Unis. Ces transferts hors de l’Union européenne

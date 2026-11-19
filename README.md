@@ -196,16 +196,15 @@ compter plusieurs fois.
 Route `GET /api/stats`, réponse 403 pour tout autre compte.
 
 ## Suivi du trafic facultatif
-Rien n'est envoyé (ntfy.sh et Vercel Analytics) sans un « Accepter » dans le bandeau de consentement ; le choix se
+Rien n'est envoyé (dashboard de suivi et Vercel Analytics) sans un « Accepter » dans le bandeau de consentement ; le choix se
 change dans Réglages. La politique de confidentialité est à `/#confidentialite` (responsable et contact :
 `src/config.ts`). Les polices sont servies par le site, sans appel à Google.
-`VITE_TRACK_TOPIC` active l'envoi d'événements `visit`, `connection` et `can_added` vers ntfy.sh.
+En production, `src/suivi.ts` envoie les événements `visit`, `connection` et `can_added` au dashboard
+StackMonsters (`https://stackmonster-dashboard.vercel.app/api/collect`, modifiable avec `VITE_TRACK_URL` ; l'adresse
+doit figurer dans `connect-src` de `vercel.json`). Le dashboard n'accepte que les envois venant des domaines du site.
 Les événements contiennent un identifiant aléatoire persistant dans le navigateur, le type d'appareil
-et la provenance approximative (référent/source UTM). Le suivi est désactivé si la variable est vide ;
-`localStorage.setItem('sm_ignore', '1')` permet aussi de l'exclure dans un navigateur.
-Cette variable `VITE_` et le nom du topic sont intégrés au JavaScript public : le topic n'est pas un secret,
-et les messages peuvent être lus ou alimentés par toute personne qui le connaît. Ne pas y envoyer de
-donnée personnelle ou confidentielle, et ne pas utiliser ce mécanisme comme canal privé.
+et la provenance approximative (référent/source UTM) ; ils sont conservés 25 mois.
+`localStorage.setItem('sm_ignore', '1')` permet de désactiver le suivi dans un navigateur.
 
 ## Migrations de la base
 L'API ne modifie jamais le schéma : les migrations sont listées dans `MIGRATIONS` (`api/index.py`), dans
