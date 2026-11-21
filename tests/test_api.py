@@ -24,6 +24,8 @@ def env(monkeypatch):
         )
         cx.execute("DELETE FROM wiki WHERE ean LIKE '200000000%' OR ean LIKE 'LOCAL-%' OR ean LIKE 'TEST-%'")
         cx.execute("DELETE FROM limites_ip")  # base de test uniquement (voir conftest.py)
+        cx.execute("DELETE FROM annonces")  # base de test uniquement
+        cx.execute("DELETE FROM abonnements_push")
         cx.execute("DELETE FROM wiki_exclus WHERE ean LIKE '200000000%' OR ean LIKE 'TEST-%'")
     yield TestClient(ix.app), codes
     with ix.base() as cx:
@@ -2004,7 +2006,7 @@ def test_echange_complet_jusqu_a_la_messagerie(env):
     n = eb["notifications"][0]
     assert (n["role"], n["statut"], n["action"], n["fiche"]["nom"]) == ("chercheur", "signalee", True, "Mango")
     assert A not in str(eb)
-    assert _echanges(c, ha) == {"notifications": [], "conversations": [], "non_lus": 0}
+    assert _echanges(c, ha) == {"notifications": [], "conversations": [], "annonces": [], "non_lus": 0}
     assert _echanges(c, hb)["notifications"][0]["id"] == n["id"]  # pas de doublon d'une lecture à l'autre
 
     # Un tiers ne peut rien faire sur cet échange.
@@ -2202,3 +2204,140 @@ def test_signaler_ferme_la_conversation_et_bloque_la_paire(env, monkeypatch):
     assert c.post(f"/api/admin/signalements-membres/{sid}/traite", headers=hc).status_code == 200
     assert c.post(f"/api/admin/signalements-membres/{sid}/traite", headers=hc).status_code == 404
     assert c.get("/api/admin/signalements-membres", headers=hc).json() == []
+
+
+# --- Administration : comptes, messages à tous, notifications --------------------------------
+
+
+def test_admin_comptes_reserve_au_proprietaire(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    ha, hc = connecter(c, codes, A), connecter(c, codes, C)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=ha)
+    assert c.get("/api/admin/comptes", headers=ha).status_code == 403
+    comptes = {x["email"]: x for x in c.get("/api/admin/comptes", headers=hc).json()}
+    assert comptes[A]["canettes"] == 1 and comptes[A]["bloque"] is None and comptes[A]["activite"]
+    assert comptes[C]["proprietaire"] is True
+    # Le compte propriétaire ne peut être ni bloqué ni supprimé.
+    cid = comptes[C]["id"]
+    assert c.post(f"/api/admin/comptes/{cid}/blocage", json={"bloque": True}, headers=hc).status_code == 403
+    assert c.request("DELETE", f"/api/admin/comptes/{cid}", json={"confirmation": C}, headers=hc).status_code == 403
+    assert c.post("/api/admin/comptes/999999999/blocage", json={"bloque": True}, headers=hc).status_code == 404
+
+
+def test_admin_bloque_puis_debloque_un_compte(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    ha, hc = connecter(c, codes, A), connecter(c, codes, C)
+    aid = next(x["id"] for x in c.get("/api/admin/comptes", headers=hc).json() if x["email"] == A)
+    assert c.post(f"/api/admin/comptes/{aid}/blocage", json={"bloque": True}, headers=ha).status_code == 403
+    r = c.post(f"/api/admin/comptes/{aid}/blocage", json={"bloque": True}, headers=hc)
+    assert r.status_code == 200 and r.json()["bloque"]
+    assert c.get("/api/cans", headers=ha).status_code == 401  # sessions fermées
+    # Plus de code de connexion (réponse identique, rien n'est envoyé), et un ancien code est refusé.
+    codes.pop(A, None)
+    assert c.post("/api/auth/demande", json={"email": A}).status_code == 200
+    assert A not in codes
+    # Débloqué : il peut se reconnecter, sa collection est intacte.
+    c.post(f"/api/admin/comptes/{aid}/blocage", json={"bloque": False}, headers=hc)
+    ha = connecter(c, codes, A)
+    assert c.get("/api/cans", headers=ha).status_code == 200
+
+
+def test_compte_bloque_refuse_avec_un_code_deja_recu(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    connecter(c, codes, A)
+    hc = connecter(c, codes, C)
+    assert c.post("/api/auth/demande", json={"email": A}).status_code == 200
+    code = codes[A]
+    aid = next(x["id"] for x in c.get("/api/admin/comptes", headers=hc).json() if x["email"] == A)
+    c.post(f"/api/admin/comptes/{aid}/blocage", json={"bloque": True}, headers=hc)
+    r = c.post("/api/auth/verification", json={"email": A, "code": code})
+    assert r.status_code == 403 and r.json()["detail"] == "compte bloqué"
+
+
+def test_admin_supprime_un_compte(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    ha, hc = connecter(c, codes, A), connecter(c, codes, C)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=ha)
+    aid = next(x["id"] for x in c.get("/api/admin/comptes", headers=hc).json() if x["email"] == A)
+    url = f"/api/admin/comptes/{aid}"
+    assert c.request("DELETE", url, json={"confirmation": A}, headers=ha).status_code == 403
+    assert c.request("DELETE", url, json={"confirmation": B}, headers=hc).status_code == 422
+    assert c.request("DELETE", url, json={"confirmation": A.upper()}, headers=hc).status_code == 204
+    assert c.get("/api/cans", headers=ha).status_code == 401
+    assert A not in str(c.get("/api/admin/comptes", headers=hc).json())
+    assert fiche(c, hc, "2000000000015") is not None  # le Wiki reste
+
+
+ABONNEMENT = {"endpoint": "https://push.example.com/appareil-1", "p256dh": "B" * 87, "auth": "a" * 22}
+
+
+def test_message_a_tous_popup_une_fois_et_notifications(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    monkeypatch.setenv("VAPID_PUBLIC_KEY", "cle-publique")
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "cle-privee")
+    envois = []
+    reponses = {"https://push.example.com/appareil-1": 201, "https://push.example.com/perime": 410}
+    monkeypatch.setattr(ix, "envoyer_push", lambda ab, charge, privee: envois.append((ab["endpoint"], charge, privee))
+                        or reponses[ab["endpoint"]])
+    ha, hb, hc = connecter(c, codes, A), connecter(c, codes, B), connecter(c, codes, C)
+    assert c.get("/api/push/cle", headers=ha).json() == {"cle": "cle-publique"}
+    assert c.post("/api/push/abonnement", json={**ABONNEMENT, "endpoint": "http://x.example.com/1"}, headers=ha).status_code == 422
+    assert c.post("/api/push/abonnement", json=ABONNEMENT, headers=ha).status_code == 204
+    assert c.post("/api/push/abonnement", json={**ABONNEMENT, "endpoint": "https://push.example.com/perime"},
+                  headers=hb).status_code == 204
+    assert c.get("/api/annonce", headers=ha).json() == {"annonce": None}
+
+    assert c.post("/api/admin/annonces", json={"texte": "Coucou"}, headers=ha).status_code == 403
+    assert c.post("/api/admin/annonces", json={"texte": "x" * 1001}, headers=hc).status_code == 422
+    assert c.post("/api/admin/annonces", json={"titre": "t" * 61, "texte": "x"}, headers=hc).status_code == 422
+    r = c.post("/api/admin/annonces", json={"titre": "  Mise   à jour ", "texte": "  Nouvelle version disponible !  "},
+               headers=hc)
+    assert r.status_code == 201 and r.json()["notifies"] == 1 and r.json()["appareils"] == 2
+    assert {e[0] for e in envois} == set(reponses) and envois[0][1]["texte"] == "Nouvelle version disponible !"
+    assert envois[0][2] == "cle-privee" and envois[0][1]["titre"] == "Mise à jour"
+    # L'abonnement expiré (410) est effacé.
+    historique = c.get("/api/admin/annonces", headers=hc).json()
+    assert historique["appareils"] == 1 and historique["annonces"][0]["notifies"] == 1
+
+    # Popup : une fois par compte, jamais pour l'auteur.
+    a = c.get("/api/annonce", headers=ha).json()["annonce"]
+    assert a["texte"] == "Nouvelle version disponible !" and a["titre"] == "Mise à jour"
+    assert c.post(f"/api/annonce/{a['id']}/vue", headers=ha).status_code == 204
+    assert c.get("/api/annonce", headers=ha).json()["annonce"] is None
+    assert c.get("/api/annonce", headers=hb).json()["annonce"]["id"] == a["id"]
+    assert c.get("/api/annonce", headers=hc).json()["annonce"] is None
+    # Le message reste aussi dans l'onglet Notifications (hors pastille), même une fois vu.
+    eb = _echanges(c, ha)
+    assert [x["texte"] for x in eb["annonces"]] == ["Nouvelle version disponible !"] and eb["non_lus"] == 0
+
+
+def test_message_a_tous_sans_cles_de_notification(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    monkeypatch.delenv("VAPID_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("VAPID_PRIVATE_KEY", raising=False)
+    monkeypatch.setattr(ix, "envoyer_push", lambda *a: (_ for _ in ()).throw(AssertionError("aucun envoi")))
+    ha, hc = connecter(c, codes, A), connecter(c, codes, C)
+    assert c.get("/api/push/cle", headers=ha).json() == {"cle": None}
+    c.post("/api/push/abonnement", json=ABONNEMENT, headers=ha)
+    r = c.post("/api/admin/annonces", json={"texte": "Popup seulement"}, headers=hc).json()  # sans titre
+    assert r["push"] is False and r["notifies"] == 0
+    assert c.get("/api/annonce", headers=ha).json()["annonce"]["texte"] == "Popup seulement"
+
+
+def test_abonnement_push_suit_le_compte(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.post("/api/push/abonnement", json=ABONNEMENT, headers=ha)
+    c.post("/api/push/abonnement", json=ABONNEMENT, headers=hb)  # même appareil, autre compte
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM abonnements_push").fetchone()["n"] == 1
+    c.post("/api/push/desabonnement", json=ABONNEMENT, headers=ha)  # pas le sien : sans effet
+    c.post("/api/push/desabonnement", json=ABONNEMENT, headers=hb)
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM abonnements_push").fetchone()["n"] == 0

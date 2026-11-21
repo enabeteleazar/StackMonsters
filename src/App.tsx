@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Home, LayoutGrid, MessagesSquare, ScanLine, Settings2 } from 'lucide-react'
 import { api, jeton, NonAutorise, renouvelerJeton } from './api'
 import AccueilPublic from './components/AccueilPublic'
@@ -13,7 +13,10 @@ import Echanges from './components/Echanges'
 import ResultatScan from './components/ResultatScan'
 import { viderPhotos } from './components/PhotoWiki'
 import Settings from './components/Settings'
-import SignalementsMembres from './components/SignalementsMembres'
+import Administration from './components/Administration'
+import Annonce from './components/Annonce'
+import PopupEchange from './components/PopupEchange'
+import { marquerPopupVue, notificationsAMontrer, popupsVues } from './notificationsVues'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
 import Wiki from './components/Wiki'
@@ -21,7 +24,7 @@ import { inviterAInstaller } from './installation'
 import { suivre } from './suivi'
 import type { Canette, EtatEchanges } from './types'
 
-type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats' | 'echanges' | 'signalements'
+type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats' | 'echanges' | 'admin'
 
 /** Relecture des échanges (notifications, messages non lus) tant que l'appli est affichée. */
 const RELECTURE_ECHANGES_MS = 60_000
@@ -80,6 +83,25 @@ export default function App() {
 
   // Échanges : notifications et conversations, relues régulièrement pour la pastille de l'en-tête.
   const [echanges, setEchanges] = useState<EtatEchanges | null>(null)
+  // Popups des nouvelles notifications d'échange : la première pas encore vue sur cet appareil.
+  const [popupsMontrees, setPopupsMontrees] = useState(0)
+  const popupEchange = useMemo(() => {
+    if (!echanges || !emailUtilisateur || vue === 'echanges') return null
+    const vues = popupsVues(emailUtilisateur)
+    return notificationsAMontrer(echanges).find((n) => !vues.has(n.cle)) ?? null
+    // popupsMontrees : relire les popups vues après chaque fermeture
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [echanges, emailUtilisateur, vue, popupsMontrees])
+  // Sur la page Échanges, les notifications sont sous les yeux : pas de popup pour elles ensuite.
+  useEffect(() => {
+    if (vue === 'echanges' && echanges && emailUtilisateur) {
+      for (const n of notificationsAMontrer(echanges)) marquerPopupVue(emailUtilisateur, n.cle)
+    }
+  }, [vue, echanges, emailUtilisateur])
+  const fermerPopupEchange = () => {
+    if (popupEchange) marquerPopupVue(emailUtilisateur, popupEchange.cle)
+    setPopupsMontrees((n) => n + 1)
+  }
   const [erreurEchanges, setErreurEchanges] = useState(false)
   const chargerEchanges = useCallback(async () => {
     try {
@@ -175,6 +197,34 @@ export default function App() {
     document.addEventListener('visibilitychange', auRetour)
     return () => document.removeEventListener('visibilitychange', auRetour)
   }, [etatAcces])
+
+  // Message du propriétaire pas encore vu : lu à la connexion, au retour au premier plan, chaque minute, et dès
+  // qu'une notification arrive pendant que l'appli est ouverte (le service worker la prévient) : la popup
+  // s'affiche donc aussi à la réception, pas seulement à l'ouverture.
+  const [annonce, setAnnonce] = useState<{ id: number; titre: string; texte: string; cree: number } | null>(null)
+  useEffect(() => {
+    if (etatAcces !== 'prive') return
+    const lire = () => {
+      if (document.visibilityState === 'visible') {
+        api.annonce().then((r) => r.annonce && setAnnonce(r.annonce)).catch(() => {})
+      }
+    }
+    const surMessageSW = (e: MessageEvent) => {
+      if (e.data?.type === 'notification') {
+        lire()
+        void chargerEchanges()
+      }
+    }
+    lire()
+    const minuterie = window.setInterval(lire, RELECTURE_ECHANGES_MS)
+    document.addEventListener('visibilitychange', lire)
+    navigator.serviceWorker?.addEventListener('message', surMessageSW)
+    return () => {
+      window.clearInterval(minuterie)
+      document.removeEventListener('visibilitychange', lire)
+      navigator.serviceWorker?.removeEventListener('message', surMessageSW)
+    }
+  }, [etatAcces, chargerEchanges])
 
   // Échanges : lus à la connexion, au retour au premier plan, puis chaque minute tant que l'appli est affichée.
   useEffect(() => {
@@ -325,8 +375,7 @@ export default function App() {
             emailUtilisateur={emailUtilisateur}
             joignable={joignable}
             surVerrouiller={verrouiller}
-            surStats={() => setVue('stats')}
-            surSignalements={() => setVue('signalements')}
+            surAdministration={() => setVue('admin')}
             nbCanettes={canettes.length}
             surPreferencesChangees={recharger}
             surCollectionVidee={(retirees) => {
@@ -336,8 +385,15 @@ export default function App() {
             }}
           />
         )}
-        {vue === 'stats' && <Stats surRetour={() => setVue('reglages')} />}
-        {vue === 'signalements' && <SignalementsMembres surRetour={() => setVue('reglages')} surNonAutorise={verrouiller} />}
+        {vue === 'stats' && <Stats surRetour={() => setVue('admin')} />}
+        {vue === 'admin' && (
+          <Administration
+            surRetour={() => setVue('reglages')}
+            surStats={() => setVue('stats')}
+            surMessage={toast}
+            surNonAutorise={verrouiller}
+          />
+        )}
         {vue === 'echanges' && (
           <Echanges
             etat={echanges}
@@ -380,11 +436,34 @@ export default function App() {
           <BookOpen size={19} />
           Wiki
         </button>
-        <button aria-current={vue === 'reglages' || vue === 'stats' || vue === 'signalements'} onClick={() => setVue('reglages')}>
+        <button aria-current={vue === 'reglages' || vue === 'stats' || vue === 'admin'} onClick={() => setVue('reglages')}>
           <Settings2 size={19} />
           Réglages
         </button>
       </nav>
+
+      {/* Message du propriétaire à tous : une fois par compte, à l'ouverture de l'appli. */}
+      {/* Nouvelle notification d'échange : une popup à la fois, après le message du propriétaire. */}
+      {!annonce && popupEchange && (
+        <PopupEchange
+          texte={popupEchange.texte}
+          surVoir={() => {
+            fermerPopupEchange()
+            setVue('echanges')
+          }}
+          surFermeture={fermerPopupEchange}
+        />
+      )}
+
+      {annonce && (
+        <Annonce
+          annonce={annonce}
+          surFermeture={() => {
+            void api.annonceVue(annonce.id).catch(() => {})
+            setAnnonce(null)
+          }}
+        />
+      )}
 
       {camera && (
         <Camera

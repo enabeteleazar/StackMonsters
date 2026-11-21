@@ -506,7 +506,14 @@ test('échanges : mise en relation, double accord, puis messagerie', async ({ pa
   await nav(autre, 'Collection').click()
   await expect(autre.getByRole('tab', { name: /Recherchées · 1/ })).toBeVisible() // elle rejoint « Recherchées »
 
-  // Le chercheur est prévenu qu'un collectionneur l'a en double.
+  // Le chercheur est prévenu qu'un collectionneur l'a en double : popup dans l'appli, une seule fois.
+  await autre.reload()
+  const popupChercheur = autre.getByRole('dialog', { name: 'Échanges' })
+  await expect(popupChercheur).toContainText(`Un collectionneur a ${nom} en double.`)
+  await popupChercheur.getByRole('button', { name: 'OK' }).click()
+  await autre.reload()
+  await expect(nav(autre, 'Accueil')).toBeVisible()
+  await expect(autre.getByRole('dialog', { name: 'Échanges' })).toHaveCount(0)
   await autre.getByRole('button', { name: /^Échanges/ }).click()
   await expect(autre.getByText(`Un collectionneur a ${nom} en double.`)).toBeVisible()
   await autre.getByRole('button', { name: 'Échange', exact: true }).click()
@@ -515,10 +522,14 @@ test('échanges : mise en relation, double accord, puis messagerie', async ({ pa
   // Le possesseur reçoit la demande (pastille), et accepte : la messagerie s'ouvre.
   await page.reload()
   await expect(page.getByRole('button', { name: 'Échanges, 1 nouveau' })).toBeVisible()
-  await page.getByRole('button', { name: /^Échanges/ }).click()
+  // La nouvelle notification s'ouvre en popup dans l'appli ; « Voir » mène à l'onglet Notifications.
+  const popup = page.getByRole('dialog', { name: 'Échanges' })
+  await expect(popup).toContainText(`Un collectionneur est intéressé par ton double de ${nom}.`)
+  await popup.getByRole('button', { name: 'Voir' }).click()
   await expect(page.getByText(`Un collectionneur est intéressé par ton double de ${nom}.`)).toBeVisible()
   await page.getByRole('button', { name: 'Échange', exact: true }).click()
   await expect(page.getByRole('dialog', { name: `Conversation : ${nom}` })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Échanges' })).toHaveCount(0)
   await page.getByLabel('Ton message').fill('Salut ! Je te l’échange contre une Ultra ?')
   await page.getByRole('button', { name: 'Envoyer' }).click()
   await expect(page.locator('.bulle.moi')).toContainText('Salut ! Je te l’échange contre une Ultra ?')
@@ -570,7 +581,7 @@ test('échanges : signaler un membre ferme la conversation, le propriétaire l�
   await autre.getByRole('button', { name: /^Échanges/ }).click()
   await autre.getByRole('button', { name: 'Échange', exact: true }).click()
   await page.reload()
-  await page.getByRole('button', { name: /^Échanges/ }).click()
+  await page.getByRole('dialog', { name: 'Échanges' }).getByRole('button', { name: 'Voir' }).click()
   await page.getByRole('button', { name: 'Échange', exact: true }).click()
   await page.getByLabel('Ton message').fill('Je te la vends 20 €')
   await page.getByRole('button', { name: 'Envoyer' }).click()
@@ -591,11 +602,89 @@ test('échanges : signaler un membre ferme la conversation, le propriétaire l�
   const proprio = await nouvellePage(browser)
   await connecter(proprio, PROPRIETAIRE)
   await nav(proprio, 'Réglages').click()
-  await proprio.getByRole('button', { name: 'Signalements de membres' }).click()
+  await proprio.getByRole('button', { name: 'Administration' }).click()
+  await proprio.getByRole('tab', { name: 'Membres' }).click()
   const carte = proprio.locator('.signalement-membre').filter({ hasText: nom })
   await expect(carte).toContainText('Arnaque ou tentative de vente')
   await expect(carte).toContainText('« veut vendre »')
   await expect(carte.locator('.bulle')).toContainText('Je te la vends 20 €')
   await carte.getByRole('button', { name: 'Marquer comme traité' }).click()
   await expect(carte).toHaveCount(0)
+})
+
+test('administration : bloquer un compte, puis message à tous en popup', async ({ page, browser }) => {
+  const membre = email()
+  const autre = await nouvellePage(browser)
+  await connecter(autre, membre)
+
+  // Un compte ordinaire n'a pas le bouton Administration.
+  await nav(autre, 'Réglages').click()
+  await expect(autre.getByRole('button', { name: 'Administration' })).toHaveCount(0)
+
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Administration' }).click()
+  await page.getByLabel('Chercher une adresse').fill(membre)
+  const carte = page.locator('.admin-compte').filter({ hasText: membre })
+  page.once('dialog', (d) => d.accept())
+  await carte.getByRole('button', { name: 'Bloquer' }).click()
+  await expect(carte.getByText('Bloqué', { exact: true })).toBeVisible()
+  await autre.reload()
+  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible() // déconnecté
+  page.once('dialog', (d) => d.accept())
+  await carte.getByRole('button', { name: 'Débloquer' }).click()
+  await expect(carte.getByText('Bloqué', { exact: true })).toHaveCount(0)
+
+  // Fiches signalées et proposées : listées dans l'onglet Fiches.
+  await page.getByRole('tab', { name: 'Fiches' }).click()
+  await expect(page.getByRole('heading', { name: /Fiches signalées/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Fiches proposées, à vérifier/ })).toBeVisible()
+
+  // Message à tous : popup une seule fois à l'ouverture de l'appli (pas pour l'auteur).
+  const texte = `Nouvelle saison ${unique()} !`
+  await page.getByRole('tab', { name: 'Message' }).click()
+  await page.getByLabel('Message à tous les membres').fill(texte)
+  page.once('dialog', (d) => d.accept())
+  await page.getByRole('button', { name: 'Envoyer à tous' }).click()
+  await expect(page.locator('.admin-annonce-texte').first()).toHaveText(texte)
+  await page.reload()
+  await expect(page.getByRole('dialog', { name: 'Message de StackMonsters' })).toHaveCount(0)
+
+  await connecter(autre, membre)
+  const popup = autre.getByRole('dialog', { name: 'Message de StackMonsters' })
+  await expect(popup).toContainText(texte)
+  await popup.getByRole('button', { name: 'OK' }).click()
+  await expect(popup).toHaveCount(0)
+  await autre.reload()
+  await expect(nav(autre, 'Réglages')).toBeVisible()
+  await expect(autre.getByRole('dialog', { name: 'Message de StackMonsters' })).toHaveCount(0) // une seule fois
+  // Il reste dans l'onglet Notifications de la page Échanges.
+  await autre.getByRole('button', { name: /^Échanges/ }).click()
+  await expect(autre.locator('.annonce-notif')).toContainText(texte)
+})
+
+test('message à tous : la popup s’affiche aussi à la réception, appli déjà ouverte', async ({ page, browser }) => {
+  const autre = await nouvellePage(browser)
+  await connecter(autre, email()) // appli ouverte, aucun message
+  await expect(autre.getByRole('dialog', { name: 'Message de StackMonsters' })).toHaveCount(0)
+
+  const texte = `En direct ${unique()}`
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Administration' }).click()
+  await page.getByRole('tab', { name: 'Message' }).click()
+  await page.getByLabel('Titre du message').fill('Info du jour')
+  await page.getByLabel('Message à tous les membres').fill(texte)
+  page.once('dialog', (d) => d.accept())
+  await page.getByRole('button', { name: 'Envoyer à tous' }).click()
+  await expect(page.locator('.admin-annonce-texte').first()).toHaveText(texte)
+  await expect(page.locator('.admin-annonce-titre').first()).toHaveText('Info du jour')
+
+  // Sans recharger : l'appli relit les messages (retour au premier plan ici ; chaque minute, ou dès la
+  // réception d'une notification système, sur un vrai appareil).
+  await autre.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  const popup = autre.getByRole('dialog', { name: 'Info du jour' }) // le titre du message
+  await expect(popup).toContainText(texte)
+  await popup.getByRole('button', { name: 'OK' }).click()
+  await expect(popup).toHaveCount(0)
 })

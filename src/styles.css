@@ -1137,3 +1137,49 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .signalement-membre-tete{margin:0}
 .signalement-membre-detail{margin:0;font-style:italic}
 .signalement-membre-fil{max-height:260px;padding:8px 0;border-radius:12px}
+
+/* ============ administration (propriétaire) ============ */
+.reglages-admin{margin-top:18px}
+.admin-onglets{margin-bottom:12px}
+.admin-onglets button{padding:0 6px;font-size:11px;letter-spacing:.04em}
+.admin-section{position:relative;display:flex;flex-direction:column;gap:10px}
+/* Dans une colonne, la recherche ne s'étire pas en hauteur (flex prévu pour une rangée). */
+.admin-section .collec-recherche{flex:none;margin:0}
+.admin-section .wiki-resultats{margin:0}
+.admin-section .echanges-liste{gap:8px}
+.admin-compte{display:flex;flex-direction:column;gap:4px;padding:12px 14px}
+.admin-compte.bloque{border-color:rgba(255,77,77,.45)}
+.admin-compte .sous{margin:0;font-size:12.5px;line-height:1.35}
+.admin-compte-tete b{font-size:14.5px}
+.admin-compte .echange-notif-actions{margin-top:4px}
+.admin-compte .echange-notif-actions .btn{min-height:38px;font-size:13px}
+.admin-compte-tete{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.admin-compte-tete b{overflow-wrap:anywhere;margin-right:auto}
+.admin-pastille{padding:2px 8px;border-radius:999px;border:1px solid rgba(158,232,24,.5);color:var(--acide);
+  font:600 10.5px var(--display);text-transform:uppercase;letter-spacing:.06em}
+.admin-pastille.danger{border-color:rgba(255,77,77,.55);color:#ff8a8a}
+.admin-fiches .reglages-titre{display:flex;align-items:center;gap:6px}
+.admin-message{width:100%;padding:12px 14px;border-radius:16px;border:1.5px solid rgba(158,232,24,.35);background:#0b0d08;
+  color:var(--blanc);font:inherit;resize:vertical}
+.admin-compteur{margin:-6px 0 0;text-align:right}
+.admin-annonce-texte{margin:0 0 4px;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* ============ message du propriétaire (popup à l'ouverture) ============ */
+.annonce-fond{display:flex;align-items:center;justify-content:center;padding:18px;z-index:60}
+.annonce{width:100%;max-width:420px;display:flex;flex-direction:column;align-items:center;gap:12px;padding:26px 20px 20px;
+  border-radius:24px;border:1px solid rgba(158,232,24,.45);background:linear-gradient(170deg,#171a14,#080906);
+  box-shadow:0 0 40px -10px rgba(158,232,24,.5);text-align:center}
+.annonce-icone{display:grid;place-items:center;width:54px;height:54px;border-radius:50%;background:var(--acide);color:#0A0C07;
+  box-shadow:0 0 22px rgba(158,232,24,.55)}
+.annonce h2{margin:0;font:600 14px var(--display);text-transform:uppercase;letter-spacing:.1em;color:var(--alu)}
+.annonce-texte{margin:0;font-size:16px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.annonce-actions{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:6px}
+.annonce-actions .btn{min-height:46px}
+/* Message du service dans l'onglet Notifications : même style que la popup, en petit. */
+.annonce-notif{align-items:flex-start}
+.annonce-icone-petite{flex:0 0 40px;width:40px;height:40px;margin:4px 0 0 4px}
+.annonce-notif-titre{margin:0!important;font:600 11px var(--display)!important;text-transform:uppercase;letter-spacing:.08em;color:var(--acide)}
+.annonce-notif-texte{white-space:pre-wrap;overflow-wrap:anywhere}
+.admin-titre{font:600 15px var(--display);letter-spacing:.03em;resize:none}
+.admin-message:not(.admin-titre){min-height:220px}
+.admin-annonce-titre{margin:0 0 2px;font:600 14px var(--display);text-transform:uppercase;letter-spacing:.05em;color:var(--acide)}

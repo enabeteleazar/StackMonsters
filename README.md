@@ -236,8 +236,29 @@ La photo de canette dans `public/images/` provient de Wikimedia Commons et est a
 
 Photos sous licence [Creative Commons Attribution-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-sa/4.0/).
 
+## Administration (propriétaire)
+Réglages → **Administration** (visible seulement pour `OWNER_EMAIL`, routes `/api/admin/*` en 403 pour les autres),
+migration 20 :
+- **Comptes** (`GET /api/admin/comptes`) : adresse, création, dernière activité (échéance de session moins
+  30 jours), canettes, signalements reçus. **Bloquer** (`POST …/{id}/blocage`, colonne `users.bloque`) : sessions
+  et abonnements aux notifications effacés, plus aucun code de connexion envoyé (même réponse qu'avant, rien n'est
+  révélé) et un code déjà reçu est refusé (403 « compte bloqué ») ; **Débloquer** rétablit l'accès.
+  **Supprimer** (`DELETE …/{id}`, adresse à recopier) : comme la suppression par le membre lui-même. Le compte
+  propriétaire ne peut être ni bloqué ni supprimé.
+- **Fiches** : fiches signalées et fiches proposées (« à vérifier »), ouvertes dans la fiche du Wiki avec les outils
+  de modération habituels.
+- **Membres** : signalements envoyés depuis la messagerie (voir Échanges, étape 2).
+- **Message** (`POST /api/admin/annonces`, titre facultatif de 60 caractères, texte de 1 000, migration 21) : popup à l'ouverture de l'appli, une fois par compte
+  (`GET /api/annonce`, `POST /api/annonce/{id}/vue`, colonne `users.annonce_vue` ; jamais pour l'auteur ni pour un
+  compte créé après ; les 20 derniers restent aussi dans Échanges → Notifications, hors pastille), et notification système sur les appareils abonnés (Réglages → **Notifications** ;
+  `POST /api/push/abonnement`, table `abonnements_push`). Les abonnements expirés (404/410) sont effacés à l'envoi.
+- **Notifications (Web Push)** : dépendance `pywebpush`, clés VAPID dans `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
+  (secrète) et `VAPID_SUBJECT`. `scripts/generer_vapid.py` les crée dans `.env.local` sans les afficher ; les copier
+  ensuite dans les variables d'environnement Vercel. Sans clés, seule la popup est envoyée. Sur iPhone, les
+  notifications ne marchent que dans l'appli installée (iOS 16.4 et plus).
+
 ## Statistiques
-Réglages → **Statistiques** (visible seulement pour `OWNER_EMAIL`) : nombre d'utilisateurs, nombre de
+Réglages → Administration → **Statistiques** (visible seulement pour `OWNER_EMAIL`) : nombre d'utilisateurs, nombre de
 Références et nombre d'adresses IP uniques ayant validé une connexion sur les 13 derniers mois. Les
 adresses sont conservées sous forme d'empreintes HMAC avec `SESSION_SECRET`, jamais en clair. Le compteur
 est glissant (empreintes effacées après 13 mois) : plusieurs personnes partageant une IP comptent une fois et les IP dynamiques peuvent

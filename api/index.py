@@ -463,6 +463,27 @@ CREATE TABLE IF NOT EXISTS signalements_membres (
     UNIQUE (echange, auteur));
 CREATE INDEX IF NOT EXISTS signalements_membres_paire ON signalements_membres (auteur, signale);
 """),
+    # Administration : compte bloqué par le propriétaire (date du blocage ; plus de connexion possible), messages
+    # du propriétaire à tous les membres (popup à l'ouverture, une seule fois par compte, et notification
+    # système), et abonnements aux notifications (un par appareil, effacés avec le compte).
+    (20, """
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bloque TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS annonce_vue BIGINT NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS annonces (
+    id BIGSERIAL PRIMARY KEY,
+    texte TEXT NOT NULL,
+    cree BIGINT NOT NULL,
+    notifies INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS abonnements_push (
+    endpoint TEXT PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    cree TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS abonnements_push_user ON abonnements_push (user_id);
+"""),
+    # Titre facultatif d'un message à tous (popup, notification système, onglet Notifications).
+    (21, "ALTER TABLE annonces ADD COLUMN IF NOT EXISTS titre TEXT NOT NULL DEFAULT '';"),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -923,7 +944,7 @@ def utilisateur(
     h, now = _hash_session(_jeton(authorization)), int(time.time())
     u = cx.execute(
         "SELECT u.id, u.email, s.expire, s.cree, s.emis, s.remplacee FROM sessions s "
-        "JOIN users u ON u.id = s.user_id WHERE s.hash = %s AND s.expire > %s", (h, now),
+        "JOIN users u ON u.id = s.user_id WHERE s.hash = %s AND s.expire > %s AND u.bloque IS NULL", (h, now),
     ).fetchone()
     if u and u["remplacee"] is None:
         # Expiration glissante : chaque usage repousse l'échéance, sans dépasser le plafond depuis la connexion.
@@ -977,6 +998,8 @@ def demande(d: Demande, request: Request) -> dict:
         ).fetchone()
         if recentes["n"] >= DEMANDES_MAX:
             raise _trop_de_tentatives(recentes["premiere"] + FENETRE_DEMANDES - now)
+        if cx.execute("SELECT 1 FROM users WHERE email = %s AND bloque IS NOT NULL", (email,)).fetchone():
+            return {"ok": True}  # compte bloqué : aucun code, et la réponse ne le révèle pas
         code_row = cx.execute(
             "INSERT INTO codes (email, hash, expire, cree) VALUES (%s, %s, %s, %s) RETURNING id",
             (email, _hash_code(email, code), now + DUREE_CODE, now),
@@ -1008,6 +1031,8 @@ def verification(v: Verification, request: Request) -> dict:
             raise HTTPException(401, "code invalide ou expiré")
         if not hmac.compare_digest(c["hash"], _hash_code(email, v.code)):
             raise HTTPException(401, "code invalide ou expiré")
+        if cx.execute("SELECT 1 FROM users WHERE email = %s AND bloque IS NOT NULL", (email,)).fetchone():
+            raise HTTPException(403, "compte bloqué")
         if not cx.execute("SELECT 1 FROM users WHERE email = %s", (email,)).fetchone():
             # Création de compte : limitée seulement ici, une fois le code validé. Seul le titulaire de
             # l'adresse apprend qu'elle n'avait pas de compte ; le code reste utilisable jusqu'à expiration.
@@ -1618,11 +1643,16 @@ def _vue_echange(e: dict) -> dict:
 
 @router.get("/echanges")
 def echanges(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
-    """Notifications (mises en relation qui attendent une réponse de ce compte, ou ses demandes en attente) et
-    conversations ouvertes, avec le nombre d'éléments non lus (pastille de l'appli)."""
+    """Notifications (mises en relation qui attendent une réponse de ce compte, ou ses demandes en attente),
+    conversations ouvertes, avec le nombre d'éléments non lus (pastille de l'appli), et messages du service
+    (« annonces », les 20 derniers depuis la création du compte, déjà montrés en popup : hors pastille)."""
     uid = u["id"]
     with cx.transaction():
         _reperer_paires(cx, uid)
+        annonces = cx.execute(
+            "SELECT a.id, a.titre, a.texte, a.cree FROM annonces a JOIN users us ON us.id = %s WHERE a.cree >= us.cree "
+            "ORDER BY a.id DESC LIMIT 20", (uid,),
+        ).fetchall()
         lignes = cx.execute(
             "SELECT e.*, w.nom, CASE WHEN w.photo IS NOT NULL THEN w.maj END AS photo_wiki, "
             "(SELECT COUNT(*) FROM messages m WHERE m.echange = e.id AND m.auteur <> %s AND m.id > "
@@ -1657,7 +1687,7 @@ def echanges(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(co
             conversations.append({**vue, "non_lus": e["non_lus"], "dernier": e["dernier"]})
     notifications.sort(key=lambda n: n["maj"], reverse=True)
     a_traiter = sum(1 for n in notifications if n["action"]) + sum(1 for c in conversations if c["a_valider"])
-    return {"notifications": notifications, "conversations": conversations,
+    return {"notifications": notifications, "conversations": conversations, "annonces": annonces,
             "non_lus": a_traiter + sum(c["non_lus"] for c in conversations)}
 
 
@@ -1851,6 +1881,212 @@ def signalement_membre_traite(
     if not n:
         raise HTTPException(404, "signalement inconnu")
     return {"id": signalement_id}
+
+
+# --- Administration (propriétaire) : comptes, messages à tous et notifications --------------------------
+
+ANNONCE_MAX = 1000  # caractères d'un message à tous
+TITRE_ANNONCE_MAX = 60
+
+
+class Blocage(BaseModel):
+    bloque: bool
+
+
+class Annonce(BaseModel):
+    titre: str = Field(default="", max_length=TITRE_ANNONCE_MAX)
+    texte: str = Field(min_length=1, max_length=ANNONCE_MAX)
+
+
+class Abonnement(BaseModel):
+    endpoint: str = Field(min_length=10, max_length=1000)
+    p256dh: str = Field(min_length=10, max_length=200)
+    auth: str = Field(min_length=8, max_length=100)
+
+    @field_validator("endpoint")
+    @classmethod
+    def _https(cls, v: str) -> str:
+        if not v.startswith("https://"):
+            raise ValueError("adresse d'abonnement invalide")
+        return v
+
+
+@router.get("/admin/comptes")
+def admin_comptes(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> list[dict]:
+    """Tous les comptes, du plus récent au plus ancien : adresse, création, dernière activité, collection,
+    signalements reçus, blocage."""
+    _reserve_au_proprietaire(u)
+    with cx.transaction():
+        lignes = cx.execute(
+            "SELECT u.id, u.email, u.cree, u.bloque, "
+            "(SELECT MAX(s.expire) FROM sessions s WHERE s.user_id = u.id) AS echeance, "
+            "(SELECT COUNT(*) FROM collection c WHERE c.user_id = u.id) AS canettes, "
+            "(SELECT COUNT(*) FROM signalements_membres m WHERE m.signale = u.id) AS signalements "
+            "FROM users u ORDER BY u.cree DESC, u.id DESC",
+        ).fetchall()
+    return [{
+        "id": r["id"], "email": r["email"], "cree": r["cree"], "bloque": r["bloque"], "canettes": r["canettes"],
+        "signalements": r["signalements"], "proprietaire": _est_proprietaire(r["email"]),
+        # Une session glisse de 30 jours à chaque usage : son échéance moins 30 jours ≈ dernière activité.
+        "activite": r["echeance"] - INACTIVITE_SESSION if r["echeance"] else None,
+    } for r in lignes]
+
+
+def _compte_gere(cx: psycopg.Connection, compte_id: int) -> dict:
+    r = cx.execute("SELECT id, email FROM users WHERE id = %s", (compte_id,)).fetchone()
+    if r is None:
+        raise HTTPException(404, "compte inconnu")
+    if _est_proprietaire(r["email"]):
+        raise HTTPException(403, "le compte propriétaire ne peut être ni bloqué ni supprimé")
+    return r
+
+
+@router.post("/admin/comptes/{compte_id}/blocage")
+def admin_bloquer(compte_id: int, b: Blocage, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Bloque (toutes ses sessions sont fermées, plus aucun code de connexion) ou débloque un compte."""
+    _reserve_au_proprietaire(u)
+    with cx.transaction():
+        _compte_gere(cx, compte_id)
+        if b.bloque:
+            cx.execute("UPDATE users SET bloque = COALESCE(bloque, %s) WHERE id = %s", (maintenant(), compte_id))
+            cx.execute("DELETE FROM sessions WHERE user_id = %s", (compte_id,))
+            cx.execute("DELETE FROM abonnements_push WHERE user_id = %s", (compte_id,))
+        else:
+            cx.execute("UPDATE users SET bloque = NULL WHERE id = %s", (compte_id,))
+        r = cx.execute("SELECT bloque FROM users WHERE id = %s", (compte_id,)).fetchone()
+    return {"id": compte_id, "bloque": r["bloque"]}
+
+
+@router.delete("/admin/comptes/{compte_id}", status_code=204)
+def admin_supprimer(
+    compte_id: int, s: Suppression, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> None:
+    """Supprime un compte comme s'il le faisait lui-même (collection, sessions, échanges, messages). L'adresse
+    du compte doit être recopiée. Sans blocage, la personne peut recréer un compte avec la même adresse."""
+    _reserve_au_proprietaire(u)
+    with cx.transaction():
+        r = _compte_gere(cx, compte_id)
+        if s.confirmation.strip().lower() != r["email"]:
+            raise HTTPException(422, "confirmation différente de l'adresse du compte")
+        cx.execute("DELETE FROM codes WHERE email = %s", (r["email"],))
+        cx.execute("DELETE FROM users WHERE id = %s", (compte_id,))
+
+
+def _cles_vapid() -> tuple[str, str] | None:
+    """Clés des notifications (Web Push) : variables d'environnement VAPID_PUBLIC_KEY et VAPID_PRIVATE_KEY."""
+    publique, privee = os.environ.get("VAPID_PUBLIC_KEY", "").strip(), os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+    return (publique, privee) if publique and privee else None
+
+
+def envoyer_push(abonnement: dict, charge: dict, privee: str) -> int:
+    """Envoie une notification à un appareil ; renvoie le code HTTP du service de notifications (0 si injoignable)."""
+    from pywebpush import WebPushException, webpush  # chargé seulement pour un envoi
+
+    try:
+        r = webpush(
+            subscription_info={"endpoint": abonnement["endpoint"],
+                               "keys": {"p256dh": abonnement["p256dh"], "auth": abonnement["auth"]}},
+            data=json.dumps(charge, ensure_ascii=False),
+            vapid_private_key=privee,
+            vapid_claims={"sub": os.environ.get("VAPID_SUBJECT", "mailto:contact@mail.stackmonsters.fr")},
+            ttl=86400,
+            timeout=10,
+        )
+        return r.status_code
+    except WebPushException as e:
+        return e.response.status_code if e.response is not None else 0
+    except Exception:  # réseau, clé d'appareil invalide… : un appareil en échec ne bloque pas les autres
+        logging.exception("notification non envoyée")
+        return 0
+
+
+@router.get("/push/cle")
+def push_cle(u: dict = Depends(utilisateur)) -> dict:
+    """Clé publique à donner au navigateur pour s'abonner ; null si les notifications ne sont pas configurées."""
+    cles = _cles_vapid()
+    return {"cle": cles[0] if cles else None}
+
+
+@router.post("/push/abonnement", status_code=204)
+def push_abonner(a: Abonnement, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
+    """Enregistre l'abonnement de cet appareil (un appareil passé à un autre compte change de propriétaire)."""
+    with cx.transaction():
+        cx.execute(
+            "INSERT INTO abonnements_push (endpoint, user_id, p256dh, auth, cree) VALUES (%s, %s, %s, %s, %s) "
+            "ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth",
+            (a.endpoint, u["id"], a.p256dh, a.auth, maintenant()),
+        )
+
+
+@router.post("/push/desabonnement", status_code=204)
+def push_desabonner(a: Abonnement, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
+    with cx.transaction():
+        cx.execute("DELETE FROM abonnements_push WHERE endpoint = %s AND user_id = %s", (a.endpoint, u["id"]))
+
+
+@router.post("/admin/annonces", status_code=201)
+def admin_annoncer(a: Annonce, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Message du propriétaire à tous : affiché une fois à l'ouverture de l'appli (popup) et envoyé en
+    notification système aux appareils abonnés (comptes non bloqués)."""
+    _reserve_au_proprietaire(u)
+    texte, titre = a.texte.strip(), " ".join(a.titre.split())
+    if not texte:
+        raise HTTPException(422, "message vide")
+    with cx.transaction():
+        annonce = cx.execute("INSERT INTO annonces (titre, texte, cree) VALUES (%s, %s, %s) RETURNING id, cree",
+                             (titre, texte, int(time.time()))).fetchone()
+        # Le propriétaire a écrit le message : pas de popup pour lui.
+        cx.execute("UPDATE users SET annonce_vue = %s WHERE id = %s", (annonce["id"], u["id"]))
+        abonnements = cx.execute(
+            "SELECT a.endpoint, a.p256dh, a.auth FROM abonnements_push a JOIN users us ON us.id = a.user_id "
+            "WHERE us.bloque IS NULL",
+        ).fetchall()
+    cles = _cles_vapid()
+    notifies, perimes = 0, []
+    if cles and abonnements:
+        from concurrent.futures import ThreadPoolExecutor
+
+        charge = {"titre": titre or "StackMonsters", "texte": texte, "annonce": annonce["id"]}
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            codes = list(pool.map(lambda ab: envoyer_push(ab, charge, cles[1]), abonnements))
+        for ab, code in zip(abonnements, codes):
+            if 200 <= code < 300:
+                notifies += 1
+            elif code in (404, 410):  # appareil désabonné ou abonnement expiré
+                perimes.append(ab["endpoint"])
+    with cx.transaction():
+        if perimes:
+            cx.execute("DELETE FROM abonnements_push WHERE endpoint = ANY(%s)", (perimes,))
+        cx.execute("UPDATE annonces SET notifies = %s WHERE id = %s", (notifies, annonce["id"]))
+    return {"id": annonce["id"], "notifies": notifies, "appareils": len(abonnements), "push": cles is not None}
+
+
+@router.get("/admin/annonces")
+def admin_annonces(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Derniers messages envoyés, et nombre d'appareils abonnés aux notifications."""
+    _reserve_au_proprietaire(u)
+    with cx.transaction():
+        annonces = cx.execute("SELECT id, titre, texte, cree, notifies FROM annonces ORDER BY id DESC LIMIT 20").fetchall()
+        n = cx.execute("SELECT COUNT(*) AS n FROM abonnements_push").fetchone()["n"]
+    return {"annonces": annonces, "appareils": n, "push": _cles_vapid() is not None}
+
+
+@router.get("/annonce")
+def annonce_a_lire(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Dernier message du propriétaire pas encore vu par ce compte (et écrit après sa création) ; null sinon."""
+    with cx.transaction():
+        r = cx.execute(
+            "SELECT a.id, a.titre, a.texte, a.cree FROM annonces a JOIN users us ON us.id = %s "
+            "WHERE a.id > us.annonce_vue AND a.cree >= us.cree ORDER BY a.id DESC LIMIT 1", (u["id"],),
+        ).fetchone()
+    return {"annonce": r}
+
+
+@router.post("/annonce/{annonce_id}/vue", status_code=204)
+def annonce_vue(annonce_id: int, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
+    """Le message (et les plus anciens) ne s'affichera plus pour ce compte."""
+    with cx.transaction():
+        cx.execute("UPDATE users SET annonce_vue = GREATEST(annonce_vue, %s) WHERE id = %s", (annonce_id, u["id"]))
 
 
 @router.get("/wiki/saveurs")

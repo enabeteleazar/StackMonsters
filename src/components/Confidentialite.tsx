@@ -111,6 +111,19 @@ export default function Confidentialite() {
                 précisions et la conversation sont alors lisibles par le responsable du service, sans ton adresse, pour
                 traiter le signalement. Les signalements sont effacés avec la conversation.
               </p>
+              <p>
+                Messages du service et notifications : le responsable peut envoyer un message à tous les membres ; il
+                s’affiche une fois à l’ouverture de l’appli. Si tu actives « Notifications » dans les Réglages, ton
+                appareil reçoit aussi ces messages en notification système : l’adresse d’abonnement fournie par ton
+                navigateur (service de notifications d’Apple, de Google ou de Mozilla) est alors conservée avec ton
+                compte, jusqu’à ce que tu désactives les notifications ou supprimes ton compte. Aucune autre donnée
+                n’est envoyée à ces services que le message lui-même, chiffré.
+              </p>
+              <p>
+                Modération des comptes : le responsable peut bloquer un compte (plus aucune connexion possible) ou le
+                supprimer, par exemple après des signalements ; la suppression efface les mêmes données que si tu le
+                faisais toi-même.
+              </p>
             </Bloc>
 
             <Bloc titre="Combien de temps ?">
