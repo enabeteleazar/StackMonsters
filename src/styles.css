@@ -327,22 +327,6 @@ html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.col
 /* ============ wiki (même univers que la landing ; reprend la structure de la collection) ============ */
 .wiki-contenu{max-width:720px}
 .wiki-recherche{display:flex;margin-bottom:12px}
-/* Gammes en pastilles qui défilent de côté ; fondu sur les bords pour montrer qu'il y en a d'autres. */
-.wiki-gammes{display:flex;gap:8px;overflow-x:auto;margin:-10px -18px 4px;padding:12px 18px 16px;scrollbar-width:none;
-  overscroll-behavior-x:contain;
-  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 18px,#000 calc(100% - 36px),transparent 100%);
-  mask-image:linear-gradient(90deg,transparent 0,#000 18px,#000 calc(100% - 36px),transparent 100%)}
-.wiki-gammes::-webkit-scrollbar{display:none}
-.wiki-gammes button{flex:0 0 auto;min-height:44px;padding:0 15px;border-radius:999px;border:1.5px solid rgba(158,232,24,.35);
-  background:#0b0d08;color:var(--alu);font:600 12px var(--display);text-transform:uppercase;letter-spacing:.08em}
-.wiki-gammes button[aria-checked="true"]{background:var(--acide);border-color:var(--acide);color:#0A0C07;
-  box-shadow:0 0 14px rgba(158,232,24,.45)}
-/* Filtres secondaires (pays, tri), nombre de résultats, page suivante, suggestions. */
-.wiki-options{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 14px}
-.wiki-options select{min-width:0;width:100%;text-overflow:ellipsis}
-.wiki-options label{display:grid;gap:6px}
-.wiki-options label span{font:600 11px var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--alu)}
-.wiki-options select{min-height:44px;border-radius:999px;padding:0 14px;background:#0b0d08;border:1.5px solid rgba(158,232,24,.35)}
 .wiki-resultats{position:relative;margin:0 0 10px;font:600 12px var(--display);text-transform:uppercase;letter-spacing:.1em;color:var(--acide)}
 .wiki-plus{width:100%;max-width:none;margin-top:16px}
 .wiki-plus:disabled{opacity:.6}
@@ -441,7 +425,6 @@ html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.col
 .verdict .fiche-alerte{color:#ff8a8a}
 
 /* ============ propositions et modération du Wiki ============ */
-.wiki-proposer{position:relative;width:100%;max-width:none;margin:0 0 14px}
 .wiki-a-verifier{border-color:rgba(255,159,26,.6);color:#ffb347}
 .wiki-a-verifier.actif{background:rgba(255,159,26,.12)}
 .badge-moderation{position:absolute;left:6px;bottom:6px;z-index:2;padding:3px 7px;border-radius:999px;background:#ff9f1a;
@@ -989,6 +972,8 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .fiche-wiki .fiche-saveur .etiquette,.fiche-wiki .fiche-infos .etiquette{display:block;margin-bottom:8px;
   font-family:var(--display);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--acide)}
 .fiche-wiki .fiche-saveur b{font-family:var(--display);font-size:15px;font-weight:600;overflow-wrap:anywhere}
+.fiche-wiki .fiche-notes{margin:0 0 16px}
+.fiche-wiki .fiche-notes p{margin:0;font-size:15px;line-height:1.55;white-space:pre-line;overflow-wrap:anywhere}
 .fiche-wiki .fiche-infos dl{display:grid;margin:0}
 /* Une information par ligne : libellé à gauche, valeur à droite. */
 .fiche-wiki .fiche-infos dl > div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;min-width:0;padding:10px 0}
@@ -996,3 +981,60 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .fiche-wiki .fiche-infos dt{flex:0 0 auto;font:600 10.5px var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--alu)}
 .fiche-wiki .fiche-infos dd{margin:0;min-width:0;text-align:right;font-family:var(--display);font-size:14.5px;font-weight:600;
   overflow-wrap:anywhere}
+
+/* ============ page Wiki allégée : en-tête compact, recherche collante, filtres en panneau ============ */
+.wiki-tete{position:relative;display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 10px}
+.wiki-tete .collec-titre{font-size:clamp(22px,6vw,28px)}
+/* Recherche + Filtres : restent sous l'en-tête de l'appli quand on fait défiler la liste. */
+.wiki-barre{position:sticky;top:calc(70px + env(safe-area-inset-top,0px));z-index:4;display:flex;gap:8px;
+  margin:0 -18px;padding:8px 18px 10px;background:linear-gradient(var(--abysse) 80%,transparent)}
+.wiki-barre .wiki-recherche{margin:0;min-width:0}
+.wiki-filtres{flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 16px;border-radius:999px;
+  border:1.5px solid rgba(158,232,24,.35);background:#0b0d08;color:var(--blanc);font:600 13px var(--display);
+  text-transform:uppercase;letter-spacing:.08em;cursor:pointer}
+.wiki-filtres svg{color:var(--acide)}
+.wiki-filtres b{min-width:20px;height:20px;padding:0 6px;display:grid;place-items:center;border-radius:999px;
+  background:var(--acide);color:#0A0C07;font-size:12px;font-variant-numeric:tabular-nums}
+.wiki-filtres.actif{border-color:var(--acide)}
+@media (max-width:380px){.wiki-filtres span{display:none}.wiki-filtres{padding:0 14px}}
+/* Filtres actifs : pastilles à retirer d'un geste. */
+.wiki-pastilles{position:relative;display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.wiki-pastilles button{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px 0 12px;border-radius:999px;
+  border:1px solid var(--acide);background:rgba(158,232,24,.12);color:var(--blanc);font:600 12px var(--display);
+  text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+.wiki-pastilles button svg{color:var(--acide)}
+.wiki-pastilles .wiki-pastilles-effacer{border-color:transparent;background:none;color:var(--alu);text-decoration:underline;
+  text-underline-offset:3px}
+/* Proposer une canette : bouton rond flottant au-dessus de la barre de navigation (à côté d'elle sur ordinateur). */
+.wiki-fab{position:fixed;z-index:15;right:max(18px,env(safe-area-inset-right,0px));
+  bottom:calc(86px + env(safe-area-inset-bottom,0px));width:58px;height:58px;display:grid;place-items:center;border:0;
+  border-radius:50%;background:var(--acide);color:#0A0C07;cursor:pointer;
+  box-shadow:0 0 0 4px rgba(5,6,3,.7),0 0 24px rgba(158,232,24,.55)}
+.wiki-fab:hover{background:var(--acide-vif)}
+.wiki-fab:focus-visible{outline:3px solid var(--blanc);outline-offset:3px}
+@media (min-width:900px){.wiki-fab{bottom:calc(28px + env(safe-area-inset-bottom,0px))}}
+/* Panneau des filtres, qui monte du bas de l'écran. */
+.filtres-fond{position:fixed;inset:0;z-index:80;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.6);
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.filtres-panneau{width:100%;max-width:640px;max-height:86vh;display:flex;flex-direction:column;border-radius:24px 24px 0 0;
+  background:var(--abysse);border:1px solid rgba(158,232,24,.35);border-bottom:0;box-shadow:0 -10px 40px rgba(0,0,0,.6);
+  padding-bottom:env(safe-area-inset-bottom,0px);animation:filtres-monte .22s ease-out}
+@keyframes filtres-monte{from{transform:translateY(30px);opacity:0}}
+@media (prefers-reduced-motion:reduce){.filtres-panneau{animation:none}}
+.filtres-tete{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 6px}
+.filtres-tete h2{margin:0;font:700 italic 22px "Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.filtres-fermer{width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:50%;background:none;color:var(--alu);cursor:pointer}
+.filtres-corps{overflow-y:auto;padding:4px 18px 8px;scrollbar-width:none}
+.filtres-corps::-webkit-scrollbar{display:none}
+.filtres-groupe{margin:0 0 14px;padding:0;border:0}
+.filtres-groupe legend{padding:0;margin-bottom:8px;font:600 11px var(--display);text-transform:uppercase;letter-spacing:.09em;
+  color:var(--acide)}
+.filtres-groupe [role="radiogroup"]{display:flex;flex-wrap:wrap;gap:8px}
+.filtres-groupe button{min-height:40px;padding:0 14px;border-radius:999px;border:1.5px solid rgba(158,232,24,.35);background:#0b0d08;
+  color:var(--alu);font:600 12px var(--display);text-transform:uppercase;letter-spacing:.08em;cursor:pointer}
+.filtres-groupe button[aria-checked="true"]{background:var(--acide);border-color:var(--acide);color:#0A0C07;
+  box-shadow:0 0 12px rgba(158,232,24,.4)}
+.filtres-actions{display:grid;grid-template-columns:1fr 1.6fr;gap:10px;padding:12px 18px 16px;border-top:1px solid var(--ligne)}
+.filtres-actions .accueil-co-secondaire{max-width:none;margin:0}
+.filtres-voir{min-height:50px;border:0;border-radius:999px;background:var(--acide);color:#0A0C07;font:700 15px var(--display);
+  text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
