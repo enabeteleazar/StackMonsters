@@ -180,3 +180,18 @@ export type EtatEchanges = {
 }
 
 export type MessageEchange = { id: number; de_moi: boolean; texte: string; cree: string }
+
+/** Compte vu par le propriétaire (Administration). Dates en secondes depuis 1970, sauf bloque (ISO). */
+export type CompteAdmin = {
+  id: number
+  email: string
+  cree: number
+  /** Date du blocage ; null si le compte n'est pas bloqué. */
+  bloque: string | null
+  canettes: number
+  /** Signalements reçus dans la messagerie. */
+  signalements: number
+  proprietaire: boolean
+  /** Dernière activité approximative ; null sans session ouverte. */
+  activite: number | null
+}

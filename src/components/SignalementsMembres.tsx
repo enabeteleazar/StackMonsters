@@ -1,20 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft, Check, Flag, RefreshCw } from 'lucide-react'
+import { Check, Flag, RefreshCw } from 'lucide-react'
 import { api, NonAutorise } from '../api'
 import type { SignalementMembre } from '../types'
 
 type Props = {
-  surRetour: () => void
   surNonAutorise: () => void
 }
 
 const dateCourte = (iso: string) => new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
 
 /**
- * Propriétaire : signalements de membres envoyés depuis la messagerie, avec la conversation concernée.
+ * Propriétaire (page Administration) : signalements de membres envoyés depuis la messagerie, avec la conversation.
  * Les membres n'y sont désignés que par leur rôle et un numéro interne, jamais par leur adresse.
  */
-export default function SignalementsMembres({ surRetour, surNonAutorise }: Props) {
+export default function SignalementsMembres({ surNonAutorise }: Props) {
   const [liste, setListe] = useState<SignalementMembre[] | null>(null)
   const [erreur, setErreur] = useState(false)
   const [occupe, setOccupe] = useState<number | null>(null)
@@ -47,17 +46,7 @@ export default function SignalementsMembres({ surRetour, surNonAutorise }: Props
   }
 
   return (
-    <section className="collec stats-page">
-      <span className="lueur-page" aria-hidden="true" />
-
-      <div className="collec-contenu">
-        <div className="collec-tete">
-          <h1 className="collec-titre">
-            Signalements <b>de membres.</b>
-          </h1>
-        </div>
-        <span className="accueil-public-trait" aria-hidden="true" />
-
+    <div className="admin-section">
         {erreur && <p className="reglages-alerte">Impossible de charger les signalements (accès réservé au propriétaire).</p>}
         {liste === null && !erreur && <p className="collec-vide">Chargement…</p>}
         {liste?.length === 0 && (
@@ -103,12 +92,7 @@ export default function SignalementsMembres({ surRetour, surNonAutorise }: Props
             <RefreshCw size={18} />
             Actualiser
           </button>
-          <button className="accueil-co-secondaire" onClick={surRetour}>
-            <ArrowLeft size={18} />
-            Retour
-          </button>
         </div>
-      </div>
-    </section>
+    </div>
   )
 }

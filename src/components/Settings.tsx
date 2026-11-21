@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Cpu, Database, Eraser, Flag, Lock, Radio, Repeat2, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { Bell, Cpu, Database, Eraser, Lock, Radio, Repeat2, ShieldCheck, UserCog, Trash2, UserRound } from 'lucide-react'
 import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 import { CONTACT } from '../config'
 import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
 import { moteurNatif } from '../scanner'
+import { activerNotifications, desactiverNotifications, notificationsActives, notificationsPossibles } from '../notifications'
 import LienInstagram from './LienInstagram'
 
 type Props = {
   emailUtilisateur: string
   joignable: boolean
   surVerrouiller: () => void
-  surStats: () => void
-  /** Propriétaire : signalements de membres envoyés depuis la messagerie. */
-  surSignalements: () => void
+  /** Propriétaire : page Administration (comptes, fiches, membres signalés, message à tous). */
+  surAdministration: () => void
   /** Nombre de canettes de la collection (pour la confirmation du vidage). */
   nbCanettes: number
   surCollectionVidee: (retirees: number) => void
@@ -24,7 +24,7 @@ type Props = {
 const SUPPRESSION_COMPTE_VISIBLE = false
 
 export default function Settings({
-  emailUtilisateur, joignable, surVerrouiller, surStats, surSignalements, nbCanettes, surCollectionVidee, surPreferencesChangees,
+  emailUtilisateur, joignable, surVerrouiller, surAdministration, nbCanettes, surCollectionVidee, surPreferencesChangees,
 }: Props) {
   const [sante, setSante] = useState<{ status: string; version: string; references: number } | null>(null)
 
@@ -112,6 +112,35 @@ export default function Settings({
     }
   }
 
+  // Notifications système de cet appareil (messages du service) : null tant que l'état n'est pas connu.
+  const possibles = notificationsPossibles()
+  const [notifs, setNotifs] = useState<boolean | null>(null)
+  const [notifsOccupe, setNotifsOccupe] = useState(false)
+  useEffect(() => {
+    if (possibles) notificationsActives().then(setNotifs).catch(() => setNotifs(false))
+  }, [possibles])
+
+  const basculerNotifs = async () => {
+    setErreurCompte(null)
+    setNotifsOccupe(true)
+    try {
+      if (notifs) {
+        await desactiverNotifications()
+        setNotifs(false)
+      } else {
+        const r = await activerNotifications()
+        setNotifs(r === 'active')
+        if (r === 'refusee') setErreurCompte('Notifications refusées : autorise-les dans les réglages du téléphone.')
+        if (r === 'indisponible') setErreurCompte('Notifications indisponibles pour le moment.')
+      }
+    } catch (e) {
+      if (e instanceof NonAutorise) surVerrouiller()
+      else setErreurCompte('Notifications non modifiées, réessaie avec le réseau.')
+    } finally {
+      setNotifsOccupe(false)
+    }
+  }
+
   useEffect(() => {
     api.sante().then(setSante).catch(() => setSante(null))
     api
@@ -172,21 +201,14 @@ export default function Settings({
           </div>
         </div>
 
-        {/* Statistiques du service : réservées au propriétaire (OWNER_EMAIL). */}
+        {/* Administration : réservée au propriétaire (OWNER_EMAIL). */}
         {proprietaire === true && (
-          <>
-            <h2 className="reglages-titre">Administration</h2>
-            <div className="reglages-actions">
-              <button className="accueil-co-secondaire" onClick={surStats}>
-                <BarChart3 size={18} />
-                Statistiques
-              </button>
-              <button className="accueil-co-secondaire" onClick={surSignalements}>
-                <Flag size={18} />
-                Signalements de membres
-              </button>
-            </div>
-          </>
+          <div className="reglages-actions reglages-admin">
+            <button className="accueil-co-secondaire" onClick={surAdministration}>
+              <UserCog size={18} />
+              Administration
+            </button>
+          </div>
         )}
 
         <h2 className="reglages-titre">Compte et confidentialité</h2>
@@ -203,6 +225,20 @@ export default function Settings({
             Partage des doublons
             <span className="reglages-bascule-etat">{partage === null ? '…' : partage ? 'Activé' : 'Désactivé'}</span>
           </button>
+          {/* Notifications système : sur iPhone, seulement dans l'appli installée (sinon le bouton n'apparaît pas). */}
+          {possibles && (
+            <button
+              className={`accueil-co-secondaire reglages-bascule${notifs ? ' actif' : ''}`}
+              role="switch"
+              aria-checked={notifs === true}
+              disabled={notifs === null || notifsOccupe}
+              onClick={() => void basculerNotifs()}
+            >
+              <Bell size={18} />
+              Notifications
+              <span className="reglages-bascule-etat">{notifs === null ? '…' : notifs ? 'Activées' : 'Désactivées'}</span>
+            </button>
+          )}
           <button className="accueil-co-secondaire" onClick={() => { window.location.hash = 'confidentialite' }}>
             <ShieldCheck size={18} />
             Confidentialité

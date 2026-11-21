@@ -1,7 +1,7 @@
 import { API_URL, CLE_JETON } from './config'
 import type {
   Canette, EtatEchanges, FicheWiki, MessageEchange, MiseEnRelation, ModifFicheWiki, PropositionWiki, ReponseWiki,
-  ResultatRechercheWiki, SignalementMembre, TriWiki,
+  CompteAdmin, ResultatRechercheWiki, SignalementMembre, TriWiki,
 } from './types'
 
 /** Levée quand le service répond 401 : jeton absent ou refusé. */
@@ -112,6 +112,31 @@ export const api = {
   /** Signale l'autre membre : la conversation se ferme et la paire n'est plus proposée. */
   signalerMembre: (id: number, motif: string, detail: string) =>
     requete<MiseEnRelation>(`/echanges/${id}/signaler`, { method: 'POST', body: JSON.stringify({ motif, detail }) }),
+  /** Propriétaire : tous les comptes, blocage et suppression. */
+  adminComptes: () => requete<CompteAdmin[]>('/admin/comptes'),
+  adminBloquer: (id: number, bloque: boolean) =>
+    requete<{ id: number; bloque: string | null }>(`/admin/comptes/${id}/blocage`, { method: 'POST', body: JSON.stringify({ bloque }) }),
+  adminSupprimer: (id: number, confirmation: string) =>
+    requete<void>(`/admin/comptes/${id}`, { method: 'DELETE', body: JSON.stringify({ confirmation }) }),
+  /** Propriétaire : message à tous (popup à l'ouverture + notification système). */
+  adminAnnoncer: (texte: string) =>
+    requete<{ id: number; notifies: number; appareils: number; push: boolean }>('/admin/annonces', {
+      method: 'POST',
+      body: JSON.stringify({ texte }),
+    }),
+  adminAnnonces: () =>
+    requete<{ annonces: { id: number; texte: string; cree: number; notifies: number }[]; appareils: number; push: boolean }>(
+      '/admin/annonces',
+    ),
+  /** Dernier message du propriétaire pas encore vu par ce compte. */
+  annonce: () => requete<{ annonce: { id: number; texte: string; cree: number } | null }>('/annonce'),
+  annonceVue: (id: number) => requete<void>(`/annonce/${id}/vue`, { method: 'POST' }),
+  /** Notifications système : clé publique, abonnement de l'appareil. */
+  pushCle: () => requete<{ cle: string | null }>('/push/cle'),
+  pushAbonner: (a: { endpoint: string; p256dh: string; auth: string }) =>
+    requete<void>('/push/abonnement', { method: 'POST', body: JSON.stringify(a) }),
+  pushDesabonner: (a: { endpoint: string; p256dh: string; auth: string }) =>
+    requete<void>('/push/desabonnement', { method: 'POST', body: JSON.stringify(a) }),
   /** Propriétaire : signalements de membres à examiner. */
   signalementsMembres: () => requete<SignalementMembre[]>('/admin/signalements-membres'),
   signalementMembreTraite: (id: number) =>

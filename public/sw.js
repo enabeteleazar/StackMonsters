@@ -53,3 +53,33 @@ self.addEventListener('fetch', (e) => {
   // Fichiers du build et coquille : cache d'abord, renouvelé à chaque déploiement.
   e.respondWith(caches.match(r).then((m) => m || fetch(r).then((res) => garder(V, r, res))))
 })
+
+// Notifications : message du propriétaire à tous (voir « Administration » dans le README).
+self.addEventListener('push', (e) => {
+  let d = {}
+  try {
+    d = e.data ? e.data.json() : {}
+  } catch {
+    d = { texte: e.data ? e.data.text() : '' }
+  }
+  e.waitUntil(
+    self.registration.showNotification(d.titre || 'StackMonsters', {
+      body: d.texte || '',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: d.annonce ? `annonce-${d.annonce}` : undefined,
+      data: { url: '/' },
+    }),
+  )
+})
+
+// Toucher la notification ouvre l'appli (ou la ramène au premier plan) ; le message s'y affiche en popup.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((fenetres) => {
+      const ouverte = fenetres.find((f) => 'focus' in f)
+      return ouverte ? ouverte.focus() : self.clients.openWindow(e.notification.data?.url || '/')
+    }),
+  )
+})

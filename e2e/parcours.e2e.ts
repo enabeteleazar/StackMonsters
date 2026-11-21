@@ -591,11 +591,60 @@ test('échanges : signaler un membre ferme la conversation, le propriétaire l�
   const proprio = await nouvellePage(browser)
   await connecter(proprio, PROPRIETAIRE)
   await nav(proprio, 'Réglages').click()
-  await proprio.getByRole('button', { name: 'Signalements de membres' }).click()
+  await proprio.getByRole('button', { name: 'Administration' }).click()
+  await proprio.getByRole('tab', { name: 'Membres' }).click()
   const carte = proprio.locator('.signalement-membre').filter({ hasText: nom })
   await expect(carte).toContainText('Arnaque ou tentative de vente')
   await expect(carte).toContainText('« veut vendre »')
   await expect(carte.locator('.bulle')).toContainText('Je te la vends 20 €')
   await carte.getByRole('button', { name: 'Marquer comme traité' }).click()
   await expect(carte).toHaveCount(0)
+})
+
+test('administration : bloquer un compte, puis message à tous en popup', async ({ page, browser }) => {
+  const membre = email()
+  const autre = await nouvellePage(browser)
+  await connecter(autre, membre)
+
+  // Un compte ordinaire n'a pas le bouton Administration.
+  await nav(autre, 'Réglages').click()
+  await expect(autre.getByRole('button', { name: 'Administration' })).toHaveCount(0)
+
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Administration' }).click()
+  await page.getByLabel('Chercher une adresse').fill(membre)
+  const carte = page.locator('.admin-compte').filter({ hasText: membre })
+  page.once('dialog', (d) => d.accept())
+  await carte.getByRole('button', { name: 'Bloquer' }).click()
+  await expect(carte.getByText('Bloqué', { exact: true })).toBeVisible()
+  await autre.reload()
+  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible() // déconnecté
+  page.once('dialog', (d) => d.accept())
+  await carte.getByRole('button', { name: 'Débloquer' }).click()
+  await expect(carte.getByText('Bloqué', { exact: true })).toHaveCount(0)
+
+  // Fiches signalées et proposées : listées dans l'onglet Fiches.
+  await page.getByRole('tab', { name: 'Fiches' }).click()
+  await expect(page.getByRole('heading', { name: /Fiches signalées/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Fiches proposées, à vérifier/ })).toBeVisible()
+
+  // Message à tous : popup une seule fois à l'ouverture de l'appli (pas pour l'auteur).
+  const texte = `Nouvelle saison ${unique()} !`
+  await page.getByRole('tab', { name: 'Message' }).click()
+  await page.getByLabel('Message à tous les membres').fill(texte)
+  page.once('dialog', (d) => d.accept())
+  await page.getByRole('button', { name: 'Envoyer à tous' }).click()
+  await expect(page.locator('.admin-annonce-texte').first()).toHaveText(texte)
+  await page.reload()
+  await expect(page.getByRole('dialog', { name: 'Message de StackMonsters' })).toHaveCount(0)
+
+  await connecter(autre, membre)
+  const popup = autre.getByRole('dialog', { name: 'Message de StackMonsters' })
+  await expect(popup).toContainText(texte)
+  await popup.getByRole('button', { name: 'OK' }).click()
+  await expect(popup).toHaveCount(0)
+  await autre.reload()
+  await expect(nav(autre, 'Réglages')).toBeVisible()
+  await expect(autre.getByRole('dialog', { name: 'Message de StackMonsters' })).toHaveCount(0) // une seule fois
 })

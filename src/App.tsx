@@ -13,7 +13,8 @@ import Echanges from './components/Echanges'
 import ResultatScan from './components/ResultatScan'
 import { viderPhotos } from './components/PhotoWiki'
 import Settings from './components/Settings'
-import SignalementsMembres from './components/SignalementsMembres'
+import Administration from './components/Administration'
+import Annonce from './components/Annonce'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
 import Wiki from './components/Wiki'
@@ -21,7 +22,7 @@ import { inviterAInstaller } from './installation'
 import { suivre } from './suivi'
 import type { Canette, EtatEchanges } from './types'
 
-type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats' | 'echanges' | 'signalements'
+type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats' | 'echanges' | 'admin'
 
 /** Relecture des échanges (notifications, messages non lus) tant que l'appli est affichée. */
 const RELECTURE_ECHANGES_MS = 60_000
@@ -176,6 +177,18 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', auRetour)
   }, [etatAcces])
 
+  // Message du propriétaire pas encore vu : lu à la connexion et au retour au premier plan (notification touchée).
+  const [annonce, setAnnonce] = useState<{ id: number; texte: string; cree: number } | null>(null)
+  useEffect(() => {
+    if (etatAcces !== 'prive') return
+    const lire = () => {
+      if (document.visibilityState === 'visible') api.annonce().then((r) => setAnnonce(r.annonce)).catch(() => {})
+    }
+    lire()
+    document.addEventListener('visibilitychange', lire)
+    return () => document.removeEventListener('visibilitychange', lire)
+  }, [etatAcces])
+
   // Échanges : lus à la connexion, au retour au premier plan, puis chaque minute tant que l'appli est affichée.
   useEffect(() => {
     if (etatAcces !== 'prive') {
@@ -325,8 +338,7 @@ export default function App() {
             emailUtilisateur={emailUtilisateur}
             joignable={joignable}
             surVerrouiller={verrouiller}
-            surStats={() => setVue('stats')}
-            surSignalements={() => setVue('signalements')}
+            surAdministration={() => setVue('admin')}
             nbCanettes={canettes.length}
             surPreferencesChangees={recharger}
             surCollectionVidee={(retirees) => {
@@ -336,8 +348,15 @@ export default function App() {
             }}
           />
         )}
-        {vue === 'stats' && <Stats surRetour={() => setVue('reglages')} />}
-        {vue === 'signalements' && <SignalementsMembres surRetour={() => setVue('reglages')} surNonAutorise={verrouiller} />}
+        {vue === 'stats' && <Stats surRetour={() => setVue('admin')} />}
+        {vue === 'admin' && (
+          <Administration
+            surRetour={() => setVue('reglages')}
+            surStats={() => setVue('stats')}
+            surMessage={toast}
+            surNonAutorise={verrouiller}
+          />
+        )}
         {vue === 'echanges' && (
           <Echanges
             etat={echanges}
@@ -380,11 +399,22 @@ export default function App() {
           <BookOpen size={19} />
           Wiki
         </button>
-        <button aria-current={vue === 'reglages' || vue === 'stats' || vue === 'signalements'} onClick={() => setVue('reglages')}>
+        <button aria-current={vue === 'reglages' || vue === 'stats' || vue === 'admin'} onClick={() => setVue('reglages')}>
           <Settings2 size={19} />
           Réglages
         </button>
       </nav>
+
+      {/* Message du propriétaire à tous : une fois par compte, à l'ouverture de l'appli. */}
+      {annonce && (
+        <Annonce
+          annonce={annonce}
+          surFermeture={() => {
+            void api.annonceVue(annonce.id).catch(() => {})
+            setAnnonce(null)
+          }}
+        />
+      )}
 
       {camera && (
         <Camera
