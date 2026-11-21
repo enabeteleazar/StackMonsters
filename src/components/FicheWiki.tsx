@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { usePhotoEtirable } from '../etirement'
 import { Ban, CheckCircle2, EyeOff, Flag, ImageOff, ImagePlus, ShieldQuestion, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
@@ -162,6 +163,11 @@ export default function FicheWiki({
     }
   }
 
+  // Photo étirable : tirer vers le bas en haut de la fiche l'agrandit et zoome dessus pendant le geste.
+  const zoneFiche = useRef<HTMLDivElement>(null)
+  const cadrePhoto = useRef<HTMLDivElement>(null)
+  usePhotoEtirable(zoneFiche, cadrePhoto)
+
   useEffect(() => {
     const touche = (e: KeyboardEvent) => {
       if (e.key === 'Escape') surFermeture()
@@ -171,8 +177,8 @@ export default function FicheWiki({
   }, [surFermeture])
 
   return (
-    <div className="verdict" role="dialog" aria-modal="true" aria-label={fiche.nom || 'Fiche de canette'}>
-      <div className="photo-hero photo-hero-plein">
+    <div ref={zoneFiche} className="verdict fiche-wiki" role="dialog" aria-modal="true" aria-label={fiche.nom || 'Fiche de canette'}>
+      <div ref={cadrePhoto} className="photo-hero photo-hero-plein photo-etirable">
         <PhotoWiki ean={fiche.ean} version={fiche.photo} taille={34} legende="Pas de photo" />
         {fiche.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
         <button className="btn-icone fermer" onClick={surFermeture} aria-label="Fermer">
@@ -219,33 +225,27 @@ export default function FicheWiki({
           />
         ) : (
           <>
-            {/* Même ordre que la fiche de collection (sans État ni Quantité, propres à chaque collection). */}
-            <div className="meta-grille">
-              <div className="meta-item meta-item-large">
-                <span>Saveur</span>
-                <b>{fiche.flavor || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Catégorie</span>
-                <b>{fiche.categorie || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Pays</span>
-                <b>{fiche.region || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Volume</span>
-                <b>{fiche.volume || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Variante</span>
-                <b>{fiche.variante || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Status</span>
-                <b>{fiche.status || '—'}</b>
-              </div>
+            {/* La saveur seule, puis toutes les autres informations réunies dans un seul bloc compact. */}
+            <div className="fiche-saveur">
+              <span>Saveur</span>
+              <b>{fiche.flavor || '—'}</b>
             </div>
+            <dl className="fiche-infos">
+              {(
+                [
+                  ['Catégorie', fiche.categorie],
+                  ['Pays', fiche.region],
+                  ['Volume', fiche.volume],
+                  ['Variante', fiche.variante],
+                  ['Status', fiche.status],
+                ] as const
+              ).map(([libelle, valeur]) => (
+                <div key={libelle}>
+                  <dt>{libelle}</dt>
+                  <dd>{valeur || '—'}</dd>
+                </div>
+              ))}
+            </dl>
 
             {peutEditer && !!fiche.a_reprendre?.length && (
               <div className="fiche-moderation en_attente" role="status">
