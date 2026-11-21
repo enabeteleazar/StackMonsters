@@ -958,8 +958,9 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .photo-etirable.photo-etiree{aspect-ratio:auto;height:calc(100vw * 3 / 4 + var(--etirement));cursor:grabbing}
 @media (min-width:640px){.photo-etirable.photo-etiree{height:calc(min(100vw,640px) * 3 / 4 + var(--etirement))}}
 .photo-etirable img{transform:scale(var(--zoom));transform-origin:50% 50%;will-change:transform}
-/* Pendant le geste : photo entière (contain), agrandie par --zoom pour partir du même cadrage qu'au repos. */
-.photo-etirable.photo-etiree img{object-fit:contain}
+/* Au repos, la photo des fiches (Wiki et collection) occupe 30 % de la hauteur de l'écran. */
+.fiche-wiki .photo-hero{aspect-ratio:auto;height:30vh;height:30dvh}
+.fiche-wiki .photo-etirable.photo-etiree{height:calc(30vh + var(--etirement));height:calc(30dvh + var(--etirement))}
 .photo-etirable.photo-retour{transition:height .3s var(--ease)}
 .photo-etirable.photo-retour img{transition:transform .3s var(--ease)}
 @media (prefers-reduced-motion:reduce){.photo-etirable.photo-retour,.photo-etirable.photo-retour img{transition:none}}

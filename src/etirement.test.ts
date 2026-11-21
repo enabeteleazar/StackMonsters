@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { etirementMax, etirementPour, zoomDevoilement, zoomPincement } from './etirement'
+import { etirementMax, etirementPour, zoomPincement } from './etirement'
 
 describe('photo étirable', () => {
   it('n’étire rien sans geste vers le bas', () => {
@@ -24,14 +24,6 @@ describe('photo étirable', () => {
     // Photo plus large que le cadre, ou pas encore chargée : petit étirement élastique seulement.
     expect(etirementMax(412, 309, 1600, 900, 839)).toBeCloseTo(839 * 0.12)
     expect(etirementMax(412, 309, 0, 0, 839)).toBeCloseTo(839 * 0.12)
-  })
-
-  it('part du cadrage du repos et finit sur la photo entière', () => {
-    // Photo portrait 200 × 579 dans un cadre 412 × 309 : au repos elle remplit la largeur (rognée en haut et en bas).
-    expect(zoomDevoilement(412, 309, 200, 579, 0)).toBeCloseTo((412 / 200) / (309 / 579))
-    expect(zoomDevoilement(412, 772, 200, 579, 1)).toBe(1) // entière : aucun agrandissement
-    expect(zoomDevoilement(412, 540, 200, 579, 0.5)).toBeGreaterThan(1)
-    expect(zoomDevoilement(412, 309, 0, 0, 0.5)).toBe(1) // photo pas encore chargée
   })
 
   it('zoom à deux doigts entre ×1 et ×3', () => {

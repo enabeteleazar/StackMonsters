@@ -22,19 +22,6 @@ export function etirementMax(largeur: number, hauteurCadre: number, largeurImage
   return Math.max(elastique, entiere - hauteurCadre)
 }
 
-/**
- * Pendant l'étirement, la photo est affichée « entière » (object-fit: contain) puis agrandie de ce facteur : au départ
- * (progression 0) elle remplit le cadre comme au repos, à la fin (progression 1) elle est entière, sans rien couper.
- */
-export function zoomDevoilement(largeur: number, hauteur: number, largeurImage: number, hauteurImage: number,
-  progression: number): number {
-  if (!largeurImage || !hauteurImage || largeur <= 0 || hauteur <= 0) return 1
-  const remplir = Math.max(largeur / largeurImage, hauteur / hauteurImage)
-  const entiere = Math.min(largeur / largeurImage, hauteur / hauteurImage)
-  const t = Math.min(1, Math.max(0, progression))
-  return (remplir * (1 - t) + entiere * t) / entiere
-}
-
 /** Zoom à deux doigts : rapport des écarts, entre ×1 et ×3. */
 export function zoomPincement(ecartDepart: number, ecart: number): number {
   if (ecartDepart <= 0) return 1
@@ -42,8 +29,9 @@ export function zoomPincement(ecartDepart: number, ecart: number): number {
 }
 
 /**
- * Photo d'une fiche « étirable » : au repos, le cadre la recadre ; en haut de la fiche, tirer vers le bas agrandit
- * le cadre jusqu'à montrer la photo en entier, puis tout revient en place au relâchement. À deux doigts, la photo
+ * Photo d'une fiche « étirable » : elle occupe toujours toute la largeur du cadre ; au repos le cadre la recadre en
+ * hauteur, et en haut de la fiche, tirer vers le bas allonge le cadre jusqu'à la hauteur de la photo entière (dans
+ * la limite de l'écran), puis tout revient en place au relâchement. À deux doigts, la photo
  * se zoome directement.
  * `zone` est l'élément qui défile (la fiche), `photo` le cadre de la photo.
  */
@@ -59,21 +47,16 @@ export function usePhotoEtirable(zone: RefObject<HTMLElement | null>, photo: Ref
     let actif = false
 
     let max = 0
-    let largeur = 0
-    let image = { l: 0, h: 0 }
     const mesurer = () => {
       const cadre = p.getBoundingClientRect()
       hauteur = cadre.height
-      largeur = cadre.width
       const img = p.querySelector('img')
-      image = { l: img?.naturalWidth ?? 0, h: img?.naturalHeight ?? 0 }
-      max = etirementMax(largeur, hauteur, image.l, image.h, window.innerHeight)
+      max = etirementMax(cadre.width, hauteur, img?.naturalWidth ?? 0, img?.naturalHeight ?? 0, window.innerHeight)
     }
-    /** Étire le cadre et dévoile la photo : recadrée au départ, entière quand l'étirement est au maximum. */
+    /** Étire le cadre : la photo garde toute la largeur et se dévoile en hauteur à mesure qu'on tire. */
     const devoiler = (deplacement: number) => {
-      const etirement = etirementPour(deplacement, max)
-      // Photo entière dès 90 % de l'étirement (le dernier dixième ne s'atteint qu'en tirant très loin).
-      appliquer(etirement, zoomDevoilement(largeur, hauteur + etirement, image.l, image.h, max ? etirement / (max * 0.9) : 0))
+      // Le cadre atteint la hauteur de la photo entière dès 90 % du geste (le reste ne s'atteint qu'en tirant très loin).
+      appliquer(Math.min(max, etirementPour(deplacement, max) / 0.9), 1)
     }
     const appliquer = (etirement: number, zoom: number) => {
       p.style.setProperty('--etirement', `${etirement}px`)
