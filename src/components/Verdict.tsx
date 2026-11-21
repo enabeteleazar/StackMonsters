@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Sparkles, X } from 'lucide-react'
+import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Repeat2, SearchCheck, Sparkles, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
 import { CATEGORIES, categorieDuNom, libelleStatut, REGIONS, STATUTS_COLLECTION, varianteDuNom } from '../categories'
 import { ChampSaveur, ChampVariante, ChampVolume } from './ChampsFiche'
@@ -18,6 +18,8 @@ type Props = {
   surEnregistrer: (c: Canette) => Promise<void>
   surSupprimer: (ean: string) => Promise<void>
   surFermeture: () => void
+  /** Après un changement fait ici sans passer par le formulaire (doubles proposés…) : recharger la collection. */
+  surCollectionChangee: () => Promise<void>
 }
 
 export default function Verdict(p: Props) {
@@ -149,6 +151,28 @@ export default function Verdict(p: Props) {
                 ))}
               </dl>
             </div>
+            {/* Partage des doublons désactivé dans les Réglages : pas de bloc Échanges. */}
+            {p.existante!.partage_doubles !== false && (p.existante!.nb >= 2 || !!p.existante!.recherches) && (
+              <div className="fiche-echanges" role="region" aria-label="Échanges">
+                <span className="etiquette">Échanges</span>
+                {!!p.existante!.recherches && (
+                  <p>
+                    <SearchCheck size={17} aria-hidden="true" />
+                    {p.existante!.recherches} collectionneur{p.existante!.recherches > 1 ? 's' : ''} la cherche
+                    {p.existante!.recherches > 1 ? 'nt' : ''}
+                  </p>
+                )}
+                {/* Le partage se règle pour toute la collection, dans les Réglages : aucun bouton par canette. */}
+                {p.existante!.nb >= 2 ? (
+                  <p>
+                    <Repeat2 size={17} aria-hidden="true" />
+                    {`${p.existante!.nb - 1} double${p.existante!.nb > 2 ? 's' : ''} partagé${p.existante!.nb > 2 ? 's' : ''} (sans ton nom)`}
+                  </p>
+                ) : (
+                  <p className="fiche-echanges-note">Dès 2 exemplaires, tes doubles sont partagés (réglable dans les Réglages).</p>
+                )}
+              </div>
+            )}
             {/* Notes personnelles : masquées quand elles répètent la description du Wiki. */}
             {p.existante!.notes && p.existante!.notes.trim() !== (p.existante!.description ?? '').trim() && (
               <div className="fiche-saveur fiche-notes">

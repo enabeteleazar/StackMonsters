@@ -72,7 +72,9 @@ COLONNES_COLLECTION = (
     "COALESCE(w.description, '') AS description, "
     "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
     "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region, "
-    "COALESCE(w.variante, '') AS variante"
+    "COALESCE(w.variante, '') AS variante, "
+    "(SELECT u.partage_doubles FROM users u WHERE u.id = c.user_id) AS partage_doubles, "
+    "(SELECT COUNT(*) FROM recherches r WHERE r.fiche = w.ean) AS recherches"
 )
 # Fiche du Wiki d'une ligne de collection : par son code, par la fiche dont c'est un code secondaire,
 # ou par celle qui a remplacé ce code (wiki_exclus.vers).
@@ -390,6 +392,77 @@ CREATE INDEX wiki_recherche ON wiki USING gin (
 UPDATE wiki SET variante = CASE WHEN sm_texte(nom) ~ '\m(limited|limitee)\M' THEN 'Édition limitée' ELSE 'Standard' END
     WHERE variante = '' AND btrim(nom) <> '';
 """),
+    # Échanges, étape 1 (doubles et recherchées) : un membre propose ses doubles d'une canette (collection.echange,
+    # compté seulement s'il en a au moins 2) et note les canettes qu'il cherche (recherches). Les fiches n'en
+    # montrent que des compteurs, jamais qui. Tout part avec le compte (ON DELETE CASCADE) ; une recherche suit la
+    # fiche si son code-barres change (ON UPDATE CASCADE) et disparaît avec elle.
+    # Depuis, collection.echange n'est plus lue : le partage se règle pour tout le compte (users.partage_doubles,
+    # migration 17). La colonne reste (migration déjà appliquée, schéma conservé).
+    (16, """
+ALTER TABLE collection ADD COLUMN IF NOT EXISTS echange BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS collection_echange ON collection (ean) WHERE echange;
+CREATE TABLE IF NOT EXISTS recherches (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE,
+    ajout TEXT NOT NULL,
+    PRIMARY KEY (user_id, fiche));
+CREATE INDEX IF NOT EXISTS recherches_fiche ON recherches (fiche);
+"""),
+    # Réglage du compte : partager ou non ses doublons (seul réglage, activé par défaut). Activé, toute canette en
+    # 2 exemplaires ou plus compte comme double ; désactivé, aucun double du compte n'est compté.
+    (17, """
+ALTER TABLE users ADD COLUMN IF NOT EXISTS partage_doubles BOOLEAN NOT NULL DEFAULT true;
+"""),
+    # Échanges, étape 2 : mise en relation. Une ligne par trio (fiche, chercheur, possesseur), créée quand l'appli
+    # repère que l'un cherche une canette que l'autre a en double (statut « signalee » : notifié au chercheur).
+    # Le chercheur demande l'échange (« demandee » : notifié au possesseur), qui l'accepte (« acceptee » : la
+    # messagerie s'ouvre) ; l'un ou l'autre peut annuler (« annulee », rien n'est dit à l'autre). Les membres ne
+    # voient jamais l'adresse de l'autre. vu_* : dernier message lu par chacun. Tout part avec le compte.
+    (18, """
+CREATE TABLE IF NOT EXISTS echanges (
+    id BIGSERIAL PRIMARY KEY,
+    fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE,
+    chercheur BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    possesseur BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    statut TEXT NOT NULL DEFAULT 'signalee' CHECK (statut IN ('signalee', 'demandee', 'acceptee', 'annulee')),
+    cree TEXT NOT NULL,
+    maj TEXT NOT NULL,
+    vu_chercheur BIGINT NOT NULL DEFAULT 0,
+    vu_possesseur BIGINT NOT NULL DEFAULT 0,
+    UNIQUE (fiche, chercheur, possesseur),
+    CHECK (chercheur <> possesseur));
+CREATE INDEX IF NOT EXISTS echanges_chercheur ON echanges (chercheur);
+CREATE INDEX IF NOT EXISTS echanges_possesseur ON echanges (possesseur);
+CREATE TABLE IF NOT EXISTS messages (
+    id BIGSERIAL PRIMARY KEY,
+    echange BIGINT NOT NULL REFERENCES echanges(id) ON DELETE CASCADE,
+    auteur BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    texte TEXT NOT NULL,
+    cree TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS messages_echange ON messages (echange, id);
+"""),
+    # Échanges, étape 3 : fin d'une conversation. « Valider l'échange » : quand les deux ont validé (valide_*),
+    # -1 chez le possesseur, +1 chez le chercheur, statut « terminee ». « Signaler » : la conversation se ferme
+    # (« fermee ») et ces deux membres ne sont plus mis en relation ; le propriétaire du service examine le
+    # signalement (motif, conversation) puis le marque traité.
+    (19, """
+ALTER TABLE echanges ADD COLUMN IF NOT EXISTS valide_chercheur BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE echanges ADD COLUMN IF NOT EXISTS valide_possesseur BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE echanges DROP CONSTRAINT IF EXISTS echanges_statut_check;
+ALTER TABLE echanges ADD CONSTRAINT echanges_statut_check
+    CHECK (statut IN ('signalee', 'demandee', 'acceptee', 'annulee', 'terminee', 'fermee'));
+CREATE TABLE IF NOT EXISTS signalements_membres (
+    id BIGSERIAL PRIMARY KEY,
+    echange BIGINT NOT NULL REFERENCES echanges(id) ON DELETE CASCADE,
+    auteur BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    signale BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    motif TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    cree TEXT NOT NULL,
+    traite TEXT,
+    UNIQUE (echange, auteur));
+CREATE INDEX IF NOT EXISTS signalements_membres_paire ON signalements_membres (auteur, signale);
+"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -526,6 +599,29 @@ class Demande(BaseModel):
 
 class Verification(Demande):
     code: str = Field(min_length=6, max_length=6)
+
+
+class Echange(BaseModel):
+    echange: bool
+
+
+class Message(BaseModel):
+    texte: str = Field(min_length=1, max_length=1000)
+
+
+MOTIFS_SIGNALEMENT_MEMBRE = ("Spam ou publicité", "Propos déplacés", "Arnaque ou tentative de vente", "Autre")
+
+
+class SignalementMembre(BaseModel):
+    motif: str
+    detail: str = Field(default="", max_length=500)
+
+    @field_validator("motif")
+    @classmethod
+    def _motif_connu(cls, v: str) -> str:
+        if v not in MOTIFS_SIGNALEMENT_MEMBRE:
+            raise ValueError("motif inconnu")
+        return v
 
 
 class Vidage(BaseModel):
@@ -949,8 +1045,18 @@ router = APIRouter(dependencies=[Depends(utilisateur)])
 
 
 @router.get("/auth/moi")
-def moi(u: dict = Depends(utilisateur)) -> dict:
-    return {"email": u["email"]}
+def moi(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    with cx.transaction():
+        r = cx.execute("SELECT partage_doubles FROM users WHERE id = %s", (u["id"],)).fetchone()
+    return {"email": u["email"], "partage_doubles": r["partage_doubles"]}
+
+
+@router.patch("/auth/partage-doubles")
+def regler_partage_doubles(e: Echange, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Seul réglage du partage : activé, toutes les canettes du compte en 2 exemplaires ou plus comptent comme doubles."""
+    with cx.transaction():
+        cx.execute("UPDATE users SET partage_doubles = %s WHERE id = %s", (e.echange, u["id"]))
+    return {"partage_doubles": e.echange}
 
 
 @router.post("/auth/renouveler")
@@ -1162,6 +1268,7 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
             (u["id"], ean, c.nom, c.volume, c.etat, c.nb, c.notes, c.photo,
              c.ajout or maintenant(), maintenant(), "photo" in c.model_fields_set),  # champ absent : photo conservée
         )
+        cx.execute("DELETE FROM recherches WHERE user_id = %s AND fiche = %s", (u["id"], fiche))  # trouvée !
         return _canette(cx, u["id"], ean)
 
 
@@ -1203,7 +1310,13 @@ COLONNES_FICHE = (
     "COALESCE((SELECT json_agg(json_build_object('id', s.id, 'motif', s.motif, 'cree', s.cree) ORDER BY s.id) "
     "FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL), '[]') AS signalements, moderation, "
     "COALESCE((SELECT json_agg(json_build_object('decision', m.decision, 'motif', m.motif, 'cree', m.cree) "
-    "ORDER BY m.id) FROM wiki_moderations m WHERE m.fiche = wiki.ean), '[]') AS moderations"
+    "ORDER BY m.id) FROM wiki_moderations m WHERE m.fiche = wiki.ean), '[]') AS moderations, "
+    # Échanges : nombre de collectionneurs qui en ont des doubles (2 exemplaires ou plus, code principal ou
+    # secondaire) avec le partage activé dans leurs Réglages, et nombre de ceux qui la cherchent.
+    "(SELECT COUNT(DISTINCT c.user_id) FROM collection c WHERE c.nb >= 2 "
+    "AND (SELECT u.partage_doubles FROM users u WHERE u.id = c.user_id) AND (c.ean = wiki.ean OR "
+    "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = wiki.ean))) AS doubles, "
+    "(SELECT COUNT(*) FROM recherches r WHERE r.fiche = wiki.ean) AS recherches"
 )
 
 
@@ -1219,6 +1332,7 @@ def _fiche(r: dict, proprietaire: bool = False) -> dict:
         "region": r["region"], "variante": r["variante"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
         "codes": list(r["codes"]),
+        "doubles": r["doubles"], "recherches": r["recherches"],
     }
     if proprietaire:
         fiche["moderation"] = r["moderation"]
@@ -1227,6 +1341,22 @@ def _fiche(r: dict, proprietaire: bool = False) -> dict:
         fiche["signalements"] = r["signalements"]
         fiche["moderations"] = r["moderations"]
     return fiche
+
+
+def _marquer_recherches(cx: psycopg.Connection, fiches: list[dict], user_id: int) -> list[dict]:
+    """Ajoute, pour ce compte : « je_cherche » (notée comme recherchée) et « je_possede » (dans sa collection,
+    sous son code principal ou un code secondaire), et « partage_doubles », le réglage du compte (désactivé, la
+    fiche masque son bloc Échanges)."""
+    partage = cx.execute("SELECT partage_doubles FROM users WHERE id = %s", (user_id,)).fetchone()
+    miennes = {r["fiche"] for r in cx.execute("SELECT fiche FROM recherches WHERE user_id = %s", (user_id,))}
+    possedees = {r["fiche"] for r in cx.execute(
+        "SELECT COALESCE((SELECT k.fiche FROM wiki_codes k WHERE k.ean = c.ean), c.ean) AS fiche "
+        "FROM collection c WHERE c.user_id = %s", (user_id,))}
+    for f in fiches:
+        f["je_cherche"] = f["ean"] in miennes
+        f["je_possede"] = f["ean"] in possedees
+        f["partage_doubles"] = bool(partage and partage["partage_doubles"])
+    return fiches
 
 
 def _fiche_du_code(cx: psycopg.Connection, code: str) -> str | None:
@@ -1278,6 +1408,8 @@ def wiki_recherche(
     a_verifier: bool = False,
     sans_categorie: bool = False,
     nouveautes: bool = False,
+    je_cherche: bool = False,
+    doubles: bool = False,
     u: dict = Depends(utilisateur),
     cx: psycopg.Connection = Depends(connexion),
 ) -> dict:
@@ -1308,6 +1440,13 @@ def wiki_recherche(
     if variante:
         conditions.append("variante = %s")
         params.append(variante)
+    if je_cherche:  # les canettes que ce compte cherche
+        conditions.append("EXISTS (SELECT 1 FROM recherches r WHERE r.fiche = wiki.ean AND r.user_id = %s)")
+        params.append(u["id"])
+    if doubles:  # au moins un collectionneur en a des doubles, partage activé
+        conditions.append("EXISTS (SELECT 1 FROM collection c WHERE c.nb >= 2 "
+                          "AND (SELECT u.partage_doubles FROM users u WHERE u.id = c.user_id) AND (c.ean = wiki.ean OR "
+                          "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = wiki.ean)))")
     if signalees and proprio:
         conditions.append("EXISTS (SELECT 1 FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL)")
     if a_verifier and proprio:
@@ -1353,9 +1492,12 @@ def wiki_recherche(
         nb_a_verifier = cx.execute(
             "SELECT COUNT(*) AS n FROM wiki WHERE moderation = 'en_attente'"
         ).fetchone()["n"] if proprio else 0
+        fiches = _marquer_recherches(cx, [_fiche(r, proprio) for r in lignes], u["id"])
+        nb_je_cherche = cx.execute("SELECT COUNT(*) AS n FROM recherches WHERE user_id = %s", (u["id"],)).fetchone()["n"]
     return {
         "peut_editer": proprio,
-        "fiches": [_fiche(r, proprio) for r in lignes],
+        "fiches": fiches,
+        "je_cherche": nb_je_cherche,
         "total": total,
         "total_catalogue": total_catalogue,
         "page": page,
@@ -1375,7 +1517,340 @@ def wiki_liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(
         lignes = cx.execute(
             f"SELECT {COLONNES_FICHE} FROM wiki{visibles} ORDER BY (nom = ''), lower(nom), ean"
         ).fetchall()
-    return {"peut_editer": proprio, "fiches": [_fiche(r, proprio) for r in lignes]}
+        fiches = _marquer_recherches(cx, [_fiche(r, proprio) for r in lignes], u["id"])
+    return {"peut_editer": proprio, "fiches": fiches}
+
+
+@router.post("/wiki/{ean}/recherche")
+def wiki_chercher(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Note la canette comme recherchée par ce compte (pour les échanges). Sans effet si elle l'est déjà."""
+    proprio = _est_proprietaire(u["email"])
+    with cx.transaction():
+        f = cx.execute("SELECT moderation FROM wiki WHERE ean = %s", (ean,)).fetchone()
+        if f is None or (f["moderation"] == "refusee" and not proprio):
+            raise HTTPException(404, "fiche inconnue")
+        if cx.execute(
+            "SELECT 1 FROM collection c WHERE c.user_id = %s AND (c.ean = %s OR "
+            "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = %s))", (u["id"], ean, ean),
+        ).fetchone():
+            raise HTTPException(409, "cette canette est déjà dans ta collection")
+        cx.execute("INSERT INTO recherches (user_id, fiche, ajout) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                   (u["id"], ean, maintenant()))
+        r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (ean,)).fetchone()
+        return _marquer_recherches(cx, [_fiche(r, proprio)], u["id"])[0]
+
+
+@router.delete("/wiki/{ean}/recherche")
+def wiki_ne_plus_chercher(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Retire la canette des recherchées de ce compte. Sans effet si elle n'y était pas."""
+    proprio = _est_proprietaire(u["email"])
+    with cx.transaction():
+        cx.execute("DELETE FROM recherches WHERE user_id = %s AND fiche = %s", (u["id"], ean))
+        r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (ean,)).fetchone()
+        if r is None or (r["moderation"] == "refusee" and not proprio):
+            raise HTTPException(404, "fiche inconnue")
+        return _marquer_recherches(cx, [_fiche(r, proprio)], u["id"])[0]
+
+
+# --- Échanges, étape 2 : mise en relation et messagerie --------------------------------------------------
+
+MESSAGES_MAX_HEURE = 60  # messages envoyés par compte et par heure
+
+# Une mise en relation en attente (« signalee », « demandee ») ne vaut que tant que le chercheur cherche toujours la
+# canette, que le possesseur en a encore au moins 2, et que tous deux partagent leurs doublons. Sinon elle est
+# simplement masquée (et redevient visible si les conditions reviennent).
+_EN_RELATION_VALIDE = (
+    "EXISTS (SELECT 1 FROM recherches r WHERE r.user_id = e.chercheur AND r.fiche = e.fiche) "
+    "AND EXISTS (SELECT 1 FROM collection c WHERE c.user_id = e.possesseur AND c.nb >= 2 AND (c.ean = e.fiche OR "
+    "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = e.fiche))) "
+    "AND (SELECT u.partage_doubles FROM users u WHERE u.id = e.chercheur) "
+    "AND (SELECT u.partage_doubles FROM users u WHERE u.id = e.possesseur) "
+    "AND NOT EXISTS (SELECT 1 FROM signalements_membres s WHERE "
+    "(s.auteur = e.chercheur AND s.signale = e.possesseur) OR (s.auteur = e.possesseur AND s.signale = e.chercheur))"
+)
+
+CONVERSATIONS = ("acceptee", "terminee", "fermee")
+
+
+def _reperer_paires(cx: psycopg.Connection, user_id: int) -> None:
+    """Crée les mises en relation de ce compte comme chercheur : chaque collectionneur qui a en double une canette
+    qu'il cherche (partage activé des deux côtés). Une paire déjà connue, même annulée, n'est jamais recréée."""
+    now = maintenant()
+    cx.execute(
+        "INSERT INTO echanges (fiche, chercheur, possesseur, statut, cree, maj) "
+        "SELECT DISTINCT r.fiche, r.user_id, c.user_id, 'signalee', %s, %s FROM recherches r "
+        "JOIN users ur ON ur.id = r.user_id AND ur.partage_doubles "
+        "JOIN collection c ON c.nb >= 2 AND c.user_id <> r.user_id AND (c.ean = r.fiche OR "
+        "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = r.fiche)) "
+        "JOIN users uc ON uc.id = c.user_id AND uc.partage_doubles "
+        "WHERE r.user_id = %s AND NOT EXISTS (SELECT 1 FROM signalements_membres s WHERE "
+        "(s.auteur = r.user_id AND s.signale = c.user_id) OR (s.auteur = c.user_id AND s.signale = r.user_id)) "
+        "ON CONFLICT DO NOTHING",
+        (now, now, user_id),
+    )
+
+
+def _echange_du_compte(cx: psycopg.Connection, echange_id: int, user_id: int) -> dict:
+    """La mise en relation, si ce compte y prend part ; 404 sinon (sans dire si elle existe)."""
+    e = cx.execute(
+        "SELECT e.*, w.nom, CASE WHEN w.photo IS NOT NULL THEN w.maj END AS photo_wiki FROM echanges e JOIN wiki w ON w.ean = e.fiche "
+        "WHERE e.id = %s AND %s IN (e.chercheur, e.possesseur)", (echange_id, user_id),
+    ).fetchone()
+    if e is None:
+        raise HTTPException(404, "échange inconnu")
+    e["role"] = "chercheur" if e["chercheur"] == user_id else "possesseur"
+    return e
+
+
+def _en_relation_valide(cx: psycopg.Connection, echange_id: int) -> bool:
+    return cx.execute(f"SELECT 1 FROM echanges e WHERE e.id = %s AND {_EN_RELATION_VALIDE}", (echange_id,)).fetchone() is not None
+
+
+def _vue_echange(e: dict) -> dict:
+    """Ce qu'un membre voit d'une mise en relation : jamais l'identité ni l'adresse de l'autre."""
+    moi, autre = ("valide_chercheur", "valide_possesseur") if e["role"] == "chercheur" else ("valide_possesseur", "valide_chercheur")
+    return {
+        "id": e["id"], "role": e["role"], "statut": e["statut"], "maj": e["maj"],
+        "fiche": {"ean": e["fiche"], "nom": e["nom"], "photo": e["photo_wiki"]},
+        "valide_moi": bool(e.get(moi)), "valide_autre": bool(e.get(autre)),
+    }
+
+
+@router.get("/echanges")
+def echanges(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Notifications (mises en relation qui attendent une réponse de ce compte, ou ses demandes en attente) et
+    conversations ouvertes, avec le nombre d'éléments non lus (pastille de l'appli)."""
+    uid = u["id"]
+    with cx.transaction():
+        _reperer_paires(cx, uid)
+        lignes = cx.execute(
+            "SELECT e.*, w.nom, CASE WHEN w.photo IS NOT NULL THEN w.maj END AS photo_wiki, "
+            "(SELECT COUNT(*) FROM messages m WHERE m.echange = e.id AND m.auteur <> %s AND m.id > "
+            " CASE WHEN e.chercheur = %s THEN e.vu_chercheur ELSE e.vu_possesseur END) AS non_lus, "
+            "(SELECT m.texte FROM messages m WHERE m.echange = e.id ORDER BY m.id DESC LIMIT 1) AS dernier, "
+            f"({_EN_RELATION_VALIDE}) AS valide "
+            "FROM echanges e JOIN wiki w ON w.ean = e.fiche "
+            "WHERE %s IN (e.chercheur, e.possesseur) AND e.statut <> 'annulee' ORDER BY e.maj DESC, e.id DESC",
+            (uid, uid, uid),
+        ).fetchall()
+    notifications, conversations, fiches_vues = [], [], set()
+    # Côté chercheur, une seule notification par canette à la fois : la plus ancienne paire, et aucune tant
+    # qu'une demande pour cette canette attend une réponse ou qu'une conversation est ouverte.
+    occupees = {e["fiche"] for e in lignes if e["chercheur"] == uid and e["statut"] in ("demandee", "acceptee", "terminee")}
+    for e in sorted(lignes, key=lambda x: x["id"]):
+        e["role"] = "chercheur" if e["chercheur"] == uid else "possesseur"
+        if e["statut"] in CONVERSATIONS:
+            continue
+        if not e["valide"]:
+            continue
+        if e["statut"] == "signalee":
+            if e["role"] != "chercheur" or e["fiche"] in occupees or e["fiche"] in fiches_vues:
+                continue
+            fiches_vues.add(e["fiche"])
+        notifications.append({**_vue_echange(e), "action": e["role"] == "chercheur" and e["statut"] == "signalee"
+                              or e["role"] == "possesseur" and e["statut"] == "demandee"})
+    for e in lignes:
+        if e["statut"] in CONVERSATIONS:
+            vue = _vue_echange(e)
+            # L'autre a validé l'échange : c'est à ce compte de valider (compté dans la pastille).
+            vue["a_valider"] = e["statut"] == "acceptee" and vue["valide_autre"] and not vue["valide_moi"]
+            conversations.append({**vue, "non_lus": e["non_lus"], "dernier": e["dernier"]})
+    notifications.sort(key=lambda n: n["maj"], reverse=True)
+    a_traiter = sum(1 for n in notifications if n["action"]) + sum(1 for c in conversations if c["a_valider"])
+    return {"notifications": notifications, "conversations": conversations,
+            "non_lus": a_traiter + sum(c["non_lus"] for c in conversations)}
+
+
+@router.post("/echanges/{echange_id}/accepter")
+def accepter_echange(echange_id: int, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """« Échange » : le chercheur demande l'échange (le possesseur est notifié), puis le possesseur l'accepte
+    (la messagerie s'ouvre pour les deux)."""
+    with cx.transaction():
+        e = _echange_du_compte(cx, echange_id, u["id"])
+        suivant = {("chercheur", "signalee"): "demandee", ("possesseur", "demandee"): "acceptee"}.get((e["role"], e["statut"]))
+        if suivant is None or not _en_relation_valide(cx, echange_id):
+            raise HTTPException(409, "cet échange n'attend pas ta réponse")
+        cx.execute("UPDATE echanges SET statut = %s, maj = %s WHERE id = %s", (suivant, maintenant(), echange_id))
+        e["statut"] = suivant
+    return _vue_echange(e)
+
+
+@router.post("/echanges/{echange_id}/annuler")
+def annuler_echange(echange_id: int, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """« Annuler » : la mise en relation s'arrête là, rien n'est envoyé à l'autre. Elle n'est jamais reproposée."""
+    with cx.transaction():
+        e = _echange_du_compte(cx, echange_id, u["id"])
+        if e["statut"] not in ("signalee", "demandee") or (e["role"] == "possesseur" and e["statut"] != "demandee"):
+            raise HTTPException(409, "cet échange ne peut plus être annulé")
+        cx.execute("UPDATE echanges SET statut = 'annulee', maj = %s WHERE id = %s", (maintenant(), echange_id))
+        e["statut"] = "annulee"
+    return _vue_echange(e)
+
+
+def _conversation(cx: psycopg.Connection, echange_id: int, user_id: int, ecriture: bool = False) -> dict:
+    """Conversation de ce compte (404 sinon). Une conversation fermée par un signalement reste lisible, mais plus
+    personne n'y écrit (409)."""
+    e = _echange_du_compte(cx, echange_id, user_id)
+    if e["statut"] not in CONVERSATIONS:
+        raise HTTPException(404, "conversation inconnue")
+    if ecriture and e["statut"] == "fermee":
+        raise HTTPException(409, "conversation fermée")
+    return e
+
+
+@router.get("/echanges/{echange_id}/messages")
+def lire_messages(
+    echange_id: int, apres: int = Query(default=0, ge=0),
+    u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Messages de la conversation (après « apres » pour les relectures), marqués lus pour ce compte."""
+    with cx.transaction():
+        e = _conversation(cx, echange_id, u["id"])
+        lignes = cx.execute(
+            "SELECT id, auteur, texte, cree FROM messages WHERE echange = %s AND id > %s ORDER BY id LIMIT 500",
+            (echange_id, apres),
+        ).fetchall()
+        if lignes:
+            colonne = "vu_chercheur" if e["role"] == "chercheur" else "vu_possesseur"
+            cx.execute(f"UPDATE echanges SET {colonne} = GREATEST({colonne}, %s) WHERE id = %s",
+                       (lignes[-1]["id"], echange_id))
+    return {**_vue_echange(e), "messages": [
+        {"id": m["id"], "de_moi": m["auteur"] == u["id"], "texte": m["texte"], "cree": m["cree"]} for m in lignes
+    ]}
+
+
+@router.post("/echanges/{echange_id}/messages")
+def envoyer_message(
+    echange_id: int, m: Message, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Envoie un message à l'autre membre de l'échange (texte seul, 1 000 caractères au plus)."""
+    texte = m.texte.strip()
+    if not texte:
+        raise HTTPException(422, "message vide")
+    now = int(time.time())
+    with cx.transaction():
+        e = _conversation(cx, echange_id, u["id"], ecriture=True)
+    _compter(cx, _cle_limite(f"message:{u['id']}"), _seuil("SM_MESSAGES_MAX_HEURE", MESSAGES_MAX_HEURE),
+             FENETRE_DEMANDES, now, "trop de messages, réessaie plus tard")
+    with cx.transaction():
+        r = cx.execute("INSERT INTO messages (echange, auteur, texte, cree) VALUES (%s, %s, %s, %s) RETURNING id, cree",
+                       (echange_id, u["id"], texte, maintenant())).fetchone()
+        colonne = "vu_chercheur" if e["role"] == "chercheur" else "vu_possesseur"
+        cx.execute(f"UPDATE echanges SET {colonne} = %s, maj = %s WHERE id = %s", (r["id"], maintenant(), echange_id))
+    return {"id": r["id"], "de_moi": True, "texte": texte, "cree": r["cree"]}
+
+
+SIGNALEMENTS_MEMBRES_MAX_JOUR = 10
+
+
+def _ligne_de_collection(cx: psycopg.Connection, user_id: int, fiche: str) -> dict | None:
+    """La canette de ce compte pour cette fiche (code principal ou secondaire)."""
+    return cx.execute(
+        "SELECT ean, nb FROM collection WHERE user_id = %s AND (ean = %s OR ean IN "
+        "(SELECT k.ean FROM wiki_codes k WHERE k.fiche = %s)) ORDER BY (ean = %s) DESC LIMIT 1",
+        (user_id, fiche, fiche, fiche),
+    ).fetchone()
+
+
+@router.post("/echanges/{echange_id}/valider")
+def valider_echange(echange_id: int, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """« Valider l'échange » : l'échange a eu lieu. Quand les deux ont validé, -1 dans la collection du possesseur
+    et +1 dans celle du chercheur (la canette y est ajoutée si besoin et n'est plus recherchée)."""
+    with cx.transaction():
+        e = _echange_du_compte(cx, echange_id, u["id"])
+        if e["statut"] != "acceptee":
+            raise HTTPException(409, "cet échange ne peut plus être validé")
+        colonne = "valide_chercheur" if e["role"] == "chercheur" else "valide_possesseur"
+        e[colonne] = True
+        if e["valide_chercheur"] and e["valide_possesseur"]:
+            donnee = _ligne_de_collection(cx, e["possesseur"], e["fiche"])
+            if donnee is None or donnee["nb"] < 2:
+                raise HTTPException(409, "la canette n'est plus en double chez l'autre collectionneur")
+            now = maintenant()
+            cx.execute("UPDATE collection SET nb = nb - 1, maj = %s WHERE user_id = %s AND ean = %s",
+                       (now, e["possesseur"], donnee["ean"]))
+            recue = _ligne_de_collection(cx, e["chercheur"], e["fiche"])
+            if recue:
+                cx.execute("UPDATE collection SET nb = nb + 1, maj = %s WHERE user_id = %s AND ean = %s",
+                           (now, e["chercheur"], recue["ean"]))
+            else:
+                cx.execute(
+                    "INSERT INTO collection (user_id, ean, nom, volume, etat, nb, notes, ajout, maj) "
+                    "SELECT %s, ean, nom, volume, '', 1, '', %s, %s FROM wiki WHERE ean = %s",
+                    (e["chercheur"], now, now, e["fiche"]),
+                )
+            cx.execute("DELETE FROM recherches WHERE user_id = %s AND fiche = %s", (e["chercheur"], e["fiche"]))
+            e["statut"] = "terminee"
+        cx.execute(f"UPDATE echanges SET {colonne} = true, statut = %s, maj = %s WHERE id = %s",
+                   (e["statut"], maintenant(), echange_id))
+    return _vue_echange(e)
+
+
+@router.post("/echanges/{echange_id}/signaler")
+def signaler_membre(
+    echange_id: int, sg: SignalementMembre, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Signale l'autre membre de la conversation : elle se ferme pour les deux, et ils ne sont plus mis en relation.
+    Le propriétaire du service examine le signalement."""
+    now = int(time.time())
+    with cx.transaction():
+        e = _conversation(cx, echange_id, u["id"], ecriture=True)
+    _compter(cx, _cle_limite(f"signalement-membre:{u['id']}"), SIGNALEMENTS_MEMBRES_MAX_JOUR, FENETRE_JOUR, now,
+             "trop de signalements, réessaie demain")
+    autre = e["possesseur"] if e["role"] == "chercheur" else e["chercheur"]
+    with cx.transaction():
+        cx.execute(
+            "INSERT INTO signalements_membres (echange, auteur, signale, motif, detail, cree) VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (echange, auteur) DO NOTHING",
+            (echange_id, u["id"], autre, sg.motif, sg.detail.strip(), maintenant()),
+        )
+        cx.execute("UPDATE echanges SET statut = 'fermee', maj = %s WHERE id = %s", (maintenant(), echange_id))
+        e["statut"] = "fermee"
+    return _vue_echange(e)
+
+
+def _reserve_au_proprietaire(u: dict) -> None:
+    if not _est_proprietaire(u["email"]):
+        raise HTTPException(403, "réservé au propriétaire")
+
+
+@router.get("/admin/signalements-membres")
+def signalements_membres(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> list[dict]:
+    """Signalements non traités, avec la conversation, pour le propriétaire. Les membres y sont désignés par
+    leur rôle (auteur du signalement, membre signalé) et un numéro, jamais par leur adresse."""
+    _reserve_au_proprietaire(u)
+    with cx.transaction():
+        lignes = cx.execute(
+            "SELECT s.id, s.echange, s.auteur, s.signale, s.motif, s.detail, s.cree, w.nom, "
+            "(SELECT COUNT(*) FROM signalements_membres t WHERE t.signale = s.signale) AS signalements_du_membre "
+            "FROM signalements_membres s JOIN echanges e ON e.id = s.echange JOIN wiki w ON w.ean = e.fiche "
+            "WHERE s.traite IS NULL ORDER BY s.id",
+        ).fetchall()
+        resultat = []
+        for s in lignes:
+            messages = cx.execute(
+                "SELECT auteur, texte, cree FROM messages WHERE echange = %s ORDER BY id", (s["echange"],),
+            ).fetchall()
+            resultat.append({
+                "id": s["id"], "motif": s["motif"], "detail": s["detail"], "cree": s["cree"], "canette": s["nom"],
+                "membre_signale": s["signale"], "signalements_du_membre": s["signalements_du_membre"],
+                "messages": [{"de": "auteur" if m["auteur"] == s["auteur"] else "signale", "texte": m["texte"],
+                              "cree": m["cree"]} for m in messages],
+            })
+    return resultat
+
+
+@router.post("/admin/signalements-membres/{signalement_id}/traite")
+def signalement_membre_traite(
+    signalement_id: int, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    _reserve_au_proprietaire(u)
+    with cx.transaction():
+        n = cx.execute("UPDATE signalements_membres SET traite = %s WHERE id = %s AND traite IS NULL",
+                       (maintenant(), signalement_id)).rowcount
+    if not n:
+        raise HTTPException(404, "signalement inconnu")
+    return {"id": signalement_id}
 
 
 @router.get("/wiki/saveurs")

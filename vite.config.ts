@@ -84,6 +84,15 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5273,
+      // Ne surveiller que le front : le reste (environnement Python, caches, résultats de tests) n'a pas à recharger
+      // la page et consommerait des surveillances de fichiers du système (limite fs.inotify.max_user_watches).
+      // SM_POLLING=1 : relecture régulière des fichiers au lieu des surveillances du système, quand la limite
+      // est atteinte (erreur ENOSPC « System limit for number of file watchers reached »).
+      watch: {
+        ...(processEnv.SM_POLLING === '1' || env.SM_POLLING === '1' ? { usePolling: true, interval: 400 } : {}),
+        ignored: ['**/.venv/**', '**/.vercel/**', '**/__pycache__/**', '**/.pytest_cache/**', '**/test-results/**',
+          '**/e2e-results/**', '**/dist/**', '**/api/**', '**/tests/**', '**/scripts/**'],
+      },
       // En développement, ./dev.sh lance l'API (uvicorn) sur 8055.
       proxy: {
         '/api': { target: 'http://127.0.0.1:8055', changeOrigin: true },

@@ -1,5 +1,8 @@
 import { API_URL, CLE_JETON } from './config'
-import type { Canette, FicheWiki, ModifFicheWiki, PropositionWiki, ReponseWiki, ResultatRechercheWiki, TriWiki } from './types'
+import type {
+  Canette, EtatEchanges, FicheWiki, MessageEchange, MiseEnRelation, ModifFicheWiki, PropositionWiki, ReponseWiki,
+  ResultatRechercheWiki, SignalementMembre, TriWiki,
+} from './types'
 
 /** Levée quand le service répond 401 : jeton absent ou refusé. */
 export class NonAutorise extends Error {
@@ -95,6 +98,24 @@ async function requete<T>(chemin: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   liste: () => requete<Canette[]>('/cans'),
+  /** Échanges : notifications de mise en relation et conversations ouvertes (repère aussi les nouvelles paires). */
+  echanges: () => requete<EtatEchanges>('/echanges'),
+  /** « Échange » : demande (chercheur) ou acceptation (possesseur). */
+  accepterEchange: (id: number) => requete<MiseEnRelation>(`/echanges/${id}/accepter`, { method: 'POST' }),
+  annulerEchange: (id: number) => requete<MiseEnRelation>(`/echanges/${id}/annuler`, { method: 'POST' }),
+  messages: (id: number, apres = 0) =>
+    requete<MiseEnRelation & { messages: MessageEchange[] }>(`/echanges/${id}/messages?apres=${apres}`),
+  envoyerMessage: (id: number, texte: string) =>
+    requete<MessageEchange>(`/echanges/${id}/messages`, { method: 'POST', body: JSON.stringify({ texte }) }),
+  /** « Valider l'échange » : appliqué (-1 / +1) quand les deux ont validé. */
+  validerEchange: (id: number) => requete<MiseEnRelation>(`/echanges/${id}/valider`, { method: 'POST' }),
+  /** Signale l'autre membre : la conversation se ferme et la paire n'est plus proposée. */
+  signalerMembre: (id: number, motif: string, detail: string) =>
+    requete<MiseEnRelation>(`/echanges/${id}/signaler`, { method: 'POST', body: JSON.stringify({ motif, detail }) }),
+  /** Propriétaire : signalements de membres à examiner. */
+  signalementsMembres: () => requete<SignalementMembre[]>('/admin/signalements-membres'),
+  signalementMembreTraite: (id: number) =>
+    requete<{ id: number }>(`/admin/signalements-membres/${id}/traite`, { method: 'POST' }),
   enregistrer: (c: Canette) =>
     requete<Canette>('/cans', { method: 'PUT', body: JSON.stringify(c) }),
   ajuster: (ean: string, delta: number) =>
@@ -112,7 +133,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, code }),
     }),
-  moi: () => requete<{ email: string }>('/auth/moi'),
+  moi: () => requete<{ email: string; partage_doubles?: boolean }>('/auth/moi'),
+  /** Réglage du compte : partager ou non ses doublons (interrupteur général). */
+  reglerPartageDoubles: (actif: boolean) =>
+    requete<{ partage_doubles: boolean }>('/auth/partage-doubles', { method: 'PATCH', body: JSON.stringify({ echange: actif }) }),
   deconnexion: () => requete<void>('/auth/deconnexion', { method: 'POST' }),
   /** Révoque toutes les sessions du compte (tous les appareils), celle-ci comprise. */
   deconnexionPartout: () => requete<void>('/auth/deconnexion-partout', { method: 'POST' }),
@@ -127,6 +151,9 @@ export const api = {
   wiki: () => requete<ReponseWiki>('/wiki'),
   /** Saveurs déjà connues dans le Wiki, les plus fréquentes d'abord (suggestions des formulaires). */
   wikiSaveurs: () => requete<string[]>('/wiki/saveurs'),
+  /** Échanges : noter (ou ne plus noter) une canette du Wiki comme recherchée. */
+  wikiChercher: (ean: string, cherche: boolean) =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/recherche`, { method: cherche ? 'POST' : 'DELETE' }),
   /** Recherche paginée côté serveur dans le catalogue partagé. */
   wikiRecherche: (p: {
     q?: string
@@ -139,6 +166,9 @@ export const api = {
     sans_categorie?: boolean
     variante?: string
     nouveautes?: boolean
+    je_cherche?: boolean
+    doubles?: boolean
+    par_page?: number
   }) => {
     const params = new URLSearchParams()
     for (const [cle, valeur] of Object.entries(p)) if (valeur) params.set(cle, String(valeur))

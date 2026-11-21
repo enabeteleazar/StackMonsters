@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { BookOpen, Home, LayoutGrid, ScanLine, Settings2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { BookOpen, Home, LayoutGrid, MessagesSquare, ScanLine, Settings2 } from 'lucide-react'
 import { api, jeton, NonAutorise, renouvelerJeton } from './api'
 import AccueilPublic from './components/AccueilPublic'
 import Acces from './components/Acces'
@@ -9,17 +9,22 @@ import Camera from './components/Camera'
 import Collection from './components/Collection'
 import Confidentialite from './components/Confidentialite'
 import Dashboard from './components/Dashboard'
+import Echanges from './components/Echanges'
 import ResultatScan from './components/ResultatScan'
 import { viderPhotos } from './components/PhotoWiki'
 import Settings from './components/Settings'
+import SignalementsMembres from './components/SignalementsMembres'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
 import Wiki from './components/Wiki'
 import { inviterAInstaller } from './installation'
 import { suivre } from './suivi'
-import type { Canette } from './types'
+import type { Canette, EtatEchanges } from './types'
 
-type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats'
+type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats' | 'echanges' | 'signalements'
+
+/** Relecture des échanges (notifications, messages non lus) tant que l'appli est affichée. */
+const RELECTURE_ECHANGES_MS = 60_000
 type EtatAcces = 'verification' | 'accueil' | 'connexion' | 'prive'
 
 export default function App() {
@@ -48,9 +53,12 @@ export default function App() {
     return () => window.removeEventListener('hashchange', maj)
   }, [])
 
+  // Une notification remplace la précédente et repart pour 2,4 s : l'ancien minuteur ne doit pas l'effacer.
+  const minuterieToast = useRef<number | undefined>(undefined)
   const toast = useCallback((m: string) => {
     setMessage(m)
-    window.setTimeout(() => setMessage(null), 2400)
+    window.clearTimeout(minuterieToast.current)
+    minuterieToast.current = window.setTimeout(() => setMessage(null), 2400)
   }, [])
 
   // Retour à l'écran d'accès. « refuse » distingue un jeton rejeté d'un jeton absent.
@@ -63,6 +71,19 @@ export default function App() {
     setEmailUtilisateur('')
     setEtatAcces('accueil')
   }, [])
+
+  // Échanges : notifications et conversations, relues régulièrement pour la pastille de l'en-tête.
+  const [echanges, setEchanges] = useState<EtatEchanges | null>(null)
+  const [erreurEchanges, setErreurEchanges] = useState(false)
+  const chargerEchanges = useCallback(async () => {
+    try {
+      setEchanges(await api.echanges())
+      setErreurEchanges(false)
+    } catch (e) {
+      if (e instanceof NonAutorise) verrouiller()
+      else setErreurEchanges(true)
+    }
+  }, [verrouiller])
 
   const recharger = useCallback(async () => {
     try {
@@ -148,6 +169,24 @@ export default function App() {
     document.addEventListener('visibilitychange', auRetour)
     return () => document.removeEventListener('visibilitychange', auRetour)
   }, [etatAcces])
+
+  // Échanges : lus à la connexion, au retour au premier plan, puis chaque minute tant que l'appli est affichée.
+  useEffect(() => {
+    if (etatAcces !== 'prive') {
+      setEchanges(null)
+      return
+    }
+    void chargerEchanges()
+    const auRetour = () => {
+      if (document.visibilityState === 'visible') void chargerEchanges()
+    }
+    const minuterie = window.setInterval(auRetour, RELECTURE_ECHANGES_MS)
+    document.addEventListener('visibilitychange', auRetour)
+    return () => {
+      window.clearInterval(minuterie)
+      document.removeEventListener('visibilitychange', auRetour)
+    }
+  }, [etatAcces, chargerEchanges])
 
   const ouvrirConnexion = () => {
     setServiceIndisponible(false)
@@ -247,6 +286,19 @@ export default function App() {
             Stack<em>Monsters</em>
           </div>
         </div>
+        {/* Échanges : notifications et messagerie, avec la pastille des éléments à traiter ou non lus. */}
+        <button
+          className="entete-echanges"
+          aria-current={vue === 'echanges'}
+          aria-label={echanges?.non_lus ? `Échanges, ${echanges.non_lus} nouveau${echanges.non_lus > 1 ? 'x' : ''}` : 'Échanges'}
+          onClick={() => {
+            setVue('echanges')
+            void chargerEchanges()
+          }}
+        >
+          <MessagesSquare size={21} />
+          {!!echanges?.non_lus && <b>{echanges.non_lus > 9 ? '9+' : echanges.non_lus}</b>}
+        </button>
       </header>
 
       <main className={vue === 'collec' || vue === 'wiki' ? 'large' : ''}>
@@ -260,7 +312,7 @@ export default function App() {
             surOuvrir={ouvrirFiche}
           />
         )}
-        {vue === 'collec' && <Collection canettes={canettes} surOuvrir={ouvrirFiche} />}
+        {vue === 'collec' && <Collection canettes={canettes} surOuvrir={ouvrirFiche} surNonAutorise={verrouiller} />}
         {vue === 'wiki' && <Wiki surNonAutorise={verrouiller} />}
         {vue === 'reglages' && (
           <Settings
@@ -268,7 +320,9 @@ export default function App() {
             joignable={joignable}
             surVerrouiller={verrouiller}
             surStats={() => setVue('stats')}
+            surSignalements={() => setVue('signalements')}
             nbCanettes={canettes.length}
+            surPreferencesChangees={recharger}
             surCollectionVidee={(retirees) => {
               viderPhotos()
               void recharger()
@@ -277,6 +331,17 @@ export default function App() {
           />
         )}
         {vue === 'stats' && <Stats surRetour={() => setVue('reglages')} />}
+        {vue === 'signalements' && <SignalementsMembres surRetour={() => setVue('reglages')} surNonAutorise={verrouiller} />}
+        {vue === 'echanges' && (
+          <Echanges
+            etat={echanges}
+            erreur={erreurEchanges}
+            surRecharger={chargerEchanges}
+            surMessage={toast}
+            surCollectionChangee={recharger}
+            surNonAutorise={verrouiller}
+          />
+        )}
 
         {!joignable && vue === 'accueil' && (
           <p className="sous" style={{ marginTop: 18 }}>
@@ -309,7 +374,7 @@ export default function App() {
           <BookOpen size={19} />
           Wiki
         </button>
-        <button aria-current={vue === 'reglages' || vue === 'stats'} onClick={() => setVue('reglages')}>
+        <button aria-current={vue === 'reglages' || vue === 'stats' || vue === 'signalements'} onClick={() => setVue('reglages')}>
           <Settings2 size={19} />
           Réglages
         </button>
@@ -355,6 +420,7 @@ export default function App() {
           surEnregistrer={enregistrer}
           surSupprimer={supprimer}
           surFermeture={() => setEan(null)}
+          surCollectionChangee={recharger}
         />
       )}
 

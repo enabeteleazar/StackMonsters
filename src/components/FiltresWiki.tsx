@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { X } from 'lucide-react'
+import { Repeat2, SearchCheck, X } from 'lucide-react'
 import { CATEGORIES, REGIONS, VARIANTES } from '../categories'
 import type { TriWiki } from '../types'
 
@@ -16,9 +16,11 @@ export const TRIS: { valeur: TriWiki; libelle: string }[] = [
 
 export const libelleGamme = (g: string) => (g === SANS_CATEGORIE ? 'Sans catégorie' : g === NOUVEAUTES ? 'Nouveautés' : g)
 
-export type Filtres = { gamme: string; region: string; variante: string; tri: TriWiki }
+export type Filtres = { gamme: string; region: string; variante: string; tri: TriWiki; jeCherche: boolean; doubles: boolean }
 
 type Props = Filtres & {
+  /** Nombre de canettes que le compte cherche (affiché sur le filtre « Je cherche »). */
+  nbJeCherche: number
   /** Propriétaire : la gamme « Sans catégorie » est proposée. */
   proprietaire: boolean
   /** Nombre de fiches qui correspondent (mis à jour à chaque choix) ; null pendant le chargement. */
@@ -26,6 +28,12 @@ type Props = Filtres & {
   surChange: (f: Partial<Filtres>) => void
   surEffacer: () => void
   surFermeture: () => void
+  /** Groupe « Échanges » (Je cherche, Doubles dispo) : affiché par défaut, masqué dans la Collection. */
+  echanges?: boolean
+  /** Tris proposés (par défaut ceux du Wiki). */
+  tris?: { valeur: TriWiki; libelle: string }[]
+  /** Gamme « Nouveautés » proposée (par défaut oui ; le statut n'existe que dans le Wiki). */
+  nouveautes?: boolean
 }
 
 /** Une rangée de pastilles à choix unique (gamme, pays, variante, tri). */
@@ -51,7 +59,10 @@ function Choix({ titre, valeurs, valeur, libelle, surChoix }: {
 }
 
 /** Panneau des filtres du Wiki, qui monte du bas de l'écran : gamme, pays, variante et tri. */
-export default function FiltresWiki({ gamme, region, variante, tri, proprietaire, total, surChange, surEffacer, surFermeture }: Props) {
+export default function FiltresWiki({
+  gamme, region, variante, tri, jeCherche, doubles, nbJeCherche, proprietaire, total, surChange, surEffacer, surFermeture,
+  echanges = true, tris = TRIS, nouveautes = true,
+}: Props) {
   useEffect(() => {
     const touche = (e: KeyboardEvent) => {
       if (e.key === 'Escape') surFermeture()
@@ -77,9 +88,24 @@ export default function FiltresWiki({ gamme, region, variante, tri, proprietaire
         </div>
 
         <div className="filtres-corps">
+          {echanges && (
+            <fieldset className="filtres-groupe">
+              <legend>Échanges</legend>
+              <div className="filtres-bascules">
+                <button type="button" aria-pressed={jeCherche} onClick={() => surChange({ jeCherche: !jeCherche })}>
+                  <SearchCheck size={16} aria-hidden="true" />
+                  Je cherche{nbJeCherche ? ` · ${nbJeCherche}` : ''}
+                </button>
+                <button type="button" aria-pressed={doubles} onClick={() => surChange({ doubles: !doubles })}>
+                  <Repeat2 size={16} aria-hidden="true" />
+                  Doubles dispo
+                </button>
+              </div>
+            </fieldset>
+          )}
           <Choix
             titre="Gamme"
-            valeurs={['', NOUVEAUTES, ...CATEGORIES, ...(proprietaire ? [SANS_CATEGORIE] : [])]}
+            valeurs={['', ...(nouveautes ? [NOUVEAUTES] : []), ...CATEGORIES, ...(proprietaire ? [SANS_CATEGORIE] : [])]}
             valeur={gamme}
             libelle={(v) => (v ? libelleGamme(v) : 'Toutes')}
             surChoix={(v) => surChange({ gamme: v })}
@@ -100,9 +126,9 @@ export default function FiltresWiki({ gamme, region, variante, tri, proprietaire
           />
           <Choix
             titre="Tri"
-            valeurs={TRIS.map((t) => t.valeur)}
+            valeurs={tris.map((t) => t.valeur)}
             valeur={tri}
-            libelle={(v) => TRIS.find((t) => t.valeur === v)?.libelle ?? v}
+            libelle={(v) => tris.find((t) => t.valeur === v)?.libelle ?? v}
             surChoix={(v) => surChange({ tri: v as TriWiki })}
           />
         </div>

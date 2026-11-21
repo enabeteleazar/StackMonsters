@@ -58,7 +58,7 @@ def test_sans_session_tout_est_refuse(env):
 def test_connexion_et_collection(env):
     c, codes = env
     h = connecter(c, codes, A)
-    assert c.get("/api/auth/moi", headers=h).json() == {"email": A}
+    assert c.get("/api/auth/moi", headers=h).json() == {"email": A, "partage_doubles": True}
     assert c.put("/api/cans", json=canette(), headers=h).status_code == 200
     assert [x["ean"] for x in c.get("/api/cans", headers=h).json()] == ["2000000000015"]
     assert c.patch("/api/cans/2000000000015/nb", json={"delta": 2}, headers=h).json()["nb"] == 3
@@ -723,7 +723,7 @@ def test_rotation_quotidienne_du_jeton(env, monkeypatch):
     horloge[0] = debut + ix.ROTATION_SESSION + 1
     nouveau = c.post("/api/auth/renouveler", headers=h).json()["token"]
     h2 = {"Authorization": f"Bearer {nouveau}"}
-    assert nouveau and c.get("/api/auth/moi", headers=h2).json() == {"email": A}
+    assert nouveau and c.get("/api/auth/moi", headers=h2).json()["email"] == A
     # L'ancien jeton reste valable quelques minutes, ne se renouvelle plus et n'est plus prolongé.
     assert c.get("/api/auth/moi", headers=h).status_code == 200
     assert c.post("/api/auth/renouveler", headers=h).json() == {"token": None}
@@ -1087,7 +1087,8 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
     assert (f["categorie"], f["flavor"], f["status"], f["region"]) == ("", "", "", "")
     assert set(f) == {
         "ean", "nom", "volume", "categorie", "flavor", "status", "region", "variante",
-        "description", "photo", "codes",
+        "description", "photo", "codes", "doubles", "recherches", "je_cherche", "je_possede",
+        "partage_doubles",  # réglage du compte qui consulte, pas de celui qui a ajouté la canette
     }
     assert f["photo"]  # la fiche n'avait pas de photo : celle envoyée devient la sienne
     assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 200
@@ -1327,6 +1328,10 @@ def test_wiki_amorce_depuis_les_collections_existantes_une_seule_fois(env):
     c.put("/api/cans", json=canette("LOCAL-AMORCE", nom="Perso"), headers=ha)
     # Simule une base d'avant le Wiki : la table n'existe pas encore, les collections si.
     with ix.connecter() as cx:
+        cx.execute("DROP TABLE signalements_membres")
+        cx.execute("DROP TABLE messages")
+        cx.execute("DROP TABLE echanges")
+        cx.execute("DROP TABLE recherches")
         cx.execute("DROP TABLE wiki_moderations")
         cx.execute("DROP TABLE wiki_signalements")
         cx.execute("DROP TABLE wiki_codes")
@@ -1863,3 +1868,337 @@ def test_migration_15_complete_les_variantes_vides(env):
     variantes = {r["ean"]: r["variante"] for r in lignes}
     assert variantes == {"2000000000015": "Édition limitée", "2000000000022": "Édition limitée",
                          "2000000000039": "Standard", "2000000000046": "Zero Sugar", "2000000000053": ""}
+
+
+# --- Échanges, étape 1 : doubles et recherchées ------------------------------------------
+
+
+def test_doubles_comptes_sur_la_fiche_sans_dire_qui(env):
+    c, codes = env
+    ha, hb, hc = connecter(c, codes, A), connecter(c, codes, B), connecter(c, codes, "test-c@example.com")
+    c.put("/api/cans", json=canette(nom="Mango", nb=3), headers=ha)
+    c.put("/api/cans", json=canette(nom="Mango", nb=1), headers=hb)  # un seul exemplaire : pas de double
+    # Partage activé par défaut : les doubles de A comptent d'office, sans rien proposer canette par canette.
+    f = fiche(c, hc, "2000000000015")
+    assert f["doubles"] == 1 and A not in str(f) and B not in str(f)
+    c.patch("/api/cans/2000000000015/nb", json={"delta": -2}, headers=ha)  # plus qu'un exemplaire
+    assert fiche(c, hc, "2000000000015")["doubles"] == 0
+    c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=ha)
+    assert fiche(c, hc, "2000000000015")["doubles"] == 1
+    # L'ancienne route de proposition par canette n'existe plus.
+    assert c.patch("/api/cans/2000000000015/echange", json={"echange": True}, headers=ha).status_code in (404, 405)
+
+
+def test_canette_recherchee_puis_trouvee(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=ha)
+    url = "/api/wiki/2000000000015/recherche"
+    assert c.post(url).status_code == 401
+    assert c.post("/api/wiki/TEST-INCONNU/recherche", headers=hb).status_code == 404
+    assert c.post(url, headers=ha).status_code == 409  # déjà dans sa collection
+    r = c.post(url, headers=hb)
+    assert r.status_code == 200 and r.json()["je_cherche"] is True and r.json()["recherches"] == 1
+    assert c.post(url, headers=hb).json()["recherches"] == 1  # deux fois : compté une seule fois
+    assert fiche(c, ha, "2000000000015")["recherches"] == 1
+    assert fiche(c, ha, "2000000000015")["je_cherche"] is False  # propre à chaque compte
+    assert fiche(c, ha, "2000000000015")["je_possede"] is True and fiche(c, hb, "2000000000015")["je_possede"] is False
+    resultat = _rechercher(c, hb, je_cherche="true")
+    assert [f["ean"] for f in resultat["fiches"]] == ["2000000000015"] and resultat["je_cherche"] == 1
+    assert _rechercher(c, ha, je_cherche="true")["fiches"] == []
+    # La collection de A montre combien la cherchent.
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["recherches"] == 1
+    # B l'ajoute à sa collection : elle n'est plus recherchée.
+    c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+    assert fiche(c, ha, "2000000000015")["recherches"] == 0
+    # Retirer une recherche
+    c.delete("/api/cans/2000000000015", headers=hb)
+    c.post(url, headers=hb)
+    r = c.delete(url, headers=hb)
+    assert r.status_code == 200 and r.json()["je_cherche"] is False and r.json()["recherches"] == 0
+
+
+def test_filtre_doubles_disponibles(env):
+    c, codes = env
+    ha = connecter(c, codes, A)
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango", nb=2), headers=ha)
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra", nb=1), headers=ha)
+    assert [f["ean"] for f in _rechercher(c, ha, doubles="true", par_page=60)["fiches"]] == ["2000000000015"]
+
+
+def test_recherches_suivent_le_compte_et_la_fiche(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango"), headers=ha)
+    c.delete("/api/cans/2000000000015", headers=ha)
+    c.post("/api/wiki/2000000000015/recherche", headers=hb)
+    # Le code-barres de la fiche change : la recherche suit.
+    c.put("/api/wiki/2000000000015", json={"ean": "2000000000022", "nom": "Mango"}, headers=ha)
+    assert fiche(c, hb, "2000000000022")["je_cherche"] is True
+    # Fiche supprimée : la recherche disparaît avec elle.
+    assert c.delete("/api/wiki/2000000000022", headers=ha).status_code == 204
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM recherches").fetchone()["n"] == 0
+    # Compte supprimé : ses recherches aussi.
+    c.put("/api/cans", json=canette("2000000000039", nom="Ultra"), headers=ha)
+    c.delete("/api/cans/2000000000039", headers=ha)
+    c.post("/api/wiki/2000000000039/recherche", headers=hb)
+    assert supprimer(c, hb, B).status_code == 204
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM recherches").fetchone()["n"] == 0
+
+
+def test_partage_des_doublons_desactive_dans_les_reglages(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango", nb=3), headers=ha)
+    assert fiche(c, hb, "2000000000015")["doubles"] == 1
+    assert c.patch("/api/auth/partage-doubles", json={"echange": False}).status_code == 401
+    r = c.patch("/api/auth/partage-doubles", json={"echange": False}, headers=ha)
+    assert r.status_code == 200 and r.json() == {"partage_doubles": False}
+    assert c.get("/api/auth/moi", headers=ha).json()["partage_doubles"] is False
+    # Les fiches du Wiki portent le réglage du compte connecté (le bloc Échanges y est alors masqué).
+    assert fiche(c, ha, "2000000000015")["partage_doubles"] is False
+    assert fiche(c, hb, "2000000000015")["partage_doubles"] is True
+    # Plus rien n'est compté ni trouvé par le filtre.
+    assert fiche(c, hb, "2000000000015")["doubles"] == 0
+    assert _rechercher(c, hb, doubles="true", par_page=60)["fiches"] == []
+    canette_a = c.get("/api/cans/2000000000015", headers=ha).json()
+    assert canette_a["partage_doubles"] is False
+    # Réactivé : tous les doubles réapparaissent.
+    c.patch("/api/auth/partage-doubles", json={"echange": True}, headers=ha)
+    assert fiche(c, hb, "2000000000015")["doubles"] == 1
+
+
+# --- Échanges, étape 2 : mise en relation et messagerie ----------------------------------------
+
+
+C = "test-c@example.com"
+
+
+def _echanges(c, h):
+    r = c.get("/api/echanges", headers=h)
+    assert r.status_code == 200
+    return r.json()
+
+
+def _mise_en_relation(c, codes, nb=2):
+    """A a Mango en double, B le cherche."""
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango", nb=nb), headers=ha)
+    c.delete("/api/cans/2000000000015", headers=hb)
+    assert c.post("/api/wiki/2000000000015/recherche", headers=hb).status_code == 200
+    return ha, hb
+
+
+def test_echange_complet_jusqu_a_la_messagerie(env):
+    c, codes = env
+    assert c.get("/api/echanges").status_code == 401
+    ha, hb = _mise_en_relation(c, codes)
+    hc = connecter(c, codes, C)
+
+    # 1. L'appli repère la paire : le chercheur est notifié, sans savoir qui ; le possesseur, rien encore.
+    eb = _echanges(c, hb)
+    assert len(eb["notifications"]) == 1 and eb["non_lus"] == 1
+    n = eb["notifications"][0]
+    assert (n["role"], n["statut"], n["action"], n["fiche"]["nom"]) == ("chercheur", "signalee", True, "Mango")
+    assert A not in str(eb)
+    assert _echanges(c, ha) == {"notifications": [], "conversations": [], "non_lus": 0}
+    assert _echanges(c, hb)["notifications"][0]["id"] == n["id"]  # pas de doublon d'une lecture à l'autre
+
+    # Un tiers ne peut rien faire sur cet échange.
+    assert c.post(f"/api/echanges/{n['id']}/accepter", headers=hc).status_code == 404
+    assert c.post(f"/api/echanges/{n['id']}/annuler", headers=hc).status_code == 404
+    # Le possesseur ne peut pas répondre avant la demande.
+    assert c.post(f"/api/echanges/{n['id']}/accepter", headers=ha).status_code in (404, 409)
+
+    # 2. « Échange » du chercheur : le possesseur est notifié à son tour.
+    r = c.post(f"/api/echanges/{n['id']}/accepter", headers=hb)
+    assert r.status_code == 200 and r.json()["statut"] == "demandee"
+    assert c.post(f"/api/echanges/{n['id']}/accepter", headers=hb).status_code == 409  # une seule fois
+    eb = _echanges(c, hb)
+    assert eb["notifications"][0]["action"] is False and eb["non_lus"] == 0  # en attente de réponse
+    ea = _echanges(c, ha)
+    assert len(ea["notifications"]) == 1 and ea["non_lus"] == 1 and B not in str(ea)
+    assert (ea["notifications"][0]["role"], ea["notifications"][0]["action"]) == ("possesseur", True)
+    assert c.get(f"/api/echanges/{n['id']}/messages", headers=hb).status_code == 404  # pas encore ouverte
+
+    # 3. « Échange » du possesseur : la messagerie s'ouvre pour les deux.
+    assert c.post(f"/api/echanges/{n['id']}/accepter", headers=ha).json()["statut"] == "acceptee"
+    for h in (ha, hb):
+        e = _echanges(c, h)
+        assert e["notifications"] == [] and len(e["conversations"]) == 1
+
+    # 4. Messagerie : seuls les deux membres lisent et écrivent ; jamais d'adresse.
+    url = f"/api/echanges/{n['id']}/messages"
+    assert c.post(url, json={"texte": "   "}, headers=hb).status_code == 422
+    assert c.post(url, json={"texte": "x" * 1001}, headers=hb).status_code == 422
+    assert c.post(url, json={"texte": "Salut, je te propose un Ultra"}, headers=hc).status_code == 404
+    m = c.post(url, json={"texte": "  Salut, je te propose un Ultra  "}, headers=hb).json()
+    assert m["de_moi"] is True and m["texte"] == "Salut, je te propose un Ultra"
+    ea = _echanges(c, ha)
+    assert ea["non_lus"] == 1 and ea["conversations"][0]["dernier"] == "Salut, je te propose un Ultra"
+    assert _echanges(c, hb)["non_lus"] == 0  # ses propres messages ne comptent pas
+    lu = c.get(url, headers=ha).json()
+    assert [(x["texte"], x["de_moi"]) for x in lu["messages"]] == [("Salut, je te propose un Ultra", False)]
+    assert A not in str(lu) and B not in str(lu)
+    assert _echanges(c, ha)["non_lus"] == 0
+    c.post(url, json={"texte": "Ok !"}, headers=ha)
+    assert [x["texte"] for x in c.get(f"{url}?apres={m['id']}", headers=hb).json()["messages"]] == ["Ok !"]
+    assert c.get(url, headers=hc).status_code == 404
+
+    # La conversation reste même si la canette n'est plus cherchée.
+    c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+    assert len(_echanges(c, hb)["conversations"]) == 1
+
+    # Le compte supprimé emporte ses échanges et ses messages.
+    assert supprimer(c, ha, A).status_code == 204
+    assert _echanges(c, hb)["conversations"] == []
+
+
+def test_annuler_ne_previent_personne_et_n_est_pas_repropose(env):
+    c, codes = env
+    ha, hb = _mise_en_relation(c, codes)
+    n = _echanges(c, hb)["notifications"][0]
+    assert c.post(f"/api/echanges/{n['id']}/annuler", headers=ha).status_code == 409  # pas encore à lui
+    assert c.post(f"/api/echanges/{n['id']}/annuler", headers=hb).json()["statut"] == "annulee"
+    assert _echanges(c, hb)["notifications"] == []  # pas recréée
+    assert _echanges(c, ha)["notifications"] == []  # A n'a jamais rien su
+    assert c.post(f"/api/echanges/{n['id']}/accepter", headers=hb).status_code == 409
+
+
+def test_le_possesseur_annule_la_demande(env):
+    c, codes = env
+    ha, hb = _mise_en_relation(c, codes)
+    n = _echanges(c, hb)["notifications"][0]
+    c.post(f"/api/echanges/{n['id']}/accepter", headers=hb)
+    assert c.post(f"/api/echanges/{n['id']}/annuler", headers=ha).json()["statut"] == "annulee"
+    assert _echanges(c, ha)["notifications"] == [] and _echanges(c, hb)["notifications"] == []
+    assert c.get(f"/api/echanges/{n['id']}/messages", headers=hb).status_code == 404
+
+
+def test_un_autre_possesseur_est_propose_apres_une_annulation(env):
+    c, codes = env
+    ha, hb = _mise_en_relation(c, codes)
+    hc = connecter(c, codes, C)
+    c.put("/api/cans", json=canette(nom="Mango", nb=3), headers=hc)
+    notifs = _echanges(c, hb)["notifications"]
+    assert len(notifs) == 1  # une seule notification par canette à la fois
+    c.post(f"/api/echanges/{notifs[0]['id']}/annuler", headers=hb)
+    suivante = _echanges(c, hb)["notifications"]
+    assert len(suivante) == 1 and suivante[0]["id"] != notifs[0]["id"]
+    # Une demande en cours bloque les autres notifications pour cette canette.
+    c.post(f"/api/echanges/{suivante[0]['id']}/accepter", headers=hb)
+    assert [x["statut"] for x in _echanges(c, hb)["notifications"]] == ["demandee"]
+
+
+def test_pas_de_mise_en_relation_sans_double_ni_partage(env):
+    c, codes = env
+    ha, hb = _mise_en_relation(c, codes, nb=1)
+    assert _echanges(c, hb)["notifications"] == []  # un seul exemplaire : pas de double
+    c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=ha)
+    n = _echanges(c, hb)["notifications"]
+    assert len(n) == 1
+    # Le possesseur coupe le partage : la notification disparaît, et « Échange » est refusé.
+    c.patch("/api/auth/partage-doubles", json={"echange": False}, headers=ha)
+    assert _echanges(c, hb)["notifications"] == []
+    assert c.post(f"/api/echanges/{n[0]['id']}/accepter", headers=hb).status_code == 409
+    c.patch("/api/auth/partage-doubles", json={"echange": True}, headers=ha)
+    # Le chercheur coupe le sien : plus de notification non plus.
+    c.patch("/api/auth/partage-doubles", json={"echange": False}, headers=hb)
+    assert _echanges(c, hb)["notifications"] == []
+    c.patch("/api/auth/partage-doubles", json={"echange": True}, headers=hb)
+    # Le chercheur ne la cherche plus : masquée.
+    c.delete("/api/wiki/2000000000015/recherche", headers=hb)
+    assert _echanges(c, hb)["notifications"] == []
+
+
+def test_messages_limites_par_heure(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("SM_MESSAGES_MAX_HEURE", "2")
+    ha, hb = _mise_en_relation(c, codes)
+    n = _echanges(c, hb)["notifications"][0]
+    c.post(f"/api/echanges/{n['id']}/accepter", headers=hb)
+    c.post(f"/api/echanges/{n['id']}/accepter", headers=ha)
+    url = f"/api/echanges/{n['id']}/messages"
+    assert [c.post(url, json={"texte": str(i)}, headers=hb).status_code for i in range(3)] == [200, 200, 429]
+    assert c.post(url, json={"texte": "à moi"}, headers=ha).status_code == 200  # compté par compte
+
+
+def _conversation_ouverte(c, codes, nb=2):
+    """A a Mango en double, B le cherche, les deux ont choisi « Échange » : la conversation est ouverte."""
+    ha, hb = _mise_en_relation(c, codes, nb=nb)
+    n = _echanges(c, hb)["notifications"][0]
+    c.post(f"/api/echanges/{n['id']}/accepter", headers=hb)
+    c.post(f"/api/echanges/{n['id']}/accepter", headers=ha)
+    return ha, hb, n["id"]
+
+
+def test_valider_l_echange_fait_moins_un_et_plus_un(env):
+    c, codes = env
+    ha, hb, eid = _conversation_ouverte(c, codes, nb=3)
+    hc = connecter(c, codes, C)
+    assert c.post(f"/api/echanges/{eid}/valider", headers=hc).status_code == 404
+    # Le premier qui valide : rien ne bouge encore, l'autre doit valider à son tour (pastille).
+    r = c.post(f"/api/echanges/{eid}/valider", headers=ha).json()
+    assert (r["statut"], r["valide_moi"], r["valide_autre"]) == ("acceptee", True, False)
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["nb"] == 3
+    eb = _echanges(c, hb)
+    assert eb["conversations"][0]["a_valider"] is True and eb["non_lus"] == 1
+    # Le second valide : -1 chez le possesseur, +1 chez le chercheur (ajoutée, plus recherchée).
+    r = c.post(f"/api/echanges/{eid}/valider", headers=hb).json()
+    assert r["statut"] == "terminee" and r["valide_moi"] and r["valide_autre"]
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["nb"] == 2
+    recue = c.get("/api/cans/2000000000015", headers=hb).json()
+    assert recue["nb"] == 1 and recue["nom"] == "Mango"
+    assert fiche(c, hb, "2000000000015")["je_cherche"] is False
+    assert c.post(f"/api/echanges/{eid}/valider", headers=hb).status_code == 409  # une seule fois
+    # La conversation reste, pour se remercier.
+    assert _echanges(c, hb)["conversations"][0]["statut"] == "terminee"
+    assert c.post(f"/api/echanges/{eid}/messages", json={"texte": "Merci !"}, headers=hb).status_code == 200
+
+
+def test_valider_refuse_si_le_double_n_existe_plus(env):
+    c, codes = env
+    ha, hb, eid = _conversation_ouverte(c, codes)
+    c.post(f"/api/echanges/{eid}/valider", headers=hb)
+    c.patch("/api/cans/2000000000015/nb", json={"delta": -1}, headers=ha)  # plus qu'un exemplaire
+    assert c.post(f"/api/echanges/{eid}/valider", headers=ha).status_code == 409
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["nb"] == 1  # rien n'a bougé
+    assert c.get("/api/cans/2000000000015", headers=hb).status_code == 404
+
+
+def test_signaler_ferme_la_conversation_et_bloque_la_paire(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    ha, hb, eid = _conversation_ouverte(c, codes)
+    hc = connecter(c, codes, C)
+    c.post(f"/api/echanges/{eid}/messages", json={"texte": "Achète-moi des canettes à 10 €"}, headers=ha)
+    url = f"/api/echanges/{eid}/signaler"
+    assert c.post(url, json={"motif": "Inconnu"}, headers=hb).status_code == 422
+    assert c.post(url, json={"motif": "Spam ou publicité"}, headers=hc).status_code == 404
+    r = c.post(url, json={"motif": "Arnaque ou tentative de vente", "detail": "veut vendre"}, headers=hb)
+    assert r.status_code == 200 and r.json()["statut"] == "fermee"
+    # Fermée pour les deux : lisible, mais plus d'envoi ni de validation.
+    for h in (ha, hb):
+        assert _echanges(c, h)["conversations"][0]["statut"] == "fermee"
+        assert c.post(f"/api/echanges/{eid}/messages", json={"texte": "?"}, headers=h).status_code == 409
+        assert c.post(f"/api/echanges/{eid}/valider", headers=h).status_code == 409
+    assert len(c.get(f"/api/echanges/{eid}/messages", headers=ha).json()["messages"]) == 1
+    # Plus jamais mis en relation : nouvelle canette cherchée par B, en double chez A.
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra", nb=2), headers=ha)
+    c.delete("/api/cans/2000000000022", headers=hb)
+    c.post("/api/wiki/2000000000022/recherche", headers=hb)
+    assert _echanges(c, hb)["notifications"] == []
+    # Le propriétaire voit le signalement et la conversation, sans adresse ; seul lui y a accès.
+    assert c.get("/api/admin/signalements-membres", headers=ha).status_code == 403
+    liste = c.get("/api/admin/signalements-membres", headers=hc).json()
+    assert len(liste) == 1 and liste[0]["motif"] == "Arnaque ou tentative de vente" and liste[0]["detail"] == "veut vendre"
+    assert liste[0]["messages"] == [{"de": "signale", "texte": "Achète-moi des canettes à 10 €", "cree": liste[0]["messages"][0]["cree"]}]
+    assert A not in str(liste) and B not in str(liste)
+    sid = liste[0]["id"]
+    assert c.post(f"/api/admin/signalements-membres/{sid}/traite", headers=ha).status_code == 403
+    assert c.post(f"/api/admin/signalements-membres/{sid}/traite", headers=hc).status_code == 200
+    assert c.post(f"/api/admin/signalements-membres/{sid}/traite", headers=hc).status_code == 404
+    assert c.get("/api/admin/signalements-membres", headers=hc).json() == []

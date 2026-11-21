@@ -306,6 +306,9 @@ html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.col
 .collec-tri button{min-height:44px;padding:0 14px;border-radius:999px;color:var(--alu);
   font:600 12px var(--display);text-transform:uppercase;letter-spacing:.08em}
 .collec-tri button[aria-checked="true"]{background:var(--acide);color:#0A0C07;box-shadow:0 0 14px rgba(158,232,24,.45)}
+.collec-onglets{position:relative;display:flex;margin-bottom:12px}
+.collec-onglets button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.collec-onglets button[aria-selected="true"]{background:var(--acide);color:#0A0C07;box-shadow:0 0 14px rgba(158,232,24,.45)}
 
 .collec-liste{position:relative;list-style:none;margin:0;padding:0;display:grid;gap:10px}
 .collec-ligne{display:flex;align-items:center;gap:14px;width:100%;padding:8px 14px 8px 8px;border-radius:18px;text-align:left;
@@ -369,6 +372,11 @@ html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.col
 .reglages-info .valeur{font:700 italic 14px var(--display);color:var(--acide);text-align:right}
 .reglages-actions{position:relative;display:grid;gap:10px}
 .reglages-actions .accueil-co-secondaire{max-width:none}
+.reglages-espace{display:block;height:14px}
+.reglages-bascule{justify-content:flex-start;gap:10px}
+.reglages-bascule-etat{margin-left:auto;font-size:12px;letter-spacing:.06em;text-transform:uppercase;opacity:.7}
+.reglages-bascule.actif{border-color:var(--acide)}
+.reglages-bascule.actif .reglages-bascule-etat{color:var(--acide);opacity:1}
 .reglages-actions .accueil-co-secondaire:disabled{opacity:.5;cursor:wait}
 .reglages-danger{border-color:rgba(255,77,77,.55)!important;color:#ff8a8a!important}
 .reglages-danger svg{color:#ff8a8a!important}
@@ -1039,3 +1047,91 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .filtres-actions .accueil-co-secondaire{max-width:none;margin:0}
 .filtres-voir{min-height:50px;border:0;border-radius:999px;background:var(--acide);color:#0A0C07;font:700 15px var(--display);
   text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+/* ============ échanges, étape 1 : doubles et recherchées ============ */
+/* Bloc « Échanges » d'une fiche (Wiki et collection) : compteurs anonymes et action du compte. */
+.fiche-echanges{display:grid;gap:10px;margin:4px 0 18px;padding:14px 16px;border-radius:16px;
+  border:1px solid rgba(158,232,24,.35);background:rgba(158,232,24,.05)}
+.fiche-echanges .etiquette{font:600 11px var(--display);text-transform:uppercase;letter-spacing:.09em;color:var(--acide)}
+.fiche-echanges p{display:flex;align-items:center;gap:10px;margin:0;font-size:15px}
+.fiche-echanges p svg{flex:0 0 auto;color:var(--acide)}
+.fiche-echanges .btn{justify-self:start;gap:8px}
+.fiche-echanges .fiche-echanges-note{color:var(--alu);font-size:13.5px}
+/* Badges des cartes du Wiki : « je la cherche » et nombre de doubles proposés. */
+.wiki-cherche{position:absolute;bottom:6px;left:6px;z-index:2;width:24px;height:24px;display:grid;place-items:center;
+  border-radius:50%;background:var(--acide);color:#0A0C07;box-shadow:0 0 10px rgba(158,232,24,.6)}
+.wiki-doubles{position:absolute;bottom:6px;right:6px;z-index:2;display:inline-flex;align-items:center;gap:3px;padding:3px 7px;
+  border-radius:999px;background:rgba(5,6,3,.85);border:1px solid rgba(158,232,24,.6);color:var(--acide);
+  font:700 11px var(--display);font-variant-numeric:tabular-nums}
+/* Panneau des filtres : bascules « Je cherche » / « Doubles dispo » (groupe Échanges). */
+.filtres-bascules{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.filtres-bascules button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 12px;
+  border-radius:999px;border:1.5px solid rgba(158,232,24,.35);background:#0b0d08;color:var(--blanc);
+  font:600 12px var(--display);text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+.filtres-bascules button svg{color:var(--acide)}
+.filtres-bascules button[aria-pressed="true"]{background:var(--acide);border-color:var(--acide);color:#0A0C07;
+  box-shadow:0 0 12px rgba(158,232,24,.4)}
+.filtres-bascules button[aria-pressed="true"] svg{color:#0A0C07}
+
+/* ============ échanges : bouton de l'en-tête, notifications, messagerie ============ */
+.entete-echanges{position:relative;margin-left:auto;display:grid;place-items:center;width:46px;height:46px;border-radius:999px;
+  border:1.5px solid rgba(158,232,24,.35);background:#0b0d08;color:var(--blanc);cursor:pointer}
+.entete-echanges svg{color:var(--acide)}
+.entete-echanges[aria-current="true"]{border-color:var(--acide);box-shadow:0 0 14px rgba(158,232,24,.35)}
+.entete-echanges b{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;padding:0 5px;display:grid;place-items:center;
+  border-radius:999px;background:var(--acide);color:#0A0C07;font:700 11px var(--display);box-shadow:0 0 0 2px var(--abysse)}
+.echanges-liste{position:relative;list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.echange-notif{display:flex;gap:14px;padding:10px 14px 12px 10px;border-radius:18px;border:1px solid rgba(158,232,24,.22);
+  background:linear-gradient(170deg,rgba(23,26,20,.92),rgba(8,9,6,.92))}
+.echange-notif.a-traiter{border-color:var(--acide);box-shadow:0 0 22px -10px rgba(158,232,24,.6)}
+.echange-notif-corps{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+.echange-notif-corps p{margin:4px 0 0;font-size:14.5px;line-height:1.4}
+.echange-notif-actions{display:flex;flex-wrap:wrap;gap:8px}
+.echange-notif-actions .btn{min-height:42px;padding:0 16px;flex:1 1 120px}
+.echange-conv{display:flex;flex-direction:column;gap:4px}
+.echange-conv small{font:400 13px var(--corps,inherit);text-transform:none;letter-spacing:0;color:var(--alu);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.echange-pastille{min-width:22px;height:22px;padding:0 6px;display:grid;place-items:center;border-radius:999px;
+  background:var(--acide);color:#0A0C07;font:700 12px var(--display)}
+.verdict.conversation{flex-direction:column;overflow:hidden}
+.conversation-tete{justify-content:flex-start;padding-bottom:12px;border-bottom:1px solid rgba(158,232,24,.15)}
+.conversation-tete .collec-photo{flex-basis:44px;width:44px;height:44px}
+.conversation-titre{display:flex;flex-direction:column;min-width:0}
+.conversation-titre b{font:600 15px var(--display);text-transform:uppercase;letter-spacing:.04em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conversation-titre small{font-size:12.5px;color:var(--alu)}
+.conversation-fil{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;width:100%;max-width:640px;margin:0 auto;
+  padding:14px 18px}
+.conversation-note{margin:0 0 6px;font-size:12.5px;color:var(--alu);text-align:center}
+.bulle{align-self:flex-start;max-width:80%;margin:0;padding:10px 14px;border-radius:18px 18px 18px 6px;
+  background:var(--graphite-vif);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.4}
+.bulle.moi{align-self:flex-end;border-radius:18px 18px 6px 18px;background:var(--acide);color:#0A0C07}
+.conversation-saisie{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;width:100%;max-width:640px;margin:0 auto;
+  padding:10px 18px calc(12px + env(safe-area-inset-bottom))}
+.conversation-saisie .sous{flex-basis:100%;margin:0}
+.conversation-saisie textarea{flex:1;min-height:46px;max-height:140px;padding:12px 16px;border-radius:22px;resize:none;
+  border:1.5px solid rgba(158,232,24,.35);background:#0b0d08;color:var(--blanc);font:inherit}
+.conversation-envoyer{flex:0 0 auto;background:var(--acide)!important;color:#0A0C07!important}
+.conversation-envoyer:disabled{opacity:.45}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* ============ échanges : validation, signalement ============ */
+.conversation-actions{display:flex;flex-wrap:wrap;gap:8px;width:100%;max-width:640px;margin:0 auto;padding:10px 18px 0}
+.conversation-actions .btn{min-height:42px;padding:0 14px;flex:1 1 150px}
+.conversation-signaler{flex:0 1 auto!important;color:#ff8a8a!important;border-color:rgba(255,77,77,.45)!important}
+.conversation-etat{display:flex;align-items:center;gap:8px;width:100%;max-width:640px;margin:0 auto;padding:8px 18px 0;
+  font-size:13.5px;color:var(--alu)}
+.conversation-etat.ok,.conversation-etat.a-toi{color:var(--acide)}
+.conversation-signalement{display:flex;flex-direction:column;gap:10px;width:calc(100% - 36px);max-width:604px;margin:10px auto 0;
+  padding:14px 16px;border-radius:16px;border:1px solid rgba(255,138,138,.45);background:rgba(255,77,77,.06)}
+.conversation-signalement p{margin:0;font-size:13px;color:var(--alu)}
+.conversation-signalement fieldset{border:0;margin:0;padding:0;display:grid;gap:6px}
+.conversation-signalement legend{margin-bottom:4px;font:600 11px var(--display);text-transform:uppercase;letter-spacing:.1em;color:#ff8a8a}
+.conversation-signalement label{display:flex;align-items:center;gap:8px;font-size:14px}
+.conversation-signalement textarea{padding:10px 14px;border-radius:14px;border:1px solid rgba(158,232,24,.25);background:#0b0d08;
+  color:var(--blanc);font:inherit;resize:vertical}
+.conversation-signalement-actions{display:flex;flex-wrap:wrap;gap:8px}
+.conversation-signalement-actions .btn{flex:1 1 140px;min-height:42px}
+.signalement-membre{display:flex;flex-direction:column;gap:8px}
+.signalement-membre-tete{margin:0}
+.signalement-membre-detail{margin:0;font-style:italic}
+.signalement-membre-fil{max-height:260px;padding:8px 0;border-radius:12px}
