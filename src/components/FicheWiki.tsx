@@ -227,25 +227,28 @@ export default function FicheWiki({
           <>
             {/* La saveur seule, puis toutes les autres informations réunies dans un seul bloc compact. */}
             <div className="fiche-saveur">
-              <span>Saveur</span>
+              <span className="etiquette">Saveur</span>
               <b>{fiche.flavor || '—'}</b>
             </div>
-            <dl className="fiche-infos">
-              {(
-                [
-                  ['Catégorie', fiche.categorie],
-                  ['Pays', fiche.region],
-                  ['Volume', fiche.volume],
-                  ['Variante', fiche.variante],
-                  ['Status', fiche.status],
-                ] as const
-              ).map(([libelle, valeur]) => (
-                <div key={libelle}>
-                  <dt>{libelle}</dt>
-                  <dd>{valeur || '—'}</dd>
-                </div>
-              ))}
-            </dl>
+            <div className="fiche-infos">
+              <span className="etiquette">Informations</span>
+              <dl>
+                {(
+                  [
+                    ['Catégorie', fiche.categorie],
+                    ['Pays', fiche.region],
+                    ['Volume', fiche.volume],
+                    ['Variante', fiche.variante],
+                    ['Status', fiche.status],
+                  ] as const
+                ).map(([libelle, valeur]) => (
+                  <div key={libelle}>
+                    <dt>{libelle}</dt>
+                    <dd>{valeur || '—'}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
 
             {peutEditer && !!fiche.a_reprendre?.length && (
               <div className="fiche-moderation en_attente" role="status">
@@ -334,14 +337,7 @@ export default function FicheWiki({
               </div>
             )}
 
-            <div className="fiche-description">
-              <span className="etiquette">Description</span>
-              {fiche.description ? (
-                <p>{fiche.description}</p>
-              ) : (
-                <p className="fiche-description-vide">Pas encore de description pour cette canette.</p>
-              )}
-            </div>
+            {/* Description masquée dans la fiche du Wiki ; elle reste modifiable par le propriétaire (« Modifier la fiche »). */}
 
             {peutEditer && (
               <div className="actions">

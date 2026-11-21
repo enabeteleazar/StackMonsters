@@ -981,16 +981,18 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .photo-etirable.photo-retour img{transition:transform .3s var(--ease)}
 @media (prefers-reduced-motion:reduce){.photo-etirable.photo-retour,.photo-etirable.photo-retour img{transition:none}}
 /* Saveur seule, puis un bloc unique pour les autres informations, une par ligne. */
-.fiche-wiki .fiche-saveur{margin:16px 0 10px;padding:12px 14px;border-radius:var(--r-md);background:var(--graphite);
+.fiche-wiki .fiche-saveur,.fiche-wiki .fiche-infos{padding:14px 16px;border-radius:var(--r-md);background:var(--graphite);
   border:1px solid var(--ligne)}
-.fiche-wiki .fiche-saveur span{display:block;margin-bottom:3px;font:600 10.5px var(--display);text-transform:uppercase;
-  letter-spacing:.12em;color:var(--alu)}
+.fiche-wiki .fiche-saveur{margin:16px 0 10px}
+.fiche-wiki .fiche-infos{margin:0 0 16px;padding-bottom:4px}
+/* Titres « Saveur » et « Informations » : même style que celui de la description (.verdict .fiche-description .etiquette). */
+.fiche-wiki .fiche-saveur .etiquette,.fiche-wiki .fiche-infos .etiquette{display:block;margin-bottom:8px;
+  font-family:var(--display);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:var(--acide)}
 .fiche-wiki .fiche-saveur b{font-family:var(--display);font-size:15px;font-weight:600;overflow-wrap:anywhere}
-.fiche-wiki .fiche-infos{display:grid;margin:0 0 16px;padding:2px 14px;border-radius:var(--r-md);background:var(--graphite);
-  border:1px solid var(--ligne)}
+.fiche-wiki .fiche-infos dl{display:grid;margin:0}
 /* Une information par ligne : libellé à gauche, valeur à droite. */
-.fiche-wiki .fiche-infos div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;min-width:0;padding:10px 0}
-.fiche-wiki .fiche-infos div + div{border-top:1px solid var(--ligne)}
+.fiche-wiki .fiche-infos dl > div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;min-width:0;padding:10px 0}
+.fiche-wiki .fiche-infos dl > div + div{border-top:1px solid var(--ligne)}
 .fiche-wiki .fiche-infos dt{flex:0 0 auto;font:600 10.5px var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--alu)}
 .fiche-wiki .fiche-infos dd{margin:0;min-width:0;text-align:right;font-family:var(--display);font-size:14.5px;font-weight:600;
   overflow-wrap:anywhere}
