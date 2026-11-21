@@ -231,6 +231,11 @@ html:has(.connexion),html:has(.connexion) body{height:100%;overflow:hidden;overs
 .accueil-co,.collec{position:relative;margin:0 -18px;padding:6px 18px 0}
 /* Rien ne doit élargir la page sur mobile (le navigateur dézoomerait). */
 html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.collec) body{overflow-x:clip}
+/* Appli connectée : même cadrage sur toutes les pages, et au moins la hauteur de l'écran. Sinon, sur iPhone
+   (appli installée), changer de page bascule ce réglage ou raccourcit la page, iOS recalcule la zone de
+   défilement et la barre du bas, fixe, saute. */
+html:has(nav.nav-bas),html:has(nav.nav-bas) body{overflow-x:clip}
+body:has(nav.nav-bas) #racine{min-height:100vh}
 /* Lueur de la largeur exacte de l'écran, centrée : elle ne s'arrête pas aux bords de la colonne (tablette). */
 .lueur-page{position:absolute;z-index:-1;top:-120px;left:50%;width:100vw;transform:translateX(-50%);height:620px;
   pointer-events:none;

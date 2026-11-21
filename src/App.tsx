@@ -55,6 +55,12 @@ export default function App() {
 
   // Une notification remplace la précédente et repart pour 2,4 s : l'ancien minuteur ne doit pas l'effacer.
   const minuterieToast = useRef<number | undefined>(undefined)
+  // Chaque page s'ouvre en haut : sans cela, passer d'une longue page défilée à une page plus courte fait
+  // corriger le défilement d'un coup par iOS, et la barre du bas saute.
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [vue])
+
   const toast = useCallback((m: string) => {
     setMessage(m)
     window.clearTimeout(minuterieToast.current)
