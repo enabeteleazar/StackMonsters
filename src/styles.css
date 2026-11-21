@@ -964,3 +964,33 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .maintenance .accueil-public-description{font-size:clamp(28px,4.2vw,56px);line-height:1.15}
 .maintenance-intro{margin:0;max-width:34em;color:var(--alu);font-size:15.5px;line-height:1.5}
 .maintenance .accueil-public-pied{flex:0 0 auto}
+
+/* ============ fiche du Wiki : photo étirable, infos compactes, sans barre de défilement ============ */
+/* La fiche défile toujours (doigt, molette, clavier), mais sans barre visible. */
+.verdict.fiche-wiki{scrollbar-width:none;overscroll-behavior-y:contain}
+.verdict.fiche-wiki::-webkit-scrollbar{display:none}
+/* Photo étirable (src/etirement.ts) : --etirement agrandit le cadre jusqu'à montrer la photo en entier ;
+   --zoom ne sert qu'au zoom à deux doigts. */
+.photo-etirable{--etirement:0px;--zoom:1;touch-action:pan-y;cursor:grab}
+.photo-etirable.photo-etiree{aspect-ratio:auto;height:calc(100vw * 3 / 4 + var(--etirement));cursor:grabbing}
+@media (min-width:640px){.photo-etirable.photo-etiree{height:calc(min(100vw,640px) * 3 / 4 + var(--etirement))}}
+.photo-etirable img{transform:scale(var(--zoom));transform-origin:50% 50%;will-change:transform}
+/* Pendant le geste : photo entière (contain), agrandie par --zoom pour partir du même cadrage qu'au repos. */
+.photo-etirable.photo-etiree img{object-fit:contain}
+.photo-etirable.photo-retour{transition:height .3s var(--ease)}
+.photo-etirable.photo-retour img{transition:transform .3s var(--ease)}
+@media (prefers-reduced-motion:reduce){.photo-etirable.photo-retour,.photo-etirable.photo-retour img{transition:none}}
+/* Saveur seule, puis un bloc unique pour les autres informations, une par ligne. */
+.fiche-wiki .fiche-saveur{margin:16px 0 10px;padding:12px 14px;border-radius:var(--r-md);background:var(--graphite);
+  border:1px solid var(--ligne)}
+.fiche-wiki .fiche-saveur span{display:block;margin-bottom:3px;font:600 10.5px var(--display);text-transform:uppercase;
+  letter-spacing:.12em;color:var(--alu)}
+.fiche-wiki .fiche-saveur b{font-family:var(--display);font-size:15px;font-weight:600;overflow-wrap:anywhere}
+.fiche-wiki .fiche-infos{display:grid;margin:0 0 16px;padding:2px 14px;border-radius:var(--r-md);background:var(--graphite);
+  border:1px solid var(--ligne)}
+/* Une information par ligne : libellé à gauche, valeur à droite. */
+.fiche-wiki .fiche-infos div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;min-width:0;padding:10px 0}
+.fiche-wiki .fiche-infos div + div{border-top:1px solid var(--ligne)}
+.fiche-wiki .fiche-infos dt{flex:0 0 auto;font:600 10.5px var(--display);text-transform:uppercase;letter-spacing:.12em;color:var(--alu)}
+.fiche-wiki .fiche-infos dd{margin:0;min-width:0;text-align:right;font-family:var(--display);font-size:14.5px;font-weight:600;
+  overflow-wrap:anywhere}

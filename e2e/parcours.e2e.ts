@@ -117,6 +117,10 @@ test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async
   await nav(page, 'Wiki').click()
   await page.getByText(nom).click()
   await expect(page.locator('.bandeau-info .ean')).toBeVisible() // le propriétaire voit les codes-barres
+  // Fiche du Wiki : la saveur seule, puis un bloc unique pour les autres informations ; photo étirable.
+  await expect(page.locator('.fiche-wiki .fiche-saveur')).toBeVisible()
+  await expect(page.locator('.fiche-wiki .fiche-infos dt')).toHaveText(['Catégorie', 'Pays', 'Volume', 'Variante', 'Status'])
+  await expect(page.locator('.fiche-wiki .photo-etirable')).toBeVisible()
   await page.setInputFiles('input[aria-label="Choisir la photo de la fiche"]', 'public/icon-192.png')
   await expect(page.locator('.photo-hero img')).toBeVisible()
   await page.getByRole('button', { name: 'Retirer la photo' }).click()
