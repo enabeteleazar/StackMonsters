@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, Flag, Loader2, Plus, Search, ShieldQuestion, SlidersHorizontal, WifiOff, X } from 'lucide-react'
+import { BookOpen, Flag, Loader2, Plus, Repeat2, Search, SearchCheck, ShieldQuestion, SlidersHorizontal, WifiOff, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
 import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
 import type { FicheWiki as Fiche, ResultatRechercheWiki, TriWiki } from '../types'
@@ -43,6 +43,9 @@ export default function Wiki({ surNonAutorise }: Props) {
   const [tri, setTri] = useState<TriWiki>('pertinence')
   // Propriétaire : n'afficher que les fiches qui ont des erreurs signalées.
   const [signaleesSeules, setSignaleesSeules] = useState(false)
+  // Échanges : mes canettes recherchées, ou celles dont quelqu'un propose des doubles.
+  const [jeChercheSeules, setJeChercheSeules] = useState(false)
+  const [doublesSeules, setDoublesSeules] = useState(false)
   // Propriétaire : n'afficher que les fiches à vérifier (créées par des membres).
   const [aVerifierSeules, setAVerifierSeules] = useState(false)
   const [propositionOuverte, setPropositionOuverte] = useState(false)
@@ -70,6 +73,7 @@ export default function Wiki({ surNonAutorise }: Props) {
               ? { nouveautes: true }
               : { categorie: gamme }),
           region, variante, tri, page, signalees: signaleesSeules, a_verifier: aVerifierSeules,
+          je_cherche: jeChercheSeules, doubles: doublesSeules,
         })
         if (numero !== requeteEnCours.current) return // une recherche plus récente a pris le relais
         setResultat(r)
@@ -82,7 +86,7 @@ export default function Wiki({ surNonAutorise }: Props) {
         if (numero === requeteEnCours.current) setChargement(false)
       }
     },
-    [qEnvoyee, gamme, region, variante, tri, signaleesSeules, aVerifierSeules, surNonAutorise],
+    [qEnvoyee, gamme, region, variante, tri, signaleesSeules, aVerifierSeules, jeChercheSeules, doublesSeules, surNonAutorise],
   )
 
   useEffect(() => {
@@ -90,16 +94,26 @@ export default function Wiki({ surNonAutorise }: Props) {
   }, [charger])
 
   const peutEditer = resultat?.peut_editer ?? false
-  const filtresActifs = !!(qEnvoyee || gamme || region || variante || signaleesSeules || aVerifierSeules)
+  const filtresActifs = !!(qEnvoyee || gamme || region || variante || signaleesSeules || aVerifierSeules || jeChercheSeules || doublesSeules)
   // Filtres du panneau en cours, affichés en pastilles sous la recherche (le tri par défaut n'en est pas un).
   const pastilles = [
     gamme && { cle: 'gamme', libelle: libelleGamme(gamme), retirer: () => setGamme('') },
     region && { cle: 'region', libelle: region, retirer: () => setRegion('') },
     variante && { cle: 'variante', libelle: variante, retirer: () => setVariante('') },
+    jeChercheSeules && { cle: 'je-cherche', libelle: 'Je cherche', retirer: () => setJeChercheSeules(false) },
+    doublesSeules && { cle: 'doubles', libelle: 'Doubles dispo', retirer: () => setDoublesSeules(false) },
     tri !== 'pertinence' && {
       cle: 'tri', libelle: TRIS.find((t) => t.valeur === tri)?.libelle ?? tri, retirer: () => setTri('pertinence'),
     },
   ].filter((p): p is { cle: string; libelle: string; retirer: () => void } => !!p)
+  const effacerFiltres = () => {
+    setGamme('')
+    setRegion('')
+    setVariante('')
+    setTri('pertinence')
+    setJeChercheSeules(false)
+    setDoublesSeules(false)
+  }
   const fiche = ouverte ? (fiches.find((f) => f.ean === ouverte) ?? null) : null
   const fermer = useCallback(() => setOuverte(null), [])
   const toutEffacer = () => {
@@ -109,6 +123,8 @@ export default function Wiki({ surNonAutorise }: Props) {
     setVariante('')
     setSignaleesSeules(false)
     setAVerifierSeules(false)
+    setJeChercheSeules(false)
+    setDoublesSeules(false)
   }
 
   return (
@@ -161,7 +177,7 @@ export default function Wiki({ surNonAutorise }: Props) {
               </button>
             ))}
             {pastilles.length > 1 && (
-              <button className="wiki-pastilles-effacer" onClick={() => { setGamme(''); setRegion(''); setVariante(''); setTri('pertinence') }}>
+              <button className="wiki-pastilles-effacer" onClick={effacerFiltres}>
                 Tout effacer
               </button>
             )}
@@ -231,6 +247,16 @@ export default function Wiki({ surNonAutorise }: Props) {
                       {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
                       {peutEditer && f.moderation === 'en_attente' && <span className="badge-moderation">À vérifier</span>}
                       {peutEditer && f.moderation === 'refusee' && <span className="badge-moderation refusee">Refusée</span>}
+                      {f.je_cherche && (
+                        <span className="wiki-cherche" role="img" aria-label="Tu la cherches">
+                          <SearchCheck size={13} />
+                        </span>
+                      )}
+                      {!!f.doubles && (
+                        <span className="wiki-doubles" title="Collectionneurs qui en proposent des doubles">
+                          <Repeat2 size={12} aria-hidden="true" /> {f.doubles}
+                        </span>
+                      )}
                       {!!f.signalements?.length && (
                         <span className="wiki-signale" role="img" aria-label="Erreur signalée">
                           <Flag size={12} />
@@ -268,7 +294,11 @@ export default function Wiki({ surNonAutorise }: Props) {
           ) : (
             <div className="collec-vide wiki-vide">
               <BookOpen size={34} />
-              <span>Aucune canette ne correspond à cette recherche.</span>
+              <span>
+                {jeChercheSeules && !qEnvoyee && !gamme && !region && !variante && !doublesSeules
+                  ? 'Tu ne cherches aucune canette pour l’instant : ouvre une fiche et touche « Je la cherche ».'
+                  : 'Aucune canette ne correspond à cette recherche.'}
+              </span>
               {resultat.suggestions.length > 0 && (
                 <div className="wiki-suggestions">
                   <span>Tu cherchais :</span>
@@ -299,6 +329,9 @@ export default function Wiki({ surNonAutorise }: Props) {
           region={region}
           variante={variante}
           tri={tri}
+          jeCherche={jeChercheSeules}
+          doubles={doublesSeules}
+          nbJeCherche={resultat?.je_cherche ?? 0}
           proprietaire={peutEditer}
           total={chargement ? null : (resultat?.total ?? null)}
           surChange={(f) => {
@@ -306,8 +339,10 @@ export default function Wiki({ surNonAutorise }: Props) {
             if (f.region !== undefined) setRegion(f.region)
             if (f.variante !== undefined) setVariante(f.variante)
             if (f.tri !== undefined) setTri(f.tri)
+            if (f.jeCherche !== undefined) setJeChercheSeules(f.jeCherche)
+            if (f.doubles !== undefined) setDoublesSeules(f.doubles)
           }}
-          surEffacer={() => { setGamme(''); setRegion(''); setVariante(''); setTri('pertinence') }}
+          surEffacer={effacerFiltres}
           surFermeture={() => setFiltresOuverts(false)}
         />
       )}
@@ -328,7 +363,8 @@ export default function Wiki({ surNonAutorise }: Props) {
           surFermeture={fermer}
           surNonAutorise={surNonAutorise}
           surEnregistree={(eanOriginal, maj) => {
-            setFiches((liste) => liste.map((f) => (f.ean === eanOriginal ? maj : f)))
+            // Une modification par le propriétaire ne renvoie pas les marques du compte : on garde les précédentes.
+            setFiches((liste) => liste.map((f) => (f.ean === eanOriginal ? { ...f, ...maj } : f)))
             setOuverte(maj.ean)
           }}
           surSupprimee={(ean) => {

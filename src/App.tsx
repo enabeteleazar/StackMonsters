@@ -260,7 +260,7 @@ export default function App() {
             surOuvrir={ouvrirFiche}
           />
         )}
-        {vue === 'collec' && <Collection canettes={canettes} surOuvrir={ouvrirFiche} />}
+        {vue === 'collec' && <Collection canettes={canettes} surOuvrir={ouvrirFiche} surNonAutorise={verrouiller} />}
         {vue === 'wiki' && <Wiki surNonAutorise={verrouiller} />}
         {vue === 'reglages' && (
           <Settings
@@ -269,6 +269,7 @@ export default function App() {
             surVerrouiller={verrouiller}
             surStats={() => setVue('stats')}
             nbCanettes={canettes.length}
+            surPreferencesChangees={recharger}
             surCollectionVidee={(retirees) => {
               viderPhotos()
               void recharger()
@@ -355,6 +356,7 @@ export default function App() {
           surEnregistrer={enregistrer}
           surSupprimer={supprimer}
           surFermeture={() => setEan(null)}
+          surCollectionChangee={recharger}
         />
       )}
 

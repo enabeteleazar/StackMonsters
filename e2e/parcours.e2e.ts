@@ -169,13 +169,19 @@ test('une fiche encore dans une collection se masque du Wiki au lieu d’être s
   await expect(membre.getByText(nom)).toBeVisible() // gardée dans sa collection
 })
 
-test('vider sa collection garde le compte et le Wiki', async ({ page }) => {
+test('vider sa collection : réservé au propriétaire, garde le compte et le Wiki', async ({ page, browser }) => {
+  const membre = await nouvellePage(browser)
+  await connecter(membre, email())
+  await nav(membre, 'Réglages').click()
+  await expect(membre.getByRole('switch', { name: /Partage des doublons/ })).toBeVisible()
+  await expect(membre.getByRole('button', { name: /Vider ma collection|Collection déjà vide/ })).toHaveCount(0)
+
   const nom = `A vider ${unique()}`
-  await connecter(page, email())
+  await connecter(page, PROPRIETAIRE)
   await ajouterParCode(page, ean13(), nom)
   await nav(page, 'Réglages').click()
   await page.getByRole('button', { name: 'Vider ma collection' }).click()
-  await expect(page.getByText('La canette de ta collection sera retirée')).toBeVisible()
+  await expect(page.getByText(/(La canette|Les \d+ canettes) de ta collection (sera|seront) retirée/)).toBeVisible()
   await page.getByRole('button', { name: 'Annuler' }).click()
   await nav(page, 'Collection').click()
   await expect(page.getByText(nom)).toBeVisible() // annulé : rien n'a bougé
@@ -192,62 +198,39 @@ test('vider sa collection garde le compte et le Wiki', async ({ page }) => {
   await expect(page.locator('.wiki-grille').getByText(nom)).toBeVisible() // la fiche du Wiki reste
 })
 
-test('la suppression du compte exige l’adresse et efface la collection', async ({ page, browser }) => {
-  const adresse = email()
-  const nom = `À effacer ${unique()}`
-  await connecter(page, adresse)
-  await ajouterParCode(page, ean13(), nom)
+test('le bouton « Supprimer mon compte » est masqué', async ({ page }) => {
+  await connecter(page, email())
   await nav(page, 'Réglages').click()
-
-  const autre = await nouvellePage(browser)
-  await connecter(autre, adresse)
-
-  // Annuler ne supprime rien.
-  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
-  await expect(page.getByText('ta collection : canettes, quantités, états, notes et photos')).toBeVisible()
-  await page.getByRole('button', { name: 'Annuler' }).click()
-  await expect(page.getByRole('button', { name: 'Supprimer définitivement' })).toHaveCount(0)
-
-  // Le bouton reste inactif tant que l'adresse saisie n'est pas celle du compte.
-  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
-  const confirmer = page.getByRole('button', { name: 'Supprimer définitivement' })
-  await page.getByLabel(/Pour confirmer/).fill('mauvaise@example.com')
-  await expect(confirmer).toBeDisabled()
-  await page.getByLabel(/Pour confirmer/).fill(adresse.toUpperCase())
-  await confirmer.click()
-  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
-
-  await autre.reload() // l'autre appareil perd aussi l'accès
-  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
-
-  await connecter(page, adresse)
-  await nav(page, 'Collection').click()
-  await expect(page.getByText(nom)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Se déconnecter', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Supprimer mon compte' })).toHaveCount(0)
 })
 
-test('déconnexion : cet appareil seulement, puis tous les appareils', async ({ page, browser }) => {
+test('déconnexion : cet appareil seulement', async ({ page, browser }) => {
   const adresse = email()
   const autre = await nouvellePage(browser)
-  const troisieme = await nouvellePage(browser)
   await connecter(page, adresse)
   await connecter(autre, adresse)
-  await connecter(troisieme, adresse)
-
-  await nav(troisieme, 'Réglages').click()
-  await troisieme.getByRole('button', { name: 'Se déconnecter', exact: true }).click()
-  await expect(troisieme.getByRole('button', { name: 'Entrez' })).toBeVisible()
-  await autre.reload()
-  await expect(nav(autre, 'Réglages')).toBeVisible() // les autres appareils restent connectés
 
   await nav(page, 'Réglages').click()
-  page.once('dialog', (d) => d.dismiss())
-  await page.getByRole('button', { name: 'Déconnecter tous les appareils' }).click()
-  await expect(nav(page, 'Réglages')).toBeVisible() // annulé : rien ne change
-  page.once('dialog', (d) => d.accept())
-  await page.getByRole('button', { name: 'Déconnecter tous les appareils' }).click()
+  await page.getByRole('button', { name: 'Se déconnecter', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
   await autre.reload()
-  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
+  await expect(nav(autre, 'Réglages')).toBeVisible() // les autres appareils restent connectés
+})
+
+test('réglages : le partage des doublons se coupe et se rallume', async ({ page }) => {
+  await connecter(page, email())
+  await nav(page, 'Réglages').click()
+  await expect(page.getByRole('button', { name: 'Déconnecter tous les appareils' })).toHaveCount(0)
+  const bascule = page.getByRole('switch', { name: /Partage des doublons/ })
+  await expect(bascule).toHaveAttribute('aria-checked', 'true')
+  await bascule.click()
+  await expect(bascule).toHaveAttribute('aria-checked', 'false')
+  await page.reload()
+  await nav(page, 'Réglages').click()
+  await expect(page.getByRole('switch', { name: /Partage des doublons/ })).toHaveAttribute('aria-checked', 'false')
+  await page.getByRole('switch', { name: /Partage des doublons/ }).click()
+  await expect(page.getByRole('switch', { name: /Partage des doublons/ })).toHaveAttribute('aria-checked', 'true')
 })
 
 test('l’invitation à installer l’appli s’affiche une seule fois, après la première connexion', async ({ page, browser }) => {
@@ -285,6 +268,60 @@ test('l’invitation à installer l’appli s’affiche une seule fois, après l
   await expect(surIphone.getByText('Sur l’écran d’accueil')).toBeVisible()
 })
 
+test('échanges : un membre propose ses doubles, un autre cherche la canette', async ({ page, browser }) => {
+  const nom = `Echange ${unique()}`
+  const code = ean13()
+  await connecter(page, email())
+  await ajouterParCode(page, code, nom)
+  await saisirCode(page, code) // déjà possédée : doublon ajouté d'office, 2 exemplaires
+  await expect(page.getByText(`Doublon ajouté · ${nom} × 2`)).toBeVisible()
+  await nav(page, 'Collection').click()
+  await page.getByRole('button', { name: nom }).click()
+  await page.getByRole('button', { name: /Proposer mes doubles \(1\)/ }).click()
+  await expect(page.getByRole('button', { name: /Doubles proposés \(1\)/ })).toBeVisible()
+
+  const autre = await nouvellePage(browser)
+  await connecter(autre, email())
+  await nav(autre, 'Wiki').click()
+  await autre.getByLabel('Chercher dans le Wiki').fill(nom)
+  await autre.locator('.wiki-grille').getByText(nom).click()
+  await expect(autre.getByText('1 collectionneur l’a en double')).toBeVisible()
+  await expect(autre.locator('.fiche-wiki').getByText('Possédée', { exact: true })).toHaveCount(0) // l'autre membre ne l'a pas
+  await autre.getByRole('button', { name: 'Je la cherche' }).click()
+  await expect(autre.getByText('1 collectionneur la cherche')).toBeVisible()
+  await autre.getByRole('button', { name: 'Fermer' }).first().click()
+  await autre.getByLabel('Chercher dans le Wiki').fill('')
+  // « Je cherche » est dans le panneau Filtres, puis devient une pastille sous la recherche.
+  await autre.getByRole('button', { name: 'Filtres' }).click()
+  await autre.getByRole('button', { name: /Je cherche · 1/ }).click()
+  await autre.getByRole('button', { name: /^Voir/ }).click()
+  await expect(autre.getByRole('button', { name: 'Retirer le filtre Je cherche' })).toBeVisible()
+  await expect(autre.locator('.wiki-grille').getByText(nom)).toBeVisible()
+
+
+  // Le premier membre la possède : la fiche du Wiki porte le badge « Possédée ».
+  await page.getByRole('button', { name: 'Fermer' }).first().click()
+  await nav(page, 'Wiki').click()
+  await page.getByLabel('Chercher dans le Wiki').fill(nom)
+  await page.locator('.wiki-grille').getByText(nom).click()
+  await expect(page.locator('.fiche-wiki').getByText('Possédée', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Fermer' }).first().click()
+
+  await page.reload() // le premier membre voit qu'on la cherche, sans savoir qui
+  await nav(page, 'Collection').click()
+  await page.getByRole('button', { name: nom }).click()
+  await expect(page.getByText('1 collectionneur la cherche')).toBeVisible()
+
+  // La page Collection a un onglet « Recherchées » ; décocher depuis la fiche la retire de la liste.
+  await nav(autre, 'Collection').click()
+  await autre.getByRole('tab', { name: /Recherchées · 1/ }).click()
+  await autre.getByRole('button', { name: nom }).click()
+  await autre.getByRole('button', { name: 'Je ne la cherche plus' }).click()
+  await autre.getByRole('button', { name: 'Fermer' }).first().click()
+  await expect(autre.getByRole('tab', { name: /Recherchées · 0/ })).toBeVisible()
+  await expect(autre.getByText('Aucune canette recherchée.', { exact: false })).toBeVisible()
+})
+
 test('la politique de confidentialité est accessible sans compte', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('link', { name: 'Confidentialité' }).click()
@@ -312,12 +349,12 @@ test('scan : canette inconnue, puis présente dans le Wiki, puis déjà posséd�
   await autre.getByRole('button', { name: 'Vide', exact: true }).click()
   await expect(autre.getByText('Ajoutée à ta collection · Vide')).toBeVisible()
 
-  // Nouveau scan : fiche miniature et « +1 ».
+  // Nouveau scan : le doublon s'ajoute tout seul, une notification le dit.
   await saisirCode(autre, code)
-  await expect(autre.getByText('Déjà dans ta collection')).toBeVisible()
-  await autre.getByRole('button', { name: 'Ajouter un doublon / +1' }).click()
-  await expect(autre.locator('.scan-quantite')).toHaveText('Quantité : 2')
-  await autre.getByRole('button', { name: 'Voir la fiche' }).click()
+  await expect(autre.getByText(`Doublon ajouté · ${nom} × 2`)).toBeVisible()
+  await expect(autre.getByRole('dialog', { name: 'Résultat du scan' })).toHaveCount(0)
+  await nav(autre, 'Collection').click()
+  await autre.getByRole('button', { name: nom }).click()
   await expect(autre.locator('.fiche-infos div').filter({ hasText: 'Quantité' })).toContainText('2')
 })
 
@@ -376,7 +413,7 @@ test('un scan donne son vrai code-barres à une fiche du Wiki qui n’en avait p
   await expect(autre.locator('.bandeau-info .ean')).toHaveCount(0) // codes réservés au propriétaire
   await autre.getByRole('button', { name: 'Fermer' }).click()
   await saisirCode(autre, reel)
-  await expect(autre.getByText('Déjà dans ta collection')).toBeVisible()
+  await expect(autre.getByText(/^Doublon ajouté · .* × 2$/)).toBeVisible()
   // Le premier collectionneur a suivi : sa canette porte maintenant le vrai code.
   await nav(page, 'Collection').click()
   await page.reload()
@@ -408,5 +445,30 @@ test('un second code-barres rejoint une fiche qui a déjà un vrai code', async 
   // Un nouveau scan du second code retrouve la canette déjà possédée.
   await autre.getByRole('button', { name: 'Fermer' }).click()
   await saisirCode(autre, second)
-  await expect(autre.getByText('Déjà dans ta collection')).toBeVisible()
+  await expect(autre.getByText(/^Doublon ajouté · .* × 2$/)).toBeVisible()
+})
+
+test('collection : recherche, panneau Filtres et pastilles, comme le Wiki', async ({ page }) => {
+  const u = unique()
+  await connecter(page, email())
+  await ajouterParCode(page, ean13(), `Alpha ${u}`)
+  await ajouterParCode(page, ean13(), `Beta ${u}`)
+  await nav(page, 'Collection').click()
+  await expect(page.getByRole('tab', { name: 'Possédées · 2' })).toBeVisible()
+
+  await page.getByLabel('Chercher un nom').fill(`beta ${u}`)
+  await expect(page.getByText('1 résultat')).toBeVisible()
+  await expect(page.getByRole('button', { name: `Alpha ${u}` })).toHaveCount(0)
+  await page.getByLabel('Chercher un nom').fill('')
+
+  await page.getByRole('button', { name: 'Filtres' }).click()
+  await expect(page.getByRole('dialog').getByText('Échanges')).toHaveCount(0) // propre au Wiki
+  await page.getByRole('dialog').getByRole('radio', { name: 'A → Z' }).click()
+  await page.getByRole('dialog').getByRole('radio', { name: 'Ultra' }).click()
+  await page.getByRole('button', { name: /^Voir 0 résultat/ }).click()
+  await expect(page.getByText('Aucune canette ne correspond à ces critères.')).toBeVisible()
+  await page.getByRole('button', { name: 'Retirer le filtre Ultra' }).click()
+  await expect(page.getByRole('button', { name: 'Retirer le filtre A → Z' })).toBeVisible()
+  const noms = await page.locator('.collec-nom').allTextContents()
+  expect(noms).toEqual([`Alpha ${u}`, `Beta ${u}`])
 })

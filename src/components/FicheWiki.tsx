@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePhotoEtirable } from '../etirement'
-import { Ban, CheckCircle2, EyeOff, Flag, ImageOff, ImagePlus, ShieldQuestion, Trash2, X } from 'lucide-react'
+import { Ban, CheckCircle2, EyeOff, Flag, ImageOff, ImagePlus, Repeat2, SearchCheck, ShieldQuestion, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
 import { ChampSaveur, ChampVariante, ChampVolume } from './ChampsFiche'
@@ -37,6 +37,8 @@ export default function FicheWiki({
   const [edition, setEdition] = useState(false)
   const [suppressionOccupe, setSuppressionOccupe] = useState(false)
   const [erreurSuppression, setErreurSuppression] = useState<string | null>(null)
+  const [rechercheOccupee, setRechercheOccupee] = useState(false)
+  const [erreurRecherche, setErreurRecherche] = useState<string | null>(null)
   // Suppression refusée (canette encore dans une collection) : la fiche peut être masquée à la place.
   const [masquable, setMasquable] = useState(false)
   const [codeOccupe, setCodeOccupe] = useState(false)
@@ -124,6 +126,22 @@ export default function FicheWiki({
     }
   }
 
+  /** Échanges : noter la canette comme recherchée, ou ne plus la chercher. */
+  const basculerRecherche = async () => {
+    setRechercheOccupee(true)
+    setErreurRecherche(null)
+    try {
+      surEnregistree(fiche.ean, await api.wikiChercher(fiche.ean, !fiche.je_cherche))
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+      else setErreurRecherche(
+        e instanceof ErreurAPI && e.status === 409 ? 'Elle est déjà dans ta collection.' : 'Impossible pour le moment, réessaie avec le réseau.',
+      )
+    } finally {
+      setRechercheOccupee(false)
+    }
+  }
+
   const supprimer = async () => {
     if (!confirm(`Supprimer la fiche « ${fiche.nom || fiche.ean} » du Wiki ? Ce n’est possible que si aucune collection ne la contient.`)) return
     setSuppressionOccupe(true)
@@ -181,6 +199,12 @@ export default function FicheWiki({
       <div ref={cadrePhoto} className="photo-hero photo-hero-plein photo-etirable">
         <PhotoWiki ean={fiche.ean} version={fiche.photo} taille={34} legende="Pas de photo" />
         {fiche.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
+        {/* Même badge que la fiche de collection : la canette est dans la collection du compte. */}
+        {fiche.je_possede && !edition && (
+          <span className="badge badge-possede badge-etat">
+            <CheckCircle2 size={13} /> Possédée
+          </span>
+        )}
         <button className="btn-icone fermer" onClick={surFermeture} aria-label="Fermer">
           <X size={20} />
         </button>
@@ -248,6 +272,36 @@ export default function FicheWiki({
                   </div>
                 ))}
               </dl>
+            </div>
+
+            <div className="fiche-echanges" role="region" aria-label="Échanges">
+              <span className="etiquette">Échanges</span>
+              <p>
+                <Repeat2 size={17} aria-hidden="true" />
+                {fiche.doubles
+                  ? `${fiche.doubles} collectionneur${fiche.doubles > 1 ? 's' : ''} l’${fiche.doubles > 1 ? 'ont' : 'a'} en double`
+                  : 'Personne ne la propose en double pour l’instant'}
+              </p>
+              <p>
+                <SearchCheck size={17} aria-hidden="true" />
+                {fiche.recherches
+                  ? `${fiche.recherches} collectionneur${fiche.recherches > 1 ? 's' : ''} la cherche${fiche.recherches > 1 ? 'nt' : ''}`
+                  : 'Personne ne la cherche pour l’instant'}
+              </p>
+              {fiche.je_possede ? (
+                <p className="fiche-echanges-note">Elle est dans ta collection : tu peux proposer tes doubles depuis sa fiche.</p>
+              ) : (
+                <button
+                  className={`btn ${fiche.je_cherche ? 'btn-fantome' : 'btn-primaire'}`}
+                  aria-pressed={!!fiche.je_cherche}
+                  disabled={rechercheOccupee}
+                  onClick={() => void basculerRecherche()}
+                >
+                  <SearchCheck size={18} />
+                  {fiche.je_cherche ? 'Je ne la cherche plus' : 'Je la cherche'}
+                </button>
+              )}
+              {erreurRecherche && <p className="sous" role="alert">{erreurRecherche}</p>}
             </div>
 
             {peutEditer && !!fiche.a_reprendre?.length && (

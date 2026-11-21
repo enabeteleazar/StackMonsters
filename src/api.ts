@@ -112,7 +112,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, code }),
     }),
-  moi: () => requete<{ email: string }>('/auth/moi'),
+  moi: () => requete<{ email: string; partage_doubles?: boolean }>('/auth/moi'),
+  /** Réglage du compte : partager ou non ses doublons (interrupteur général). */
+  reglerPartageDoubles: (actif: boolean) =>
+    requete<{ partage_doubles: boolean }>('/auth/partage-doubles', { method: 'PATCH', body: JSON.stringify({ echange: actif }) }),
   deconnexion: () => requete<void>('/auth/deconnexion', { method: 'POST' }),
   /** Révoque toutes les sessions du compte (tous les appareils), celle-ci comprise. */
   deconnexionPartout: () => requete<void>('/auth/deconnexion-partout', { method: 'POST' }),
@@ -127,6 +130,12 @@ export const api = {
   wiki: () => requete<ReponseWiki>('/wiki'),
   /** Saveurs déjà connues dans le Wiki, les plus fréquentes d'abord (suggestions des formulaires). */
   wikiSaveurs: () => requete<string[]>('/wiki/saveurs'),
+  /** Échanges : noter (ou ne plus noter) une canette du Wiki comme recherchée. */
+  wikiChercher: (ean: string, cherche: boolean) =>
+    requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/recherche`, { method: cherche ? 'POST' : 'DELETE' }),
+  /** Échanges : proposer (ou retirer) les doubles d'une canette de sa collection. */
+  proposerDoubles: (ean: string, echange: boolean) =>
+    requete<Canette>(`/cans/${encodeURIComponent(ean)}/echange`, { method: 'PATCH', body: JSON.stringify({ echange }) }),
   /** Recherche paginée côté serveur dans le catalogue partagé. */
   wikiRecherche: (p: {
     q?: string
@@ -139,6 +148,9 @@ export const api = {
     sans_categorie?: boolean
     variante?: string
     nouveautes?: boolean
+    je_cherche?: boolean
+    doubles?: boolean
+    par_page?: number
   }) => {
     const params = new URLSearchParams()
     for (const [cle, valeur] of Object.entries(p)) if (valeur) params.set(cle, String(valeur))

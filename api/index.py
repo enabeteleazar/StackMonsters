@@ -72,7 +72,9 @@ COLONNES_COLLECTION = (
     "COALESCE(w.description, '') AS description, "
     "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
     "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region, "
-    "COALESCE(w.variante, '') AS variante"
+    "COALESCE(w.variante, '') AS variante, c.echange, "
+    "(SELECT u.partage_doubles FROM users u WHERE u.id = c.user_id) AS partage_doubles, "
+    "(SELECT COUNT(*) FROM recherches r WHERE r.fiche = w.ean) AS recherches"
 )
 # Fiche du Wiki d'une ligne de collection : par son code, par la fiche dont c'est un code secondaire,
 # ou par celle qui a remplacé ce code (wiki_exclus.vers).
@@ -390,6 +392,25 @@ CREATE INDEX wiki_recherche ON wiki USING gin (
 UPDATE wiki SET variante = CASE WHEN sm_texte(nom) ~ '\m(limited|limitee)\M' THEN 'Édition limitée' ELSE 'Standard' END
     WHERE variante = '' AND btrim(nom) <> '';
 """),
+    # Échanges, étape 1 (doubles et recherchées) : un membre propose ses doubles d'une canette (collection.echange,
+    # compté seulement s'il en a au moins 2) et note les canettes qu'il cherche (recherches). Les fiches n'en
+    # montrent que des compteurs, jamais qui. Tout part avec le compte (ON DELETE CASCADE) ; une recherche suit la
+    # fiche si son code-barres change (ON UPDATE CASCADE) et disparaît avec elle.
+    (16, """
+ALTER TABLE collection ADD COLUMN IF NOT EXISTS echange BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS collection_echange ON collection (ean) WHERE echange;
+CREATE TABLE IF NOT EXISTS recherches (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE,
+    ajout TEXT NOT NULL,
+    PRIMARY KEY (user_id, fiche));
+CREATE INDEX IF NOT EXISTS recherches_fiche ON recherches (fiche);
+"""),
+    # Réglage du compte : partager ou non ses doublons (interrupteur général, activé par défaut). Désactivé, aucun
+    # double du compte n'est compté, même ceux proposés canette par canette ; le choix de chaque canette est gardé.
+    (17, """
+ALTER TABLE users ADD COLUMN IF NOT EXISTS partage_doubles BOOLEAN NOT NULL DEFAULT true;
+"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -526,6 +547,10 @@ class Demande(BaseModel):
 
 class Verification(Demande):
     code: str = Field(min_length=6, max_length=6)
+
+
+class Echange(BaseModel):
+    echange: bool
 
 
 class Vidage(BaseModel):
@@ -949,8 +974,18 @@ router = APIRouter(dependencies=[Depends(utilisateur)])
 
 
 @router.get("/auth/moi")
-def moi(u: dict = Depends(utilisateur)) -> dict:
-    return {"email": u["email"]}
+def moi(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    with cx.transaction():
+        r = cx.execute("SELECT partage_doubles FROM users WHERE id = %s", (u["id"],)).fetchone()
+    return {"email": u["email"], "partage_doubles": r["partage_doubles"]}
+
+
+@router.patch("/auth/partage-doubles")
+def regler_partage_doubles(e: Echange, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Interrupteur général du compte : partager ou non ses doublons (le choix de chaque canette est gardé)."""
+    with cx.transaction():
+        cx.execute("UPDATE users SET partage_doubles = %s WHERE id = %s", (e.echange, u["id"]))
+    return {"partage_doubles": e.echange}
 
 
 @router.post("/auth/renouveler")
@@ -1162,6 +1197,7 @@ def enregistrer(c: Canette, u: dict = Depends(utilisateur), cx: psycopg.Connecti
             (u["id"], ean, c.nom, c.volume, c.etat, c.nb, c.notes, c.photo,
              c.ajout or maintenant(), maintenant(), "photo" in c.model_fields_set),  # champ absent : photo conservée
         )
+        cx.execute("DELETE FROM recherches WHERE user_id = %s AND fiche = %s", (u["id"], fiche))  # trouvée !
         return _canette(cx, u["id"], ean)
 
 
@@ -1171,6 +1207,18 @@ def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur), cx: psycopg.Conn
         n = cx.execute(
             "UPDATE collection SET nb = GREATEST(1, nb + %s), maj = %s WHERE user_id = %s AND ean = %s",
             (d.delta, maintenant(), u["id"], ean)).rowcount
+        r = _canette(cx, u["id"], ean) if n else None
+    if r is None:
+        raise HTTPException(404, "canette inconnue")
+    return r
+
+
+@router.patch("/cans/{ean}/echange")
+def proposer_doubles(ean: str, e: Echange, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Propose (ou retire) les doubles de cette canette à l'échange ; ils ne comptent qu'à partir de 2 exemplaires."""
+    with cx.transaction():
+        n = cx.execute("UPDATE collection SET echange = %s, maj = %s WHERE user_id = %s AND ean = %s",
+                       (e.echange, maintenant(), u["id"], ean)).rowcount
         r = _canette(cx, u["id"], ean) if n else None
     if r is None:
         raise HTTPException(404, "canette inconnue")
@@ -1203,7 +1251,12 @@ COLONNES_FICHE = (
     "COALESCE((SELECT json_agg(json_build_object('id', s.id, 'motif', s.motif, 'cree', s.cree) ORDER BY s.id) "
     "FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL), '[]') AS signalements, moderation, "
     "COALESCE((SELECT json_agg(json_build_object('decision', m.decision, 'motif', m.motif, 'cree', m.cree) "
-    "ORDER BY m.id) FROM wiki_moderations m WHERE m.fiche = wiki.ean), '[]') AS moderations"
+    "ORDER BY m.id) FROM wiki_moderations m WHERE m.fiche = wiki.ean), '[]') AS moderations, "
+    # Échanges : nombre de collectionneurs qui proposent des doubles (code principal ou secondaire) et qui la cherchent.
+    "(SELECT COUNT(DISTINCT c.user_id) FROM collection c WHERE c.echange AND c.nb >= 2 "
+    "AND (SELECT u.partage_doubles FROM users u WHERE u.id = c.user_id) AND (c.ean = wiki.ean OR "
+    "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = wiki.ean))) AS doubles, "
+    "(SELECT COUNT(*) FROM recherches r WHERE r.fiche = wiki.ean) AS recherches"
 )
 
 
@@ -1219,6 +1272,7 @@ def _fiche(r: dict, proprietaire: bool = False) -> dict:
         "region": r["region"], "variante": r["variante"],
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
         "codes": list(r["codes"]),
+        "doubles": r["doubles"], "recherches": r["recherches"],
     }
     if proprietaire:
         fiche["moderation"] = r["moderation"]
@@ -1227,6 +1281,19 @@ def _fiche(r: dict, proprietaire: bool = False) -> dict:
         fiche["signalements"] = r["signalements"]
         fiche["moderations"] = r["moderations"]
     return fiche
+
+
+def _marquer_recherches(cx: psycopg.Connection, fiches: list[dict], user_id: int) -> list[dict]:
+    """Ajoute, pour ce compte : « je_cherche » (notée comme recherchée) et « je_possede » (dans sa collection,
+    sous son code principal ou un code secondaire)."""
+    miennes = {r["fiche"] for r in cx.execute("SELECT fiche FROM recherches WHERE user_id = %s", (user_id,))}
+    possedees = {r["fiche"] for r in cx.execute(
+        "SELECT COALESCE((SELECT k.fiche FROM wiki_codes k WHERE k.ean = c.ean), c.ean) AS fiche "
+        "FROM collection c WHERE c.user_id = %s", (user_id,))}
+    for f in fiches:
+        f["je_cherche"] = f["ean"] in miennes
+        f["je_possede"] = f["ean"] in possedees
+    return fiches
 
 
 def _fiche_du_code(cx: psycopg.Connection, code: str) -> str | None:
@@ -1278,6 +1345,8 @@ def wiki_recherche(
     a_verifier: bool = False,
     sans_categorie: bool = False,
     nouveautes: bool = False,
+    je_cherche: bool = False,
+    doubles: bool = False,
     u: dict = Depends(utilisateur),
     cx: psycopg.Connection = Depends(connexion),
 ) -> dict:
@@ -1308,6 +1377,13 @@ def wiki_recherche(
     if variante:
         conditions.append("variante = %s")
         params.append(variante)
+    if je_cherche:  # les canettes que ce compte cherche
+        conditions.append("EXISTS (SELECT 1 FROM recherches r WHERE r.fiche = wiki.ean AND r.user_id = %s)")
+        params.append(u["id"])
+    if doubles:  # au moins un collectionneur en propose des doubles
+        conditions.append("EXISTS (SELECT 1 FROM collection c WHERE c.echange AND c.nb >= 2 "
+                          "AND (SELECT u.partage_doubles FROM users u WHERE u.id = c.user_id) AND (c.ean = wiki.ean OR "
+                          "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = wiki.ean)))")
     if signalees and proprio:
         conditions.append("EXISTS (SELECT 1 FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL)")
     if a_verifier and proprio:
@@ -1353,9 +1429,12 @@ def wiki_recherche(
         nb_a_verifier = cx.execute(
             "SELECT COUNT(*) AS n FROM wiki WHERE moderation = 'en_attente'"
         ).fetchone()["n"] if proprio else 0
+        fiches = _marquer_recherches(cx, [_fiche(r, proprio) for r in lignes], u["id"])
+        nb_je_cherche = cx.execute("SELECT COUNT(*) AS n FROM recherches WHERE user_id = %s", (u["id"],)).fetchone()["n"]
     return {
         "peut_editer": proprio,
-        "fiches": [_fiche(r, proprio) for r in lignes],
+        "fiches": fiches,
+        "je_cherche": nb_je_cherche,
         "total": total,
         "total_catalogue": total_catalogue,
         "page": page,
@@ -1375,7 +1454,39 @@ def wiki_liste(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(
         lignes = cx.execute(
             f"SELECT {COLONNES_FICHE} FROM wiki{visibles} ORDER BY (nom = ''), lower(nom), ean"
         ).fetchall()
-    return {"peut_editer": proprio, "fiches": [_fiche(r, proprio) for r in lignes]}
+        fiches = _marquer_recherches(cx, [_fiche(r, proprio) for r in lignes], u["id"])
+    return {"peut_editer": proprio, "fiches": fiches}
+
+
+@router.post("/wiki/{ean}/recherche")
+def wiki_chercher(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Note la canette comme recherchée par ce compte (pour les échanges). Sans effet si elle l'est déjà."""
+    proprio = _est_proprietaire(u["email"])
+    with cx.transaction():
+        f = cx.execute("SELECT moderation FROM wiki WHERE ean = %s", (ean,)).fetchone()
+        if f is None or (f["moderation"] == "refusee" and not proprio):
+            raise HTTPException(404, "fiche inconnue")
+        if cx.execute(
+            "SELECT 1 FROM collection c WHERE c.user_id = %s AND (c.ean = %s OR "
+            "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = %s))", (u["id"], ean, ean),
+        ).fetchone():
+            raise HTTPException(409, "cette canette est déjà dans ta collection")
+        cx.execute("INSERT INTO recherches (user_id, fiche, ajout) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                   (u["id"], ean, maintenant()))
+        r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (ean,)).fetchone()
+        return _marquer_recherches(cx, [_fiche(r, proprio)], u["id"])[0]
+
+
+@router.delete("/wiki/{ean}/recherche")
+def wiki_ne_plus_chercher(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Retire la canette des recherchées de ce compte. Sans effet si elle n'y était pas."""
+    proprio = _est_proprietaire(u["email"])
+    with cx.transaction():
+        cx.execute("DELETE FROM recherches WHERE user_id = %s AND fiche = %s", (u["id"], ean))
+        r = cx.execute(f"SELECT {COLONNES_FICHE} FROM wiki WHERE ean = %s", (ean,)).fetchone()
+        if r is None or (r["moderation"] == "refusee" and not proprio):
+            raise HTTPException(404, "fiche inconnue")
+        return _marquer_recherches(cx, [_fiche(r, proprio)], u["id"])[0]
 
 
 @router.get("/wiki/saveurs")

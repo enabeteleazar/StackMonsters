@@ -1,7 +1,25 @@
 #!/usr/bin/env bash
 # Lance l'API (port 8055) et le front Vite (port 5273) ensemble.
+#
+#   ./dev.sh            démarre sans toucher au schéma de la base
+#   ./dev.sh --migrer   applique d'abord les migrations manquantes à la base de DATABASE_URL (.env.local),
+#                       c'est-à-dire : DATABASE_URL='…' .venv/bin/python scripts/migrer_schema.py
+#
+#   SM_POLLING=1 ./dev.sh   si Vite s'arrête sur « ENOSPC: System limit for number of file watchers reached » :
+#                           les fichiers sont relus régulièrement au lieu d'être surveillés par le système
+#                           (solution durable : relever fs.inotify.max_user_watches, voir le README)
+#
+# DATABASE_URL vient de .env.local (jamais commité) : ne jamais l'écrire dans ce fichier.
 set -euo pipefail
 cd "$(dirname "$0")"
+
+MIGRER=0
+for arg in "$@"; do
+  case "$arg" in
+    --migrer) MIGRER=1 ;;
+    *) echo "Option inconnue : $arg (seule option : --migrer)" >&2; exit 1 ;;
+  esac
+done
 
 # Variables locales : DATABASE_URL (et API_TOKEN) depuis .env.local si présent.
 if [ -f .env.local ]; then
@@ -68,15 +86,17 @@ then
   exit 1
 fi
 
-# Migrations automatiques seulement avec SM_MIGRATION_AUTO=1 : .env.local peut désigner la base de production,
-# qui ne doit être migrée qu'au déploiement (scripts/migrer_schema.py). Sinon l'API répond 503 si la base est en retard.
-if [ "${SM_MIGRATION_AUTO:-}" = "1" ]; then
+# Migrations seulement sur demande (--migrer, ou SM_MIGRATION_AUTO=1) : .env.local peut désigner la base de
+# production, qui ne doit pas changer de version sans qu'on le décide. Sans migration, l'API répond « Service en
+# maintenance » (503) tant que la base est en retard sur le code de la branche ouverte.
+if [ "$MIGRER" = "1" ] || [ "${SM_MIGRATION_AUTO:-}" = "1" ]; then
+  echo "Migrations sur la base : $(.venv/bin/python -c 'import os,urllib.parse as u;print(u.urlparse(os.environ["DATABASE_URL"]).hostname)')"
   .venv/bin/python scripts/migrer_schema.py
 else
-  echo "Migrations non appliquées (SM_MIGRATION_AUTO≠1). Base en retard : SM_MIGRATION_AUTO=1 ./dev.sh, ou scripts/migrer_schema.py."
+  echo "Migrations non appliquées. Si l'appli affiche « Service en maintenance », la base est en retard : ./dev.sh --migrer"
 fi
 
-.venv/bin/python -m uvicorn api.index:app --host 127.0.0.1 --port 8055 --reload &
+.venv/bin/python -m uvicorn api.index:app --host 127.0.0.1 --port 8055 --reload --reload-dir api &
 API=$!
 trap 'kill $API 2>/dev/null || true' EXIT
 

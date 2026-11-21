@@ -58,7 +58,7 @@ def test_sans_session_tout_est_refuse(env):
 def test_connexion_et_collection(env):
     c, codes = env
     h = connecter(c, codes, A)
-    assert c.get("/api/auth/moi", headers=h).json() == {"email": A}
+    assert c.get("/api/auth/moi", headers=h).json() == {"email": A, "partage_doubles": True}
     assert c.put("/api/cans", json=canette(), headers=h).status_code == 200
     assert [x["ean"] for x in c.get("/api/cans", headers=h).json()] == ["2000000000015"]
     assert c.patch("/api/cans/2000000000015/nb", json={"delta": 2}, headers=h).json()["nb"] == 3
@@ -723,7 +723,7 @@ def test_rotation_quotidienne_du_jeton(env, monkeypatch):
     horloge[0] = debut + ix.ROTATION_SESSION + 1
     nouveau = c.post("/api/auth/renouveler", headers=h).json()["token"]
     h2 = {"Authorization": f"Bearer {nouveau}"}
-    assert nouveau and c.get("/api/auth/moi", headers=h2).json() == {"email": A}
+    assert nouveau and c.get("/api/auth/moi", headers=h2).json()["email"] == A
     # L'ancien jeton reste valable quelques minutes, ne se renouvelle plus et n'est plus prolongé.
     assert c.get("/api/auth/moi", headers=h).status_code == 200
     assert c.post("/api/auth/renouveler", headers=h).json() == {"token": None}
@@ -1087,7 +1087,7 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
     assert (f["categorie"], f["flavor"], f["status"], f["region"]) == ("", "", "", "")
     assert set(f) == {
         "ean", "nom", "volume", "categorie", "flavor", "status", "region", "variante",
-        "description", "photo", "codes",
+        "description", "photo", "codes", "doubles", "recherches", "je_cherche", "je_possede",
     }
     assert f["photo"]  # la fiche n'avait pas de photo : celle envoyée devient la sienne
     assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 200
@@ -1327,6 +1327,7 @@ def test_wiki_amorce_depuis_les_collections_existantes_une_seule_fois(env):
     c.put("/api/cans", json=canette("LOCAL-AMORCE", nom="Perso"), headers=ha)
     # Simule une base d'avant le Wiki : la table n'existe pas encore, les collections si.
     with ix.connecter() as cx:
+        cx.execute("DROP TABLE recherches")
         cx.execute("DROP TABLE wiki_moderations")
         cx.execute("DROP TABLE wiki_signalements")
         cx.execute("DROP TABLE wiki_codes")
@@ -1863,3 +1864,112 @@ def test_migration_15_complete_les_variantes_vides(env):
     variantes = {r["ean"]: r["variante"] for r in lignes}
     assert variantes == {"2000000000015": "Édition limitée", "2000000000022": "Édition limitée",
                          "2000000000039": "Standard", "2000000000046": "Zero Sugar", "2000000000053": ""}
+
+
+# --- Échanges, étape 1 : doubles et recherchées ------------------------------------------
+
+
+def test_doubles_proposes_comptes_sur_la_fiche_sans_dire_qui(env):
+    c, codes = env
+    ha, hb, hc = connecter(c, codes, A), connecter(c, codes, B), connecter(c, codes, "test-c@example.com")
+    c.put("/api/cans", json=canette(nom="Mango", nb=3), headers=ha)
+    c.put("/api/cans", json=canette(nom="Mango", nb=1), headers=hb)
+    assert fiche(c, hc, "2000000000015")["doubles"] == 0  # rien n'est proposé par défaut
+    url = "/api/cans/2000000000015/echange"
+    assert c.patch(url, json={"echange": True}).status_code == 401
+    assert c.patch("/api/cans/2000000000022/echange", json={"echange": True}, headers=ha).status_code == 404
+    r = c.patch(url, json={"echange": True}, headers=ha)
+    assert r.status_code == 200 and r.json()["echange"] is True
+    c.patch(url, json={"echange": True}, headers=hb)  # un seul exemplaire : pas de double à compter
+    f = fiche(c, hc, "2000000000015")
+    assert f["doubles"] == 1 and A not in str(f) and B not in str(f)
+    c.patch("/api/cans/2000000000015/nb", json={"delta": -2}, headers=ha)  # plus qu'un exemplaire
+    assert fiche(c, hc, "2000000000015")["doubles"] == 0
+    c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=ha)
+    assert fiche(c, hc, "2000000000015")["doubles"] == 1  # le choix est gardé
+    # Un enregistrement complet (ancienne appli, sans le champ) ne retire pas la proposition.
+    c.put("/api/cans", json=canette(nom="Mango", nb=2, notes="x"), headers=ha)
+    assert fiche(c, hc, "2000000000015")["doubles"] == 1
+    c.patch(url, json={"echange": False}, headers=ha)
+    assert fiche(c, hc, "2000000000015")["doubles"] == 0
+
+
+def test_canette_recherchee_puis_trouvee(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango"), headers=ha)
+    url = "/api/wiki/2000000000015/recherche"
+    assert c.post(url).status_code == 401
+    assert c.post("/api/wiki/TEST-INCONNU/recherche", headers=hb).status_code == 404
+    assert c.post(url, headers=ha).status_code == 409  # déjà dans sa collection
+    r = c.post(url, headers=hb)
+    assert r.status_code == 200 and r.json()["je_cherche"] is True and r.json()["recherches"] == 1
+    assert c.post(url, headers=hb).json()["recherches"] == 1  # deux fois : compté une seule fois
+    assert fiche(c, ha, "2000000000015")["recherches"] == 1
+    assert fiche(c, ha, "2000000000015")["je_cherche"] is False  # propre à chaque compte
+    assert fiche(c, ha, "2000000000015")["je_possede"] is True and fiche(c, hb, "2000000000015")["je_possede"] is False
+    resultat = _rechercher(c, hb, je_cherche="true")
+    assert [f["ean"] for f in resultat["fiches"]] == ["2000000000015"] and resultat["je_cherche"] == 1
+    assert _rechercher(c, ha, je_cherche="true")["fiches"] == []
+    # La collection de A montre combien la cherchent.
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["recherches"] == 1
+    # B l'ajoute à sa collection : elle n'est plus recherchée.
+    c.put("/api/cans", json=canette(nom="Mango"), headers=hb)
+    assert fiche(c, ha, "2000000000015")["recherches"] == 0
+    # Retirer une recherche
+    c.delete("/api/cans/2000000000015", headers=hb)
+    c.post(url, headers=hb)
+    r = c.delete(url, headers=hb)
+    assert r.status_code == 200 and r.json()["je_cherche"] is False and r.json()["recherches"] == 0
+
+
+def test_filtre_doubles_disponibles(env):
+    c, codes = env
+    ha = connecter(c, codes, A)
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango", nb=2), headers=ha)
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra", nb=2), headers=ha)
+    c.patch("/api/cans/2000000000015/echange", json={"echange": True}, headers=ha)
+    assert [f["ean"] for f in _rechercher(c, ha, doubles="true", par_page=60)["fiches"]] == ["2000000000015"]
+
+
+def test_recherches_suivent_le_compte_et_la_fiche(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", A)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette("2000000000015", nom="Mango"), headers=ha)
+    c.delete("/api/cans/2000000000015", headers=ha)
+    c.post("/api/wiki/2000000000015/recherche", headers=hb)
+    # Le code-barres de la fiche change : la recherche suit.
+    c.put("/api/wiki/2000000000015", json={"ean": "2000000000022", "nom": "Mango"}, headers=ha)
+    assert fiche(c, hb, "2000000000022")["je_cherche"] is True
+    # Fiche supprimée : la recherche disparaît avec elle.
+    assert c.delete("/api/wiki/2000000000022", headers=ha).status_code == 204
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM recherches").fetchone()["n"] == 0
+    # Compte supprimé : ses recherches aussi.
+    c.put("/api/cans", json=canette("2000000000039", nom="Ultra"), headers=ha)
+    c.delete("/api/cans/2000000000039", headers=ha)
+    c.post("/api/wiki/2000000000039/recherche", headers=hb)
+    assert supprimer(c, hb, B).status_code == 204
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM recherches").fetchone()["n"] == 0
+
+
+def test_partage_des_doublons_desactive_dans_les_reglages(env):
+    c, codes = env
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango", nb=3), headers=ha)
+    c.patch("/api/cans/2000000000015/echange", json={"echange": True}, headers=ha)
+    assert fiche(c, hb, "2000000000015")["doubles"] == 1
+    assert c.patch("/api/auth/partage-doubles", json={"echange": False}).status_code == 401
+    r = c.patch("/api/auth/partage-doubles", json={"echange": False}, headers=ha)
+    assert r.status_code == 200 and r.json() == {"partage_doubles": False}
+    assert c.get("/api/auth/moi", headers=ha).json()["partage_doubles"] is False
+    # Plus rien n'est compté ni trouvé par le filtre, mais le choix de la canette est gardé.
+    assert fiche(c, hb, "2000000000015")["doubles"] == 0
+    assert _rechercher(c, hb, doubles="true", par_page=60)["fiches"] == []
+    canette_a = c.get("/api/cans/2000000000015", headers=ha).json()
+    assert canette_a["echange"] is True and canette_a["partage_doubles"] is False
+    # Réactivé : les doubles proposés réapparaissent.
+    c.patch("/api/auth/partage-doubles", json={"echange": True}, headers=ha)
+    assert fiche(c, hb, "2000000000015")["doubles"] == 1

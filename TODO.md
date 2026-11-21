@@ -23,3 +23,13 @@ Idées et tâches à venir, pas encore planifiées. Voir aussi le [tableau de su
     - le doublon est supprimé.
   - **Contraintes** : une seule transaction, autorisation vérifiée côté serveur, tests API (dont deux comptes
     et un compte qui possède les deux fiches) et parcours de bout en bout.
+
+## Échanges entre collectionneurs
+
+- [x] **1. Doubles et recherchées** : branche `market` (compteurs anonymes, filtres du Wiki).
+- [ ] **2. Correspondances automatiques** : page « Échanges », proposition d'échange, contact après acceptation
+  mutuelle.
+- [ ] **3. Bourse d'échange** : petites annonces sans argent, liées aux fiches, avec modération.
+- [ ] **4. Échange suivi de bout en bout** : proposé → accepté → envoyé → reçu, collections mises à jour,
+  réputation.
+- [ ] **5. Liste partageable et QR code** : page publique « Mes doubles / Je cherche » (voir issue #14).

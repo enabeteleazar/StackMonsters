@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Sparkles, X } from 'lucide-react'
+import { BookOpen, Camera as CameraIcon, CheckCircle2, ImageOff, ImagePlus, Repeat2, SearchCheck, Sparkles, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
 import { CATEGORIES, categorieDuNom, libelleStatut, REGIONS, STATUTS_COLLECTION, varianteDuNom } from '../categories'
 import { ChampSaveur, ChampVariante, ChampVolume } from './ChampsFiche'
@@ -18,12 +18,15 @@ type Props = {
   surEnregistrer: (c: Canette) => Promise<void>
   surSupprimer: (ean: string) => Promise<void>
   surFermeture: () => void
+  /** Après un changement fait ici sans passer par le formulaire (doubles proposés…) : recharger la collection. */
+  surCollectionChangee: () => Promise<void>
 }
 
 export default function Verdict(p: Props) {
   const [edition, setEdition] = useState(!p.existante)
   const [occupe, setOccupe] = useState(false)
   const [erreurPhoto, setErreurPhoto] = useState<string | null>(null)
+  const [erreurEchange, setErreurEchange] = useState<string | null>(null)
   const [eanAffiche, setEanAffiche] = useState(p.ean)
   const photoInput = useRef<HTMLInputElement>(null)
 
@@ -149,6 +152,49 @@ export default function Verdict(p: Props) {
                 ))}
               </dl>
             </div>
+            {(p.existante!.nb >= 2 || !!p.existante!.recherches) && (
+              <div className="fiche-echanges" role="region" aria-label="Échanges">
+                <span className="etiquette">Échanges</span>
+                {!!p.existante!.recherches && (
+                  <p>
+                    <SearchCheck size={17} aria-hidden="true" />
+                    {p.existante!.recherches} collectionneur{p.existante!.recherches > 1 ? 's' : ''} la cherche
+                    {p.existante!.recherches > 1 ? 'nt' : ''}
+                  </p>
+                )}
+                {p.existante!.partage_doubles === false && p.existante!.nb >= 2 ? (
+                  <p className="fiche-echanges-note">
+                    Le partage de tes doublons est désactivé dans les Réglages : personne ne voit les tiens.
+                  </p>
+                ) : p.existante!.nb >= 2 ? (
+                  <button
+                    className={`btn ${p.existante!.echange ? 'btn-fantome' : 'btn-primaire'}`}
+                    aria-pressed={!!p.existante!.echange}
+                    disabled={occupe}
+                    onClick={() =>
+                      void proteger(async () => {
+                        setErreurEchange(null)
+                        try {
+                          await api.proposerDoubles(p.existante!.ean, !p.existante!.echange)
+                          await p.surCollectionChangee()
+                        } catch (e) {
+                          if (e instanceof NonAutorise) p.surNonAutorise()
+                          else setErreurEchange('Impossible pour le moment, réessaie avec le réseau.')
+                        }
+                      })
+                    }
+                  >
+                    <Repeat2 size={18} />
+                    {p.existante!.echange
+                      ? `Doubles proposés (${p.existante!.nb - 1}) · Retirer`
+                      : `Proposer mes doubles (${p.existante!.nb - 1}) à l’échange`}
+                  </button>
+                ) : (
+                  <p className="fiche-echanges-note">Avec au moins 2 exemplaires, tu pourras proposer tes doubles.</p>
+                )}
+                {erreurEchange && <p className="sous" role="alert">{erreurEchange}</p>}
+              </div>
+            )}
             {/* Notes personnelles : masquées quand elles répètent la description du Wiki. */}
             {p.existante!.notes && p.existante!.notes.trim() !== (p.existante!.description ?? '').trim() && (
               <div className="fiche-saveur fiche-notes">

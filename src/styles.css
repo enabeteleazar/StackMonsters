@@ -306,6 +306,9 @@ html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.col
 .collec-tri button{min-height:44px;padding:0 14px;border-radius:999px;color:var(--alu);
   font:600 12px var(--display);text-transform:uppercase;letter-spacing:.08em}
 .collec-tri button[aria-checked="true"]{background:var(--acide);color:#0A0C07;box-shadow:0 0 14px rgba(158,232,24,.45)}
+.collec-onglets{position:relative;display:flex;margin-bottom:12px}
+.collec-onglets button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.collec-onglets button[aria-selected="true"]{background:var(--acide);color:#0A0C07;box-shadow:0 0 14px rgba(158,232,24,.45)}
 
 .collec-liste{position:relative;list-style:none;margin:0;padding:0;display:grid;gap:10px}
 .collec-ligne{display:flex;align-items:center;gap:14px;width:100%;padding:8px 14px 8px 8px;border-radius:18px;text-align:left;
@@ -369,6 +372,11 @@ html:has(.accueil-co),html:has(.accueil-co) body,html:has(.collec),html:has(.col
 .reglages-info .valeur{font:700 italic 14px var(--display);color:var(--acide);text-align:right}
 .reglages-actions{position:relative;display:grid;gap:10px}
 .reglages-actions .accueil-co-secondaire{max-width:none}
+.reglages-espace{display:block;height:14px}
+.reglages-bascule{justify-content:flex-start;gap:10px}
+.reglages-bascule-etat{margin-left:auto;font-size:12px;letter-spacing:.06em;text-transform:uppercase;opacity:.7}
+.reglages-bascule.actif{border-color:var(--acide)}
+.reglages-bascule.actif .reglages-bascule-etat{color:var(--acide);opacity:1}
 .reglages-actions .accueil-co-secondaire:disabled{opacity:.5;cursor:wait}
 .reglages-danger{border-color:rgba(255,77,77,.55)!important;color:#ff8a8a!important}
 .reglages-danger svg{color:#ff8a8a!important}
@@ -1039,3 +1047,27 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .filtres-actions .accueil-co-secondaire{max-width:none;margin:0}
 .filtres-voir{min-height:50px;border:0;border-radius:999px;background:var(--acide);color:#0A0C07;font:700 15px var(--display);
   text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+/* ============ échanges, étape 1 : doubles et recherchées ============ */
+/* Bloc « Échanges » d'une fiche (Wiki et collection) : compteurs anonymes et action du compte. */
+.fiche-echanges{display:grid;gap:10px;margin:4px 0 18px;padding:14px 16px;border-radius:16px;
+  border:1px solid rgba(158,232,24,.35);background:rgba(158,232,24,.05)}
+.fiche-echanges .etiquette{font:600 11px var(--display);text-transform:uppercase;letter-spacing:.09em;color:var(--acide)}
+.fiche-echanges p{display:flex;align-items:center;gap:10px;margin:0;font-size:15px}
+.fiche-echanges p svg{flex:0 0 auto;color:var(--acide)}
+.fiche-echanges .btn{justify-self:start;gap:8px}
+.fiche-echanges .fiche-echanges-note{color:var(--alu);font-size:13.5px}
+/* Badges des cartes du Wiki : « je la cherche » et nombre de doubles proposés. */
+.wiki-cherche{position:absolute;bottom:6px;left:6px;z-index:2;width:24px;height:24px;display:grid;place-items:center;
+  border-radius:50%;background:var(--acide);color:#0A0C07;box-shadow:0 0 10px rgba(158,232,24,.6)}
+.wiki-doubles{position:absolute;bottom:6px;right:6px;z-index:2;display:inline-flex;align-items:center;gap:3px;padding:3px 7px;
+  border-radius:999px;background:rgba(5,6,3,.85);border:1px solid rgba(158,232,24,.6);color:var(--acide);
+  font:700 11px var(--display);font-variant-numeric:tabular-nums}
+/* Panneau des filtres : bascules « Je cherche » / « Doubles dispo » (groupe Échanges). */
+.filtres-bascules{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.filtres-bascules button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 12px;
+  border-radius:999px;border:1.5px solid rgba(158,232,24,.35);background:#0b0d08;color:var(--blanc);
+  font:600 12px var(--display);text-transform:uppercase;letter-spacing:.06em;cursor:pointer}
+.filtres-bascules button svg{color:var(--acide)}
+.filtres-bascules button[aria-pressed="true"]{background:var(--acide);border-color:var(--acide);color:#0A0C07;
+  box-shadow:0 0 12px rgba(158,232,24,.4)}
+.filtres-bascules button[aria-pressed="true"] svg{color:#0A0C07}

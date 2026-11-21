@@ -88,6 +88,13 @@ export default function Confidentialite() {
                 responsable du Wiki, qui l’accepte ou la refuse. Ses décisions (date, motif) sont conservées avec la fiche ;
                 l’auteur de la proposition n’est pas enregistré.
               </p>
+              <p>
+                Échanges : tu peux proposer les doubles d’une canette de ta collection et noter celles que tu cherches.
+                Ces choix sont liés à ton compte, mais les fiches n’en montrent que des nombres (« 2 collectionneurs
+                l’ont en double »), jamais qui. Ils sont effacés avec ton compte ; une canette ajoutée à ta collection
+                n’est plus « recherchée ». L’interrupteur « Partage des doublons » des Réglages coupe d’un coup le
+                partage de tous tes doubles (personne n’en voit plus le nombre) ; tes choix par canette sont gardés.
+              </p>
             </Bloc>
 
             <Bloc titre="Combien de temps ?">
@@ -134,8 +141,8 @@ export default function Confidentialite() {
                 définir des directives sur le sort de tes données après ton décès.
               </p>
               <p>
-                Dans Réglages, tu peux supprimer ton compte et changer ton choix sur la mesure d’audience. La
-                suppression efface immédiatement ton compte, ta collection (notes et photos comprises) et tes
+                Dans Réglages, tu peux changer ton choix sur la mesure d’audience. Pour supprimer ton compte, écris à
+                <Contact /> ; la suppression efface immédiatement ton compte, ta collection (notes et photos comprises) et tes
                 sessions sur tous tes appareils ; les contributions au Wiki, qui n’ont jamais été liées à ton compte,
                 restent anonymes. Pour obtenir
                 une copie de tes données (portabilité) ou exercer tes autres droits, écris à <Contact /> : une réponse
