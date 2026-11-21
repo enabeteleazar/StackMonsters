@@ -482,6 +482,8 @@ CREATE TABLE IF NOT EXISTS abonnements_push (
     cree TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS abonnements_push_user ON abonnements_push (user_id);
 """),
+    # Titre facultatif d'un message à tous (popup, notification système, onglet Notifications).
+    (21, "ALTER TABLE annonces ADD COLUMN IF NOT EXISTS titre TEXT NOT NULL DEFAULT '';"),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -1641,11 +1643,16 @@ def _vue_echange(e: dict) -> dict:
 
 @router.get("/echanges")
 def echanges(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
-    """Notifications (mises en relation qui attendent une réponse de ce compte, ou ses demandes en attente) et
-    conversations ouvertes, avec le nombre d'éléments non lus (pastille de l'appli)."""
+    """Notifications (mises en relation qui attendent une réponse de ce compte, ou ses demandes en attente),
+    conversations ouvertes, avec le nombre d'éléments non lus (pastille de l'appli), et messages du service
+    (« annonces », les 20 derniers depuis la création du compte, déjà montrés en popup : hors pastille)."""
     uid = u["id"]
     with cx.transaction():
         _reperer_paires(cx, uid)
+        annonces = cx.execute(
+            "SELECT a.id, a.titre, a.texte, a.cree FROM annonces a JOIN users us ON us.id = %s WHERE a.cree >= us.cree "
+            "ORDER BY a.id DESC LIMIT 20", (uid,),
+        ).fetchall()
         lignes = cx.execute(
             "SELECT e.*, w.nom, CASE WHEN w.photo IS NOT NULL THEN w.maj END AS photo_wiki, "
             "(SELECT COUNT(*) FROM messages m WHERE m.echange = e.id AND m.auteur <> %s AND m.id > "
@@ -1680,7 +1687,7 @@ def echanges(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(co
             conversations.append({**vue, "non_lus": e["non_lus"], "dernier": e["dernier"]})
     notifications.sort(key=lambda n: n["maj"], reverse=True)
     a_traiter = sum(1 for n in notifications if n["action"]) + sum(1 for c in conversations if c["a_valider"])
-    return {"notifications": notifications, "conversations": conversations,
+    return {"notifications": notifications, "conversations": conversations, "annonces": annonces,
             "non_lus": a_traiter + sum(c["non_lus"] for c in conversations)}
 
 
@@ -1878,7 +1885,8 @@ def signalement_membre_traite(
 
 # --- Administration (propriétaire) : comptes, messages à tous et notifications --------------------------
 
-ANNONCE_MAX = 500  # caractères d'un message à tous
+ANNONCE_MAX = 1000  # caractères d'un message à tous
+TITRE_ANNONCE_MAX = 60
 
 
 class Blocage(BaseModel):
@@ -1886,6 +1894,7 @@ class Blocage(BaseModel):
 
 
 class Annonce(BaseModel):
+    titre: str = Field(default="", max_length=TITRE_ANNONCE_MAX)
     texte: str = Field(min_length=1, max_length=ANNONCE_MAX)
 
 
@@ -2020,12 +2029,12 @@ def admin_annoncer(a: Annonce, u: dict = Depends(utilisateur), cx: psycopg.Conne
     """Message du propriétaire à tous : affiché une fois à l'ouverture de l'appli (popup) et envoyé en
     notification système aux appareils abonnés (comptes non bloqués)."""
     _reserve_au_proprietaire(u)
-    texte = a.texte.strip()
+    texte, titre = a.texte.strip(), " ".join(a.titre.split())
     if not texte:
         raise HTTPException(422, "message vide")
     with cx.transaction():
-        annonce = cx.execute("INSERT INTO annonces (texte, cree) VALUES (%s, %s) RETURNING id, cree",
-                             (texte, int(time.time()))).fetchone()
+        annonce = cx.execute("INSERT INTO annonces (titre, texte, cree) VALUES (%s, %s, %s) RETURNING id, cree",
+                             (titre, texte, int(time.time()))).fetchone()
         # Le propriétaire a écrit le message : pas de popup pour lui.
         cx.execute("UPDATE users SET annonce_vue = %s WHERE id = %s", (annonce["id"], u["id"]))
         abonnements = cx.execute(
@@ -2037,7 +2046,7 @@ def admin_annoncer(a: Annonce, u: dict = Depends(utilisateur), cx: psycopg.Conne
     if cles and abonnements:
         from concurrent.futures import ThreadPoolExecutor
 
-        charge = {"titre": "StackMonsters", "texte": texte, "annonce": annonce["id"]}
+        charge = {"titre": titre or "StackMonsters", "texte": texte, "annonce": annonce["id"]}
         with ThreadPoolExecutor(max_workers=8) as pool:
             codes = list(pool.map(lambda ab: envoyer_push(ab, charge, cles[1]), abonnements))
         for ab, code in zip(abonnements, codes):
@@ -2057,7 +2066,7 @@ def admin_annonces(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depe
     """Derniers messages envoyés, et nombre d'appareils abonnés aux notifications."""
     _reserve_au_proprietaire(u)
     with cx.transaction():
-        annonces = cx.execute("SELECT id, texte, cree, notifies FROM annonces ORDER BY id DESC LIMIT 20").fetchall()
+        annonces = cx.execute("SELECT id, titre, texte, cree, notifies FROM annonces ORDER BY id DESC LIMIT 20").fetchall()
         n = cx.execute("SELECT COUNT(*) AS n FROM abonnements_push").fetchone()["n"]
     return {"annonces": annonces, "appareils": n, "push": _cles_vapid() is not None}
 
@@ -2067,7 +2076,7 @@ def annonce_a_lire(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depe
     """Dernier message du propriétaire pas encore vu par ce compte (et écrit après sa création) ; null sinon."""
     with cx.transaction():
         r = cx.execute(
-            "SELECT a.id, a.texte, a.cree FROM annonces a JOIN users us ON us.id = %s "
+            "SELECT a.id, a.titre, a.texte, a.cree FROM annonces a JOIN users us ON us.id = %s "
             "WHERE a.id > us.annonce_vue AND a.cree >= us.cree ORDER BY a.id DESC LIMIT 1", (u["id"],),
         ).fetchone()
     return {"annonce": r}

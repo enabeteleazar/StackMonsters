@@ -62,14 +62,21 @@ self.addEventListener('push', (e) => {
   } catch {
     d = { texte: e.data ? e.data.text() : '' }
   }
+  // Appli ouverte : elle affiche aussitôt le message en popup (en plus de la notification système).
+  const prevenir = self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((fenetres) => {
+    for (const f of fenetres) f.postMessage({ type: 'notification', annonce: d.annonce || null })
+  })
   e.waitUntil(
-    self.registration.showNotification(d.titre || 'StackMonsters', {
-      body: d.texte || '',
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      tag: d.annonce ? `annonce-${d.annonce}` : undefined,
-      data: { url: '/' },
-    }),
+    Promise.all([
+      prevenir,
+      self.registration.showNotification(d.titre || 'StackMonsters', {
+        body: d.texte || '',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: d.annonce ? `annonce-${d.annonce}` : undefined,
+        data: { url: '/' },
+      }),
+    ]),
   )
 })
 

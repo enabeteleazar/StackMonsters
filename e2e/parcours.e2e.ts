@@ -506,7 +506,14 @@ test('échanges : mise en relation, double accord, puis messagerie', async ({ pa
   await nav(autre, 'Collection').click()
   await expect(autre.getByRole('tab', { name: /Recherchées · 1/ })).toBeVisible() // elle rejoint « Recherchées »
 
-  // Le chercheur est prévenu qu'un collectionneur l'a en double.
+  // Le chercheur est prévenu qu'un collectionneur l'a en double : popup dans l'appli, une seule fois.
+  await autre.reload()
+  const popupChercheur = autre.getByRole('dialog', { name: 'Échanges' })
+  await expect(popupChercheur).toContainText(`Un collectionneur a ${nom} en double.`)
+  await popupChercheur.getByRole('button', { name: 'OK' }).click()
+  await autre.reload()
+  await expect(nav(autre, 'Accueil')).toBeVisible()
+  await expect(autre.getByRole('dialog', { name: 'Échanges' })).toHaveCount(0)
   await autre.getByRole('button', { name: /^Échanges/ }).click()
   await expect(autre.getByText(`Un collectionneur a ${nom} en double.`)).toBeVisible()
   await autre.getByRole('button', { name: 'Échange', exact: true }).click()
@@ -515,10 +522,14 @@ test('échanges : mise en relation, double accord, puis messagerie', async ({ pa
   // Le possesseur reçoit la demande (pastille), et accepte : la messagerie s'ouvre.
   await page.reload()
   await expect(page.getByRole('button', { name: 'Échanges, 1 nouveau' })).toBeVisible()
-  await page.getByRole('button', { name: /^Échanges/ }).click()
+  // La nouvelle notification s'ouvre en popup dans l'appli ; « Voir » mène à l'onglet Notifications.
+  const popup = page.getByRole('dialog', { name: 'Échanges' })
+  await expect(popup).toContainText(`Un collectionneur est intéressé par ton double de ${nom}.`)
+  await popup.getByRole('button', { name: 'Voir' }).click()
   await expect(page.getByText(`Un collectionneur est intéressé par ton double de ${nom}.`)).toBeVisible()
   await page.getByRole('button', { name: 'Échange', exact: true }).click()
   await expect(page.getByRole('dialog', { name: `Conversation : ${nom}` })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Échanges' })).toHaveCount(0)
   await page.getByLabel('Ton message').fill('Salut ! Je te l’échange contre une Ultra ?')
   await page.getByRole('button', { name: 'Envoyer' }).click()
   await expect(page.locator('.bulle.moi')).toContainText('Salut ! Je te l’échange contre une Ultra ?')
@@ -570,7 +581,7 @@ test('échanges : signaler un membre ferme la conversation, le propriétaire l�
   await autre.getByRole('button', { name: /^Échanges/ }).click()
   await autre.getByRole('button', { name: 'Échange', exact: true }).click()
   await page.reload()
-  await page.getByRole('button', { name: /^Échanges/ }).click()
+  await page.getByRole('dialog', { name: 'Échanges' }).getByRole('button', { name: 'Voir' }).click()
   await page.getByRole('button', { name: 'Échange', exact: true }).click()
   await page.getByLabel('Ton message').fill('Je te la vends 20 €')
   await page.getByRole('button', { name: 'Envoyer' }).click()
@@ -647,4 +658,33 @@ test('administration : bloquer un compte, puis message à tous en popup', async 
   await autre.reload()
   await expect(nav(autre, 'Réglages')).toBeVisible()
   await expect(autre.getByRole('dialog', { name: 'Message de StackMonsters' })).toHaveCount(0) // une seule fois
+  // Il reste dans l'onglet Notifications de la page Échanges.
+  await autre.getByRole('button', { name: /^Échanges/ }).click()
+  await expect(autre.locator('.annonce-notif')).toContainText(texte)
+})
+
+test('message à tous : la popup s’affiche aussi à la réception, appli déjà ouverte', async ({ page, browser }) => {
+  const autre = await nouvellePage(browser)
+  await connecter(autre, email()) // appli ouverte, aucun message
+  await expect(autre.getByRole('dialog', { name: 'Message de StackMonsters' })).toHaveCount(0)
+
+  const texte = `En direct ${unique()}`
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Administration' }).click()
+  await page.getByRole('tab', { name: 'Message' }).click()
+  await page.getByLabel('Titre du message').fill('Info du jour')
+  await page.getByLabel('Message à tous les membres').fill(texte)
+  page.once('dialog', (d) => d.accept())
+  await page.getByRole('button', { name: 'Envoyer à tous' }).click()
+  await expect(page.locator('.admin-annonce-texte').first()).toHaveText(texte)
+  await expect(page.locator('.admin-annonce-titre').first()).toHaveText('Info du jour')
+
+  // Sans recharger : l'appli relit les messages (retour au premier plan ici ; chaque minute, ou dès la
+  // réception d'une notification système, sur un vrai appareil).
+  await autre.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  const popup = autre.getByRole('dialog', { name: 'Info du jour' }) // le titre du message
+  await expect(popup).toContainText(texte)
+  await popup.getByRole('button', { name: 'OK' }).click()
+  await expect(popup).toHaveCount(0)
 })

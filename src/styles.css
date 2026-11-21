@@ -1175,3 +1175,11 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .annonce-texte{margin:0;font-size:16px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .annonce-actions{display:flex;flex-direction:column;gap:8px;width:100%;margin-top:6px}
 .annonce-actions .btn{min-height:46px}
+/* Message du service dans l'onglet Notifications : même style que la popup, en petit. */
+.annonce-notif{align-items:flex-start}
+.annonce-icone-petite{flex:0 0 40px;width:40px;height:40px;margin:4px 0 0 4px}
+.annonce-notif-titre{margin:0!important;font:600 11px var(--display)!important;text-transform:uppercase;letter-spacing:.08em;color:var(--acide)}
+.annonce-notif-texte{white-space:pre-wrap;overflow-wrap:anywhere}
+.admin-titre{font:600 15px var(--display);letter-spacing:.03em;resize:none}
+.admin-message:not(.admin-titre){min-height:220px}
+.admin-annonce-titre{margin:0 0 2px;font:600 14px var(--display);text-transform:uppercase;letter-spacing:.05em;color:var(--acide)}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Bell, Check, CheckCheck, ChevronRight, Flag, Lock, MessagesSquare, Repeat2, Send, X } from 'lucide-react'
+import { ArrowLeft, Bell, Check, CheckCheck, ChevronRight, Flag, Lock, Megaphone, MessagesSquare, Repeat2, Send, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { MOTIFS_SIGNALEMENT_MEMBRE, type ConversationEchange, type EtatEchanges, type MessageEchange, type NotificationEchange } from '../types'
 import PhotoWiki from './PhotoWiki'
@@ -17,11 +17,14 @@ type Props = {
 
 type Onglet = 'notifications' | 'messagerie'
 
+const jourCourt = (secondes: number) =>
+  new Date(secondes * 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
+
 /** Relecture des messages pendant qu'une conversation est ouverte. */
 const RELECTURE_MS = 5000
 
 /** Texte d'une notification : jamais de nom ni d'adresse, seulement « un collectionneur ». */
-function texteNotification(n: NotificationEchange) {
+export function texteNotification(n: NotificationEchange) {
   const nom = n.fiche.nom || 'cette canette'
   if (n.role === 'chercheur' && n.statut === 'signalee') return `Un collectionneur a ${nom} en double.`
   if (n.role === 'chercheur') return `Demande envoyée pour ${nom}. En attente de sa réponse.`
@@ -88,28 +91,48 @@ export default function Echanges({ etat, erreur, surRecharger, surMessage, surCo
         {etat === null ? (
           <p className="collec-vide">{erreur ? 'Les échanges ont besoin de la connexion.' : 'Chargement…'}</p>
         ) : onglet === 'notifications' ? (
-          etat.notifications.length ? (
+          etat.notifications.length || etat.annonces?.length ? (
             <ul className="echanges-liste">
-              {etat.notifications.map((n) => (
-                <li key={n.id} className={`echange-notif${n.action ? ' a-traiter' : ''}`}>
-                  <span className="collec-photo">
-                    <PhotoWiki ean={n.fiche.ean} version={n.fiche.photo} taille={20} />
-                  </span>
-                  <div className="echange-notif-corps">
-                    <p>{texteNotification(n)}</p>
-                    <div className="echange-notif-actions">
-                      {n.action && (
-                        <button className="btn btn-primaire" disabled={occupe === n.id} onClick={() => void repondre(n, true)}>
-                          <Check size={17} /> Échange
-                        </button>
-                      )}
-                      <button className="btn btn-fantome" disabled={occupe === n.id} onClick={() => void repondre(n, false)}>
-                        <X size={17} /> Annuler
-                      </button>
-                    </div>
-                  </div>
-                </li>
-              ))}
+              {[
+                ...etat.notifications.map((n) => ({ date: Date.parse(n.maj), n, a: null })),
+                ...(etat.annonces ?? []).map((a) => ({ date: a.cree * 1000, n: null, a })),
+              ]
+                .sort((x, y) => y.date - x.date)
+                .map(({ n, a }) =>
+                  a ? (
+                    // Message du service à tous : déjà vu en popup, il reste ici pour être relu.
+                    <li key={`annonce-${a.id}`} className="echange-notif annonce-notif">
+                      <span className="annonce-icone annonce-icone-petite" aria-hidden="true">
+                        <Megaphone size={20} />
+                      </span>
+                      <div className="echange-notif-corps">
+                        <p className="annonce-notif-titre">
+                          {a.titre || 'Message de StackMonsters'} · {jourCourt(a.cree)}
+                        </p>
+                        <p className="annonce-notif-texte">{a.texte}</p>
+                      </div>
+                    </li>
+                  ) : n ? (
+                    <li key={n.id} className={`echange-notif${n.action ? ' a-traiter' : ''}`}>
+                      <span className="collec-photo">
+                        <PhotoWiki ean={n.fiche.ean} version={n.fiche.photo} taille={20} />
+                      </span>
+                      <div className="echange-notif-corps">
+                        <p>{texteNotification(n)}</p>
+                        <div className="echange-notif-actions">
+                          {n.action && (
+                            <button className="btn btn-primaire" disabled={occupe === n.id} onClick={() => void repondre(n, true)}>
+                              <Check size={17} /> Échange
+                            </button>
+                          )}
+                          <button className="btn btn-fantome" disabled={occupe === n.id} onClick={() => void repondre(n, false)}>
+                            <X size={17} /> Annuler
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  ) : null,
+                )}
             </ul>
           ) : (
             <p className="collec-vide">

@@ -2006,7 +2006,7 @@ def test_echange_complet_jusqu_a_la_messagerie(env):
     n = eb["notifications"][0]
     assert (n["role"], n["statut"], n["action"], n["fiche"]["nom"]) == ("chercheur", "signalee", True, "Mango")
     assert A not in str(eb)
-    assert _echanges(c, ha) == {"notifications": [], "conversations": [], "non_lus": 0}
+    assert _echanges(c, ha) == {"notifications": [], "conversations": [], "annonces": [], "non_lus": 0}
     assert _echanges(c, hb)["notifications"][0]["id"] == n["id"]  # pas de doublon d'une lecture à l'autre
 
     # Un tiers ne peut rien faire sur cet échange.
@@ -2293,22 +2293,27 @@ def test_message_a_tous_popup_une_fois_et_notifications(env, monkeypatch):
     assert c.get("/api/annonce", headers=ha).json() == {"annonce": None}
 
     assert c.post("/api/admin/annonces", json={"texte": "Coucou"}, headers=ha).status_code == 403
-    assert c.post("/api/admin/annonces", json={"texte": "x" * 501}, headers=hc).status_code == 422
-    r = c.post("/api/admin/annonces", json={"texte": "  Nouvelle version disponible !  "}, headers=hc)
+    assert c.post("/api/admin/annonces", json={"texte": "x" * 1001}, headers=hc).status_code == 422
+    assert c.post("/api/admin/annonces", json={"titre": "t" * 61, "texte": "x"}, headers=hc).status_code == 422
+    r = c.post("/api/admin/annonces", json={"titre": "  Mise   à jour ", "texte": "  Nouvelle version disponible !  "},
+               headers=hc)
     assert r.status_code == 201 and r.json()["notifies"] == 1 and r.json()["appareils"] == 2
     assert {e[0] for e in envois} == set(reponses) and envois[0][1]["texte"] == "Nouvelle version disponible !"
-    assert envois[0][2] == "cle-privee"
+    assert envois[0][2] == "cle-privee" and envois[0][1]["titre"] == "Mise à jour"
     # L'abonnement expiré (410) est effacé.
     historique = c.get("/api/admin/annonces", headers=hc).json()
     assert historique["appareils"] == 1 and historique["annonces"][0]["notifies"] == 1
 
     # Popup : une fois par compte, jamais pour l'auteur.
     a = c.get("/api/annonce", headers=ha).json()["annonce"]
-    assert a["texte"] == "Nouvelle version disponible !"
+    assert a["texte"] == "Nouvelle version disponible !" and a["titre"] == "Mise à jour"
     assert c.post(f"/api/annonce/{a['id']}/vue", headers=ha).status_code == 204
     assert c.get("/api/annonce", headers=ha).json()["annonce"] is None
     assert c.get("/api/annonce", headers=hb).json()["annonce"]["id"] == a["id"]
     assert c.get("/api/annonce", headers=hc).json()["annonce"] is None
+    # Le message reste aussi dans l'onglet Notifications (hors pastille), même une fois vu.
+    eb = _echanges(c, ha)
+    assert [x["texte"] for x in eb["annonces"]] == ["Nouvelle version disponible !"] and eb["non_lus"] == 0
 
 
 def test_message_a_tous_sans_cles_de_notification(env, monkeypatch):
@@ -2320,7 +2325,7 @@ def test_message_a_tous_sans_cles_de_notification(env, monkeypatch):
     ha, hc = connecter(c, codes, A), connecter(c, codes, C)
     assert c.get("/api/push/cle", headers=ha).json() == {"cle": None}
     c.post("/api/push/abonnement", json=ABONNEMENT, headers=ha)
-    r = c.post("/api/admin/annonces", json={"texte": "Popup seulement"}, headers=hc).json()
+    r = c.post("/api/admin/annonces", json={"texte": "Popup seulement"}, headers=hc).json()  # sans titre
     assert r["push"] is False and r["notifies"] == 0
     assert c.get("/api/annonce", headers=ha).json()["annonce"]["texte"] == "Popup seulement"
 

@@ -248,9 +248,9 @@ migration 20 :
 - **Fiches** : fiches signalées et fiches proposées (« à vérifier »), ouvertes dans la fiche du Wiki avec les outils
   de modération habituels.
 - **Membres** : signalements envoyés depuis la messagerie (voir Échanges, étape 2).
-- **Message** (`POST /api/admin/annonces`, 500 caractères) : popup à l'ouverture de l'appli, une fois par compte
+- **Message** (`POST /api/admin/annonces`, titre facultatif de 60 caractères, texte de 1 000, migration 21) : popup à l'ouverture de l'appli, une fois par compte
   (`GET /api/annonce`, `POST /api/annonce/{id}/vue`, colonne `users.annonce_vue` ; jamais pour l'auteur ni pour un
-  compte créé après), et notification système sur les appareils abonnés (Réglages → **Notifications** ;
+  compte créé après ; les 20 derniers restent aussi dans Échanges → Notifications, hors pastille), et notification système sur les appareils abonnés (Réglages → **Notifications** ;
   `POST /api/push/abonnement`, table `abonnements_push`). Les abonnements expirés (404/410) sont effacés à l'envoi.
 - **Notifications (Web Push)** : dépendance `pywebpush`, clés VAPID dans `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
   (secrète) et `VAPID_SUBJECT`. `scripts/generer_vapid.py` les crée dans `.env.local` sans les afficher ; les copier

@@ -119,17 +119,17 @@ export const api = {
   adminSupprimer: (id: number, confirmation: string) =>
     requete<void>(`/admin/comptes/${id}`, { method: 'DELETE', body: JSON.stringify({ confirmation }) }),
   /** Propriétaire : message à tous (popup à l'ouverture + notification système). */
-  adminAnnoncer: (texte: string) =>
+  adminAnnoncer: (titre: string, texte: string) =>
     requete<{ id: number; notifies: number; appareils: number; push: boolean }>('/admin/annonces', {
       method: 'POST',
-      body: JSON.stringify({ texte }),
+      body: JSON.stringify({ titre, texte }),
     }),
   adminAnnonces: () =>
-    requete<{ annonces: { id: number; texte: string; cree: number; notifies: number }[]; appareils: number; push: boolean }>(
+    requete<{ annonces: { id: number; titre: string; texte: string; cree: number; notifies: number }[]; appareils: number; push: boolean }>(
       '/admin/annonces',
     ),
   /** Dernier message du propriétaire pas encore vu par ce compte. */
-  annonce: () => requete<{ annonce: { id: number; texte: string; cree: number } | null }>('/annonce'),
+  annonce: () => requete<{ annonce: { id: number; titre: string; texte: string; cree: number } | null }>('/annonce'),
   annonceVue: (id: number) => requete<void>(`/annonce/${id}/vue`, { method: 'POST' }),
   /** Notifications système : clé publique, abonnement de l'appareil. */
   pushCle: () => requete<{ cle: string | null }>('/push/cle'),

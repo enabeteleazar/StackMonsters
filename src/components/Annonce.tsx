@@ -3,7 +3,7 @@ import { Bell, Megaphone } from 'lucide-react'
 import { activerNotifications, notificationsActives, notificationsPossibles } from '../notifications'
 
 type Props = {
-  annonce: { id: number; texte: string; cree: number }
+  annonce: { id: number; titre: string; texte: string; cree: number }
   surFermeture: () => void
 }
 
@@ -23,7 +23,7 @@ export default function Annonce({ annonce, surFermeture }: Props) {
         <span className="annonce-icone" aria-hidden="true">
           <Megaphone size={26} />
         </span>
-        <h2 id="annonce-titre">Message de StackMonsters</h2>
+        <h2 id="annonce-titre">{annonce.titre || 'Message de StackMonsters'}</h2>
         <p className="annonce-texte">{annonce.texte}</p>
         <div className="annonce-actions">
           {proposer && (

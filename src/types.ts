@@ -175,6 +175,8 @@ export type SignalementMembre = {
 export type EtatEchanges = {
   notifications: NotificationEchange[]
   conversations: ConversationEchange[]
+  /** Messages du service à tous (déjà montrés en popup), du plus récent au plus ancien. */
+  annonces: { id: number; titre: string; texte: string; cree: number }[]
   /** Pastille : notifications à traiter + messages non lus. */
   non_lus: number
 }

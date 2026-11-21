@@ -272,6 +272,7 @@ function Fiches({ echec, surNonAutorise }: { echec: (e: unknown) => void; surNon
 
 /** Message à tous : popup à l'ouverture de l'appli (une fois par compte) et notification système. */
 function MessageATous({ echec, surMessage }: { echec: (e: unknown) => void; surMessage: (m: string) => void }) {
+  const [titre, setTitre] = useState('')
   const [texte, setTexte] = useState('')
   const [envoi, setEnvoi] = useState(false)
   const [etat, setEtat] = useState<Awaited<ReturnType<typeof api.adminAnnonces>> | null>(null)
@@ -290,16 +291,18 @@ function MessageATous({ echec, surMessage }: { echec: (e: unknown) => void; surM
 
   const envoyer = async () => {
     const t = texte.trim()
-    if (!t || !confirm(`Envoyer ce message à tous les membres ?\n\n« ${t} »`)) return
+    const tt = titre.trim()
+    if (!t || !confirm(`Envoyer ce message à tous les membres ?\n\n${tt ? `${tt}\n` : ''}« ${t} »`)) return
     setEnvoi(true)
     try {
-      const r = await api.adminAnnoncer(t)
+      const r = await api.adminAnnoncer(tt, t)
       surMessage(
         r.push
           ? `Message envoyé : notification sur ${r.notifies} appareil${r.notifies > 1 ? 's' : ''}, popup pour tous`
           : 'Message envoyé : popup pour tous (notifications non configurées)',
       )
       setTexte('')
+      setTitre('')
       await charger()
     } catch (e) {
       echec(e)
@@ -320,16 +323,24 @@ function MessageATous({ echec, surMessage }: { echec: (e: unknown) => void; surM
           Notifications non configurées sur le serveur (clés VAPID absentes) : seule la popup sera affichée.
         </p>
       )}
+      <input
+        className="admin-message admin-titre"
+        value={titre}
+        maxLength={60}
+        placeholder="Titre (facultatif)"
+        aria-label="Titre du message"
+        onChange={(e) => setTitre(e.target.value)}
+      />
       <textarea
         className="admin-message"
         value={texte}
-        maxLength={500}
-        rows={4}
+        maxLength={1000}
+        rows={10}
         placeholder="Ton message à tous les membres"
         aria-label="Message à tous les membres"
         onChange={(e) => setTexte(e.target.value)}
       />
-      <p className="sous admin-compteur">{texte.length} / 500</p>
+      <p className="sous admin-compteur">{texte.length} / 1000</p>
       <button className="btn btn-primaire" disabled={envoi || !texte.trim()} onClick={() => void envoyer()}>
         <Send size={17} /> Envoyer à tous
       </button>
@@ -340,6 +351,7 @@ function MessageATous({ echec, surMessage }: { echec: (e: unknown) => void; surM
           <ul className="echanges-liste">
             {etat.annonces.map((a) => (
               <li key={a.id} className="reglages-carte">
+                {a.titre && <p className="admin-annonce-titre">{a.titre}</p>}
                 <p className="admin-annonce-texte">{a.texte}</p>
                 <p className="sous">
                   {jour(a.cree)} · notification sur {a.notifies} appareil{a.notifies > 1 ? 's' : ''}
