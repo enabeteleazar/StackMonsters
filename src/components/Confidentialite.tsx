@@ -89,11 +89,11 @@ export default function Confidentialite() {
                 l’auteur de la proposition n’est pas enregistré.
               </p>
               <p>
-                Échanges : tu peux proposer les doubles d’une canette de ta collection et noter celles que tu cherches.
-                Ces choix sont liés à ton compte, mais les fiches n’en montrent que des nombres (« 2 collectionneurs
-                l’ont en double »), jamais qui. Ils sont effacés avec ton compte ; une canette ajoutée à ta collection
-                n’est plus « recherchée ». L’interrupteur « Partage des doublons » des Réglages coupe d’un coup le
-                partage de tous tes doubles (personne n’en voit plus le nombre) ; tes choix par canette sont gardés.
+                Échanges : les canettes que tu possèdes en au moins 2 exemplaires comptent comme doubles, et tu peux
+                noter celles que tu cherches. Les fiches n’en montrent que des nombres (« 2 collectionneurs l’ont en
+                double »), jamais qui. L’interrupteur « Partage des doublons » des Réglages, activé par défaut, décide
+                pour toute ta collection : coupé, aucun de tes doubles n’est compté. Ces données sont effacées avec ton
+                compte ; une canette ajoutée à ta collection n’est plus « recherchée ».
               </p>
             </Bloc>
 

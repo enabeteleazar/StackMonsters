@@ -185,7 +185,7 @@ export default function Settings({
 
         <h2 className="reglages-titre">Compte et confidentialité</h2>
         <div className="reglages-actions">
-          {/* Interrupteur général du partage des doublons (le choix de chaque canette est gardé). */}
+          {/* Seul réglage du partage : activé, toutes les canettes en 2 exemplaires ou plus comptent comme doubles. */}
           <button
             className={`accueil-co-secondaire reglages-bascule${partage ? ' actif' : ''}`}
             role="switch"

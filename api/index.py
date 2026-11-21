@@ -72,7 +72,7 @@ COLONNES_COLLECTION = (
     "COALESCE(w.description, '') AS description, "
     "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
     "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region, "
-    "COALESCE(w.variante, '') AS variante, c.echange, "
+    "COALESCE(w.variante, '') AS variante, "
     "(SELECT u.partage_doubles FROM users u WHERE u.id = c.user_id) AS partage_doubles, "
     "(SELECT COUNT(*) FROM recherches r WHERE r.fiche = w.ean) AS recherches"
 )
@@ -396,6 +396,8 @@ UPDATE wiki SET variante = CASE WHEN sm_texte(nom) ~ '\m(limited|limitee)\M' THE
     # compté seulement s'il en a au moins 2) et note les canettes qu'il cherche (recherches). Les fiches n'en
     # montrent que des compteurs, jamais qui. Tout part avec le compte (ON DELETE CASCADE) ; une recherche suit la
     # fiche si son code-barres change (ON UPDATE CASCADE) et disparaît avec elle.
+    # Depuis, collection.echange n'est plus lue : le partage se règle pour tout le compte (users.partage_doubles,
+    # migration 17). La colonne reste (migration déjà appliquée, schéma conservé).
     (16, """
 ALTER TABLE collection ADD COLUMN IF NOT EXISTS echange BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS collection_echange ON collection (ean) WHERE echange;
@@ -406,8 +408,8 @@ CREATE TABLE IF NOT EXISTS recherches (
     PRIMARY KEY (user_id, fiche));
 CREATE INDEX IF NOT EXISTS recherches_fiche ON recherches (fiche);
 """),
-    # Réglage du compte : partager ou non ses doublons (interrupteur général, activé par défaut). Désactivé, aucun
-    # double du compte n'est compté, même ceux proposés canette par canette ; le choix de chaque canette est gardé.
+    # Réglage du compte : partager ou non ses doublons (seul réglage, activé par défaut). Activé, toute canette en
+    # 2 exemplaires ou plus compte comme double ; désactivé, aucun double du compte n'est compté.
     (17, """
 ALTER TABLE users ADD COLUMN IF NOT EXISTS partage_doubles BOOLEAN NOT NULL DEFAULT true;
 """),
@@ -982,7 +984,7 @@ def moi(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexi
 
 @router.patch("/auth/partage-doubles")
 def regler_partage_doubles(e: Echange, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
-    """Interrupteur général du compte : partager ou non ses doublons (le choix de chaque canette est gardé)."""
+    """Seul réglage du partage : activé, toutes les canettes du compte en 2 exemplaires ou plus comptent comme doubles."""
     with cx.transaction():
         cx.execute("UPDATE users SET partage_doubles = %s WHERE id = %s", (e.echange, u["id"]))
     return {"partage_doubles": e.echange}
@@ -1213,18 +1215,6 @@ def ajuster(ean: str, d: Delta, u: dict = Depends(utilisateur), cx: psycopg.Conn
     return r
 
 
-@router.patch("/cans/{ean}/echange")
-def proposer_doubles(ean: str, e: Echange, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
-    """Propose (ou retire) les doubles de cette canette à l'échange ; ils ne comptent qu'à partir de 2 exemplaires."""
-    with cx.transaction():
-        n = cx.execute("UPDATE collection SET echange = %s, maj = %s WHERE user_id = %s AND ean = %s",
-                       (e.echange, maintenant(), u["id"], ean)).rowcount
-        r = _canette(cx, u["id"], ean) if n else None
-    if r is None:
-        raise HTTPException(404, "canette inconnue")
-    return r
-
-
 @router.delete("/cans")
 def vider_collection(v: Vidage, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     """Retire toutes les canettes de la collection (quantités, états, notes, photos). Le compte et le Wiki restent."""
@@ -1252,8 +1242,9 @@ COLONNES_FICHE = (
     "FROM wiki_signalements s WHERE s.fiche = wiki.ean AND s.traite IS NULL), '[]') AS signalements, moderation, "
     "COALESCE((SELECT json_agg(json_build_object('decision', m.decision, 'motif', m.motif, 'cree', m.cree) "
     "ORDER BY m.id) FROM wiki_moderations m WHERE m.fiche = wiki.ean), '[]') AS moderations, "
-    # Échanges : nombre de collectionneurs qui proposent des doubles (code principal ou secondaire) et qui la cherchent.
-    "(SELECT COUNT(DISTINCT c.user_id) FROM collection c WHERE c.echange AND c.nb >= 2 "
+    # Échanges : nombre de collectionneurs qui en ont des doubles (2 exemplaires ou plus, code principal ou
+    # secondaire) avec le partage activé dans leurs Réglages, et nombre de ceux qui la cherchent.
+    "(SELECT COUNT(DISTINCT c.user_id) FROM collection c WHERE c.nb >= 2 "
     "AND (SELECT u.partage_doubles FROM users u WHERE u.id = c.user_id) AND (c.ean = wiki.ean OR "
     "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = wiki.ean))) AS doubles, "
     "(SELECT COUNT(*) FROM recherches r WHERE r.fiche = wiki.ean) AS recherches"
@@ -1285,7 +1276,9 @@ def _fiche(r: dict, proprietaire: bool = False) -> dict:
 
 def _marquer_recherches(cx: psycopg.Connection, fiches: list[dict], user_id: int) -> list[dict]:
     """Ajoute, pour ce compte : « je_cherche » (notée comme recherchée) et « je_possede » (dans sa collection,
-    sous son code principal ou un code secondaire)."""
+    sous son code principal ou un code secondaire), et « partage_doubles », le réglage du compte (désactivé, la
+    fiche masque son bloc Échanges)."""
+    partage = cx.execute("SELECT partage_doubles FROM users WHERE id = %s", (user_id,)).fetchone()
     miennes = {r["fiche"] for r in cx.execute("SELECT fiche FROM recherches WHERE user_id = %s", (user_id,))}
     possedees = {r["fiche"] for r in cx.execute(
         "SELECT COALESCE((SELECT k.fiche FROM wiki_codes k WHERE k.ean = c.ean), c.ean) AS fiche "
@@ -1293,6 +1286,7 @@ def _marquer_recherches(cx: psycopg.Connection, fiches: list[dict], user_id: int
     for f in fiches:
         f["je_cherche"] = f["ean"] in miennes
         f["je_possede"] = f["ean"] in possedees
+        f["partage_doubles"] = bool(partage and partage["partage_doubles"])
     return fiches
 
 
@@ -1380,8 +1374,8 @@ def wiki_recherche(
     if je_cherche:  # les canettes que ce compte cherche
         conditions.append("EXISTS (SELECT 1 FROM recherches r WHERE r.fiche = wiki.ean AND r.user_id = %s)")
         params.append(u["id"])
-    if doubles:  # au moins un collectionneur en propose des doubles
-        conditions.append("EXISTS (SELECT 1 FROM collection c WHERE c.echange AND c.nb >= 2 "
+    if doubles:  # au moins un collectionneur en a des doubles, partage activé
+        conditions.append("EXISTS (SELECT 1 FROM collection c WHERE c.nb >= 2 "
                           "AND (SELECT u.partage_doubles FROM users u WHERE u.id = c.user_id) AND (c.ean = wiki.ean OR "
                           "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = wiki.ean)))")
     if signalees and proprio:

@@ -133,9 +133,6 @@ export const api = {
   /** Échanges : noter (ou ne plus noter) une canette du Wiki comme recherchée. */
   wikiChercher: (ean: string, cherche: boolean) =>
     requete<FicheWiki>(`/wiki/${encodeURIComponent(ean)}/recherche`, { method: cherche ? 'POST' : 'DELETE' }),
-  /** Échanges : proposer (ou retirer) les doubles d'une canette de sa collection. */
-  proposerDoubles: (ean: string, echange: boolean) =>
-    requete<Canette>(`/cans/${encodeURIComponent(ean)}/echange`, { method: 'PATCH', body: JSON.stringify({ echange }) }),
   /** Recherche paginée côté serveur dans le catalogue partagé. */
   wikiRecherche: (p: {
     q?: string

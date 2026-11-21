@@ -129,15 +129,14 @@ API, la fenêtre montre le geste Partager → « Sur l'écran d'accueil » → �
 ## Échanges, étape 1 : doubles et recherchées
 Branche `market` (idée 1 des échanges entre collectionneurs, voir `TODO.md`). Aucun contact entre membres :
 seulement des compteurs anonymes.
-- **Doubles** : sur la fiche d'une canette de sa collection, à partir de 2 exemplaires, « Proposer mes doubles
-  (N) à l'échange » (`PATCH /api/cans/{ean}/echange`, colonne `collection.echange`). Un exemplaire seul ne compte
-  pas ; le choix est gardé si la quantité redescend puis remonte, et n'est pas effacé par un enregistrement
-  complet de la fiche.
+- **Doubles** : toute canette de la collection en 2 exemplaires ou plus compte comme double, sans rien
+  proposer canette par canette ; seul l'interrupteur des Réglages décide (voir plus bas). La colonne
+  `collection.echange` (migration 16) n'est plus lue et la route `PATCH /api/cans/{ean}/echange` a été retirée.
 - **Recherchées** : sur une fiche du Wiki qu'on n'a pas, « Je la cherche » (`POST` / `DELETE
   /api/wiki/{ean}/recherche`, table `recherches`). Refusé (409) si la canette est déjà dans la collection ;
   retirée automatiquement quand on l'ajoute.
-- **Affichage** : chaque fiche du Wiki porte `doubles` (collectionneurs qui en proposent, codes secondaires
-  compris) et `recherches` (collectionneurs qui la cherchent), plus `je_cherche` et `je_possede` pour le compte
+- **Affichage** : chaque fiche du Wiki porte `doubles` (collectionneurs qui en ont des doubles, partage
+  activé, codes secondaires compris) et `recherches` (collectionneurs qui la cherchent), plus `je_cherche` et `je_possede` pour le compte
   connecté ; la fiche de collection montre combien la cherchent. Badges sur les cartes du Wiki, filtres
   « Je cherche » (`je_cherche=true`) et « Doubles dispo » (`doubles=true`) dans le panneau Filtres (groupe
   « Échanges »), affichés ensuite en pastilles sous la recherche. Bloc « Échanges » dans les deux fiches (Wiki et
@@ -145,7 +144,8 @@ seulement des compteurs anonymes.
 - **Réglages** (ordre : Partage des doublons, Confidentialité, mesure d'audience, espace, Vider ma collection
   — propriétaire seulement —, Se déconnecter) : interrupteur « Partage des doublons » (`PATCH /api/auth/partage-doubles`, colonne
   `users.partage_doubles`, activé par défaut ; `GET /api/auth/moi` le renvoie). Coupé, aucun des doubles du compte
-  n'est compté ni filtré, et la fiche de collection l'indique ; les choix par canette restent intacts.
+  n'est compté ni filtré, et le bloc « Échanges » est masqué sur les fiches (collection et Wiki ; les fiches
+  du Wiki portent `partage_doubles`, le réglage du compte connecté).
 - **Données** : migrations 16 et 17. Tout part avec le compte (`ON DELETE CASCADE`) ; une recherche suit la fiche si
   son code-barres change et disparaît avec elle.
 

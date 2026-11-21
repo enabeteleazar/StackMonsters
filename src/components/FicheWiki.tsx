@@ -274,35 +274,38 @@ export default function FicheWiki({
               </dl>
             </div>
 
-            <div className="fiche-echanges" role="region" aria-label="Échanges">
-              <span className="etiquette">Échanges</span>
-              <p>
-                <Repeat2 size={17} aria-hidden="true" />
-                {fiche.doubles
-                  ? `${fiche.doubles} collectionneur${fiche.doubles > 1 ? 's' : ''} l’${fiche.doubles > 1 ? 'ont' : 'a'} en double`
-                  : 'Personne ne la propose en double pour l’instant'}
-              </p>
-              <p>
-                <SearchCheck size={17} aria-hidden="true" />
-                {fiche.recherches
-                  ? `${fiche.recherches} collectionneur${fiche.recherches > 1 ? 's' : ''} la cherche${fiche.recherches > 1 ? 'nt' : ''}`
-                  : 'Personne ne la cherche pour l’instant'}
-              </p>
-              {fiche.je_possede ? (
-                <p className="fiche-echanges-note">Elle est dans ta collection : tu peux proposer tes doubles depuis sa fiche.</p>
-              ) : (
-                <button
-                  className={`btn ${fiche.je_cherche ? 'btn-fantome' : 'btn-primaire'}`}
-                  aria-pressed={!!fiche.je_cherche}
-                  disabled={rechercheOccupee}
-                  onClick={() => void basculerRecherche()}
-                >
-                  <SearchCheck size={18} />
-                  {fiche.je_cherche ? 'Je ne la cherche plus' : 'Je la cherche'}
-                </button>
-              )}
-              {erreurRecherche && <p className="sous" role="alert">{erreurRecherche}</p>}
-            </div>
+            {/* Partage des doublons désactivé dans les Réglages : pas de bloc Échanges. */}
+            {fiche.partage_doubles !== false && (
+              <div className="fiche-echanges" role="region" aria-label="Échanges">
+                <span className="etiquette">Échanges</span>
+                <p>
+                  <Repeat2 size={17} aria-hidden="true" />
+                  {fiche.doubles
+                    ? `${fiche.doubles} collectionneur${fiche.doubles > 1 ? 's' : ''} l’${fiche.doubles > 1 ? 'ont' : 'a'} en double`
+                    : 'Personne ne la propose en double pour l’instant'}
+                </p>
+                <p>
+                  <SearchCheck size={17} aria-hidden="true" />
+                  {fiche.recherches
+                    ? `${fiche.recherches} collectionneur${fiche.recherches > 1 ? 's' : ''} la cherche${fiche.recherches > 1 ? 'nt' : ''}`
+                    : 'Personne ne la cherche pour l’instant'}
+                </p>
+                {fiche.je_possede ? (
+                  <p className="fiche-echanges-note">Elle est dans ta collection : tes doubles sont partagés selon tes Réglages.</p>
+                ) : (
+                  <button
+                    className={`btn ${fiche.je_cherche ? 'btn-fantome' : 'btn-primaire'}`}
+                    aria-pressed={!!fiche.je_cherche}
+                    disabled={rechercheOccupee}
+                    onClick={() => void basculerRecherche()}
+                  >
+                    <SearchCheck size={18} />
+                    {fiche.je_cherche ? 'Je ne la cherche plus' : 'Je la cherche'}
+                  </button>
+                )}
+                {erreurRecherche && <p className="sous" role="alert">{erreurRecherche}</p>}
+              </div>
+            )}
 
             {peutEditer && !!fiche.a_reprendre?.length && (
               <div className="fiche-moderation en_attente" role="status">

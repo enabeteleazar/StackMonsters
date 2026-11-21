@@ -1088,6 +1088,7 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
     assert set(f) == {
         "ean", "nom", "volume", "categorie", "flavor", "status", "region", "variante",
         "description", "photo", "codes", "doubles", "recherches", "je_cherche", "je_possede",
+        "partage_doubles",  # réglage du compte qui consulte, pas de celui qui a ajouté la canette
     }
     assert f["photo"]  # la fiche n'avait pas de photo : celle envoyée devient la sienne
     assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 200
@@ -1869,29 +1870,20 @@ def test_migration_15_complete_les_variantes_vides(env):
 # --- Échanges, étape 1 : doubles et recherchées ------------------------------------------
 
 
-def test_doubles_proposes_comptes_sur_la_fiche_sans_dire_qui(env):
+def test_doubles_comptes_sur_la_fiche_sans_dire_qui(env):
     c, codes = env
     ha, hb, hc = connecter(c, codes, A), connecter(c, codes, B), connecter(c, codes, "test-c@example.com")
     c.put("/api/cans", json=canette(nom="Mango", nb=3), headers=ha)
-    c.put("/api/cans", json=canette(nom="Mango", nb=1), headers=hb)
-    assert fiche(c, hc, "2000000000015")["doubles"] == 0  # rien n'est proposé par défaut
-    url = "/api/cans/2000000000015/echange"
-    assert c.patch(url, json={"echange": True}).status_code == 401
-    assert c.patch("/api/cans/2000000000022/echange", json={"echange": True}, headers=ha).status_code == 404
-    r = c.patch(url, json={"echange": True}, headers=ha)
-    assert r.status_code == 200 and r.json()["echange"] is True
-    c.patch(url, json={"echange": True}, headers=hb)  # un seul exemplaire : pas de double à compter
+    c.put("/api/cans", json=canette(nom="Mango", nb=1), headers=hb)  # un seul exemplaire : pas de double
+    # Partage activé par défaut : les doubles de A comptent d'office, sans rien proposer canette par canette.
     f = fiche(c, hc, "2000000000015")
     assert f["doubles"] == 1 and A not in str(f) and B not in str(f)
     c.patch("/api/cans/2000000000015/nb", json={"delta": -2}, headers=ha)  # plus qu'un exemplaire
     assert fiche(c, hc, "2000000000015")["doubles"] == 0
     c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=ha)
-    assert fiche(c, hc, "2000000000015")["doubles"] == 1  # le choix est gardé
-    # Un enregistrement complet (ancienne appli, sans le champ) ne retire pas la proposition.
-    c.put("/api/cans", json=canette(nom="Mango", nb=2, notes="x"), headers=ha)
     assert fiche(c, hc, "2000000000015")["doubles"] == 1
-    c.patch(url, json={"echange": False}, headers=ha)
-    assert fiche(c, hc, "2000000000015")["doubles"] == 0
+    # L'ancienne route de proposition par canette n'existe plus.
+    assert c.patch("/api/cans/2000000000015/echange", json={"echange": True}, headers=ha).status_code in (404, 405)
 
 
 def test_canette_recherchee_puis_trouvee(env):
@@ -1927,8 +1919,7 @@ def test_filtre_doubles_disponibles(env):
     c, codes = env
     ha = connecter(c, codes, A)
     c.put("/api/cans", json=canette("2000000000015", nom="Mango", nb=2), headers=ha)
-    c.put("/api/cans", json=canette("2000000000022", nom="Ultra", nb=2), headers=ha)
-    c.patch("/api/cans/2000000000015/echange", json={"echange": True}, headers=ha)
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra", nb=1), headers=ha)
     assert [f["ean"] for f in _rechercher(c, ha, doubles="true", par_page=60)["fiches"]] == ["2000000000015"]
 
 
@@ -1959,17 +1950,19 @@ def test_partage_des_doublons_desactive_dans_les_reglages(env):
     c, codes = env
     ha, hb = connecter(c, codes, A), connecter(c, codes, B)
     c.put("/api/cans", json=canette(nom="Mango", nb=3), headers=ha)
-    c.patch("/api/cans/2000000000015/echange", json={"echange": True}, headers=ha)
     assert fiche(c, hb, "2000000000015")["doubles"] == 1
     assert c.patch("/api/auth/partage-doubles", json={"echange": False}).status_code == 401
     r = c.patch("/api/auth/partage-doubles", json={"echange": False}, headers=ha)
     assert r.status_code == 200 and r.json() == {"partage_doubles": False}
     assert c.get("/api/auth/moi", headers=ha).json()["partage_doubles"] is False
-    # Plus rien n'est compté ni trouvé par le filtre, mais le choix de la canette est gardé.
+    # Les fiches du Wiki portent le réglage du compte connecté (le bloc Échanges y est alors masqué).
+    assert fiche(c, ha, "2000000000015")["partage_doubles"] is False
+    assert fiche(c, hb, "2000000000015")["partage_doubles"] is True
+    # Plus rien n'est compté ni trouvé par le filtre.
     assert fiche(c, hb, "2000000000015")["doubles"] == 0
     assert _rechercher(c, hb, doubles="true", par_page=60)["fiches"] == []
     canette_a = c.get("/api/cans/2000000000015", headers=ha).json()
-    assert canette_a["echange"] is True and canette_a["partage_doubles"] is False
-    # Réactivé : les doubles proposés réapparaissent.
+    assert canette_a["partage_doubles"] is False
+    # Réactivé : tous les doubles réapparaissent.
     c.patch("/api/auth/partage-doubles", json={"echange": True}, headers=ha)
     assert fiche(c, hb, "2000000000015")["doubles"] == 1

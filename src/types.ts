@@ -8,8 +8,6 @@ export type Canette = {
   region: string
   /** Variante de la référence (Standard, Zero Sugar, Shot…), venue du Wiki. */
   variante?: string
-  /** Doubles proposés à l'échange (comptés seulement à partir de 2 exemplaires). */
-  echange?: boolean
   /** Réglage du compte : faux quand le partage des doublons est désactivé (rien n'est alors compté). */
   partage_doubles?: boolean
   /** Nombre de collectionneurs qui cherchent cette canette (aucun nom). */
@@ -62,12 +60,14 @@ export type FicheWiki = {
   description: string
   /** Marqueur de version de la photo (null : pas de photo). Les octets se chargent à part. */
   photo: string | null
-  /** Échanges : collectionneurs qui en proposent des doubles, et qui la cherchent (des nombres, jamais des noms). */
+  /** Échanges : collectionneurs qui en ont des doubles (partage activé), et qui la cherchent (des nombres, jamais des noms). */
   doubles?: number
   recherches?: number
   /** Pour le compte connecté : il la cherche / il l'a dans sa collection. */
   je_cherche?: boolean
   je_possede?: boolean
+  /** Réglage « Partage des doublons » du compte connecté : faux, le bloc Échanges de la fiche est masqué. */
+  partage_doubles?: boolean
   /** Propriétaire seulement : champs hors des valeurs contrôlées, à corriger (fiches d'avant la normalisation). */
   a_reprendre?: string[]
   /** Codes-barres supplémentaires (autre pays, autre format) qui désignent aussi cette fiche. */

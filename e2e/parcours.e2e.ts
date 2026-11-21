@@ -219,13 +219,22 @@ test('déconnexion : cet appareil seulement', async ({ page, browser }) => {
 })
 
 test('réglages : le partage des doublons se coupe et se rallume', async ({ page }) => {
+  const nom = `Partage ${unique()}`
   await connecter(page, email())
+  await ajouterParCode(page, ean13(), nom)
   await nav(page, 'Réglages').click()
   await expect(page.getByRole('button', { name: 'Déconnecter tous les appareils' })).toHaveCount(0)
   const bascule = page.getByRole('switch', { name: /Partage des doublons/ })
   await expect(bascule).toHaveAttribute('aria-checked', 'true')
   await bascule.click()
   await expect(bascule).toHaveAttribute('aria-checked', 'false')
+  // Partage coupé : le bloc Échanges disparaît des fiches du Wiki.
+  await nav(page, 'Wiki').click()
+  await page.getByLabel('Chercher dans le Wiki').fill(nom)
+  await page.locator('.wiki-grille').getByText(nom).click()
+  await expect(page.locator('.fiche-wiki')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Échanges' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Fermer' }).first().click()
   await page.reload()
   await nav(page, 'Réglages').click()
   await expect(page.getByRole('switch', { name: /Partage des doublons/ })).toHaveAttribute('aria-checked', 'false')
@@ -268,7 +277,7 @@ test('l’invitation à installer l’appli s’affiche une seule fois, après l
   await expect(surIphone.getByText('Sur l’écran d’accueil')).toBeVisible()
 })
 
-test('échanges : un membre propose ses doubles, un autre cherche la canette', async ({ page, browser }) => {
+test('échanges : les doubles d’un membre sont partagés d’office, un autre cherche la canette', async ({ page, browser }) => {
   const nom = `Echange ${unique()}`
   const code = ean13()
   await connecter(page, email())
@@ -277,8 +286,9 @@ test('échanges : un membre propose ses doubles, un autre cherche la canette', a
   await expect(page.getByText(`Doublon ajouté · ${nom} × 2`)).toBeVisible()
   await nav(page, 'Collection').click()
   await page.getByRole('button', { name: nom }).click()
-  await page.getByRole('button', { name: /Proposer mes doubles \(1\)/ }).click()
-  await expect(page.getByRole('button', { name: /Doubles proposés \(1\)/ })).toBeVisible()
+  // Aucun bouton par canette : le double est partagé d'office (Réglages, activé par défaut).
+  await expect(page.getByText('1 double partagé (sans ton nom)')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Proposer mes doubles/ })).toHaveCount(0)
 
   const autre = await nouvellePage(browser)
   await connecter(autre, email())

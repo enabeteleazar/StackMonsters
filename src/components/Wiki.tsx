@@ -43,7 +43,7 @@ export default function Wiki({ surNonAutorise }: Props) {
   const [tri, setTri] = useState<TriWiki>('pertinence')
   // Propriétaire : n'afficher que les fiches qui ont des erreurs signalées.
   const [signaleesSeules, setSignaleesSeules] = useState(false)
-  // Échanges : mes canettes recherchées, ou celles dont quelqu'un propose des doubles.
+  // Échanges : mes canettes recherchées, ou celles dont quelqu'un a des doubles.
   const [jeChercheSeules, setJeChercheSeules] = useState(false)
   const [doublesSeules, setDoublesSeules] = useState(false)
   // Propriétaire : n'afficher que les fiches à vérifier (créées par des membres).
@@ -253,7 +253,7 @@ export default function Wiki({ surNonAutorise }: Props) {
                         </span>
                       )}
                       {!!f.doubles && (
-                        <span className="wiki-doubles" title="Collectionneurs qui en proposent des doubles">
+                        <span className="wiki-doubles" title="Collectionneurs qui en ont des doubles">
                           <Repeat2 size={12} aria-hidden="true" /> {f.doubles}
                         </span>
                       )}
