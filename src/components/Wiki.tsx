@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, Flag, Loader2, Plus, Repeat2, Search, SearchCheck, ShieldQuestion, SlidersHorizontal, WifiOff, X } from 'lucide-react'
+import { BookOpen, Flag, Loader2, Plus, Search, SearchCheck, ShieldQuestion, SlidersHorizontal, WifiOff, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
 import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
 import type { FicheWiki as Fiche, ResultatRechercheWiki, TriWiki } from '../types'
@@ -250,11 +250,6 @@ export default function Wiki({ surNonAutorise }: Props) {
                       {f.je_cherche && (
                         <span className="wiki-cherche" role="img" aria-label="Tu la cherches">
                           <SearchCheck size={13} />
-                        </span>
-                      )}
-                      {!!f.doubles && (
-                        <span className="wiki-doubles" title="Collectionneurs qui en ont des doubles">
-                          <Repeat2 size={12} aria-hidden="true" /> {f.doubles}
                         </span>
                       )}
                       {!!f.signalements?.length && (

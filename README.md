@@ -137,7 +137,7 @@ seulement des compteurs anonymes.
   retirée automatiquement quand on l'ajoute.
 - **Affichage** : chaque fiche du Wiki porte `doubles` (collectionneurs qui en ont des doubles, partage
   activé, codes secondaires compris) et `recherches` (collectionneurs qui la cherchent), plus `je_cherche` et `je_possede` pour le compte
-  connecté ; la fiche de collection montre combien la cherchent. Badges sur les cartes du Wiki, filtres
+  connecté ; la fiche de collection montre combien la cherchent. Badge « Tu la cherches » sur les cartes du Wiki (plus de badge des doubles), filtres
   « Je cherche » (`je_cherche=true`) et « Doubles dispo » (`doubles=true`) dans le panneau Filtres (groupe
   « Échanges »), affichés ensuite en pastilles sous la recherche. Bloc « Échanges » : sur la fiche du Wiki, seulement
   le bouton « Je la cherche » (aucun compteur, absent si la canette est déjà possédée) ; sur la fiche de collection,
