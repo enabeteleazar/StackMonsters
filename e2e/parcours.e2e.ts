@@ -94,7 +94,7 @@ test('une canette sans code-barres reçoit un code tiré de son nom et rejoint l
   await expect(page.getByText('Fiche enregistrée')).toBeVisible()
 
   await nav(page, 'Wiki').click()
-  await expect(page.getByText('Canettes répertoriées')).toBeVisible()
+  await expect(page.locator('.wiki-tete .collec-compte')).toContainText('canettes')
   await expect(page.getByText(nom).first()).toBeVisible()
 
   await nav(page, 'Collection').click()
@@ -106,7 +106,8 @@ test('une canette sans code-barres reçoit un code tiré de son nom et rejoint l
   await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await expect(page.getByText('Fiche enregistrée')).toBeVisible()
   await page.getByRole('button', { name: nom }).click()
-  await expect(page.locator('.meta-item', { hasText: 'Volume' })).toContainText('500 ml')
+  await expect(page.locator('.fiche-infos div', { hasText: 'Volume' })).toContainText('500 ml')
+  await expect(page.locator('.verdict.fiche-wiki .fiche-saveur')).toBeVisible() // même design que le Wiki
 })
 
 test('le propriétaire ajoute puis retire la photo d’une fiche du Wiki', async ({ page }) => {
@@ -134,12 +135,24 @@ test('une fiche encore dans une collection se masque du Wiki au lieu d’être s
   await connecter(membre, email())
   await ajouterParCode(membre, ean13(), nom)
   await nav(membre, 'Wiki').click()
+  await membre.getByRole('button', { name: 'Filtres' }).click()
+  await expect(membre.getByRole('radio', { name: 'Toutes' }).first()).toBeVisible()
   await expect(membre.getByRole('radio', { name: 'Sans catégorie' })).toHaveCount(0) // filtre du propriétaire
+  await membre.keyboard.press('Escape')
+  // « Proposer une canette » : bouton rond flottant.
+  await membre.getByRole('button', { name: 'Proposer une canette' }).click()
+  await expect(membre.locator('#p-nom')).toBeVisible()
+  await membre.getByRole('button', { name: 'Fermer' }).first().click()
 
   page.on('dialog', (d) => d.accept())
   await connecter(page, PROPRIETAIRE)
   await nav(page, 'Wiki').click()
-  await expect(page.getByRole('radio', { name: 'Sans catégorie' })).toBeVisible()
+  // Filtres dans un panneau : « Sans catégorie » devient une pastille retirable sous la recherche.
+  await page.getByRole('button', { name: 'Filtres' }).click()
+  await page.getByRole('radio', { name: 'Sans catégorie' }).click()
+  await page.getByRole('button', { name: /^Voir/ }).click()
+  await page.getByRole('button', { name: 'Retirer le filtre Sans catégorie' }).click()
+  await expect(page.getByRole('button', { name: 'Filtres' })).toBeVisible()
   await page.getByLabel('Chercher dans le Wiki').fill(nom)
   await page.getByText(nom).click()
   await page.getByRole('button', { name: 'Supprimer la fiche du Wiki' }).click()
@@ -305,7 +318,7 @@ test('scan : canette inconnue, puis présente dans le Wiki, puis déjà posséd�
   await autre.getByRole('button', { name: 'Ajouter un doublon / +1' }).click()
   await expect(autre.locator('.scan-quantite')).toHaveText('Quantité : 2')
   await autre.getByRole('button', { name: 'Voir la fiche' }).click()
-  await expect(autre.locator('.meta-item').filter({ hasText: 'Quantité' })).toContainText('2')
+  await expect(autre.locator('.fiche-infos div').filter({ hasText: 'Quantité' })).toContainText('2')
 })
 
 test('scan : l’ajout automatique depuis le Wiki peut être annulé', async ({ page, browser }) => {

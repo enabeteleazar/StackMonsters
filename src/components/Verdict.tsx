@@ -7,6 +7,7 @@ import { normaliserCodeBarres } from '../codeBarres'
 import { reduirePhoto } from '../photo'
 import { CANETTE_VIDE, ETATS, type Canette, type FicheWiki } from '../types'
 import { suggererFiches, trouverFicheParCodeBarres } from '../wiki'
+import { usePhotoEtirable } from '../etirement'
 import PhotoWiki from './PhotoWiki'
 
 type Props = {
@@ -53,8 +54,14 @@ export default function Verdict(p: Props) {
     }
   }
 
+  // Même design que la fiche du Wiki : photo étirable (tirer vers le bas pour la voir en entier).
+  const zoneFiche = useRef<HTMLDivElement>(null)
+  const cadrePhoto = useRef<HTMLDivElement>(null)
+  usePhotoEtirable(zoneFiche, cadrePhoto)
+  const photoEtirable = connue && !edition && !!p.existante?.photo_version
+
   return (
-    <div className={`verdict${connue ? '' : ' verdict-sans-photo'}`}>
+    <div ref={zoneFiche} className={`verdict${connue ? ' fiche-wiki' : ' verdict-sans-photo'}`}>
       {/* Nouvelle canette : pas d'espace photo en haut, seulement le bouton de fermeture. */}
       {!connue && (
         <button className="btn-icone fermer" onClick={p.surFermeture} aria-label="Fermer">
@@ -62,7 +69,7 @@ export default function Verdict(p: Props) {
         </button>
       )}
       {connue && (
-        <div className="photo-hero">
+        <div ref={cadrePhoto} className={`photo-hero${photoEtirable ? ' photo-hero-plein photo-etirable' : ''}`}>
           {!edition && p.existante?.photo_version ? (
             <PhotoWiki
               source="collection"
@@ -115,52 +122,40 @@ export default function Verdict(p: Props) {
           />
         ) : (
           <>
-            {/* Ordre : Saveur (pleine largeur), Catégorie, Pays, État, Volume, puis Status et Quantité. */}
-            <div className="meta-grille">
-              <div className="meta-item meta-item-large">
-                <span>Saveur</span>
-                <b>{p.existante!.flavor || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Catégorie</span>
-                <b>{p.existante!.categorie || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Pays</span>
-                <b>{p.existante!.region || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>État</span>
-                <b>{p.existante!.etat || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Volume</span>
-                <b>{p.existante!.volume || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Variante</span>
-                <b>{p.existante!.variante || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Status</span>
-                <b>{p.existante!.status || '—'}</b>
-              </div>
-              <div className="meta-item">
-                <span>Quantité</span>
-                <b>{p.existante!.nb}</b>
-              </div>
+            {/* Même présentation que la fiche du Wiki : la saveur, puis un bloc « Informations » (une par ligne),
+                complété par ce qui est propre à ta collection (état, quantité). La description n'est pas affichée. */}
+            <div className="fiche-saveur">
+              <span className="etiquette">Saveur</span>
+              <b>{p.existante!.flavor || '—'}</b>
             </div>
-            {p.existante!.description && (
-              <div className="fiche-description">
-                <span className="etiquette">Description</span>
-                <p>{p.existante!.description}</p>
+            <div className="fiche-infos">
+              <span className="etiquette">Informations</span>
+              <dl>
+                {(
+                  [
+                    ['Catégorie', p.existante!.categorie],
+                    ['Pays', p.existante!.region],
+                    ['Volume', p.existante!.volume],
+                    ['Variante', p.existante!.variante],
+                    ['Status', p.existante!.status],
+                    ['État', p.existante!.etat],
+                    ['Quantité', String(p.existante!.nb)],
+                  ] as const
+                ).map(([libelle, valeur]) => (
+                  <div key={libelle}>
+                    <dt>{libelle}</dt>
+                    <dd>{valeur || '—'}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            {/* Notes personnelles : masquées quand elles répètent la description du Wiki. */}
+            {p.existante!.notes && p.existante!.notes.trim() !== (p.existante!.description ?? '').trim() && (
+              <div className="fiche-saveur fiche-notes">
+                <span className="etiquette">Mes notes</span>
+                <p>{p.existante!.notes}</p>
               </div>
             )}
-            {/* Notes personnelles : masquées quand elles répètent la description du Wiki, déjà affichée. */}
-            {p.existante!.notes &&
-              p.existante!.notes.trim() !== (p.existante!.description ?? '').trim() && (
-                <p className="sous">Notes : {p.existante!.notes}</p>
-              )}
 
             <div className="actions">
               <input
