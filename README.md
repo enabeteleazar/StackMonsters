@@ -139,8 +139,9 @@ seulement des compteurs anonymes.
   activé, codes secondaires compris) et `recherches` (collectionneurs qui la cherchent), plus `je_cherche` et `je_possede` pour le compte
   connecté ; la fiche de collection montre combien la cherchent. Badges sur les cartes du Wiki, filtres
   « Je cherche » (`je_cherche=true`) et « Doubles dispo » (`doubles=true`) dans le panneau Filtres (groupe
-  « Échanges »), affichés ensuite en pastilles sous la recherche. Bloc « Échanges » dans les deux fiches (Wiki et
-  collection), au même style que les blocs Saveur et Informations.
+  « Échanges »), affichés ensuite en pastilles sous la recherche. Bloc « Échanges » : sur la fiche du Wiki, seulement
+  le bouton « Je la cherche » (aucun compteur, absent si la canette est déjà possédée) ; sur la fiche de collection,
+  les doubles partagés et le nombre de collectionneurs qui la cherchent.
 - **Réglages** (ordre : Partage des doublons, Confidentialité, mesure d'audience, espace, Vider ma collection
   — propriétaire seulement —, Se déconnecter) : interrupteur « Partage des doublons » (`PATCH /api/auth/partage-doubles`, colonne
   `users.partage_doubles`, activé par défaut ; `GET /api/auth/moi` le renvoie). Coupé, aucun des doubles du compte
@@ -148,6 +149,21 @@ seulement des compteurs anonymes.
   du Wiki portent `partage_doubles`, le réglage du compte connecté).
 - **Données** : migrations 16 et 17. Tout part avec le compte (`ON DELETE CASCADE`) ; une recherche suit la fiche si
   son code-barres change et disparaît avec elle.
+
+## Échanges, étape 2 : mise en relation et messagerie
+Branche `messagerie`. Table `echanges` (une ligne par fiche, chercheur et possesseur) et table `messages`
+(migration 18) ; tout part avec le compte de l'un ou l'autre (`ON DELETE CASCADE`).
+- **Repérage** : à chaque lecture de `GET /api/echanges` (à la connexion, au retour au premier plan, puis chaque
+  minute), le serveur crée les paires de ce compte comme chercheur : une canette qu'il cherche, qu'un autre membre a
+  en 2 exemplaires ou plus, partage des doublons activé des deux côtés. Une paire n'est jamais recréée, même annulée.
+- **Notifications** (bouton de l'en-tête, avec pastille) : le chercheur voit « Un collectionneur a X en double »
+  (une seule à la fois par canette) → « Échange » (`POST /api/echanges/{id}/accepter`, statut `demandee`) ou
+  « Annuler » (`…/annuler`, rien n'est dit à l'autre). Le possesseur voit alors « Un collectionneur est intéressé
+  par ton double de X » → « Échange » (statut `acceptee`) ou « Annuler ». Une mise en relation en attente est
+  masquée dès que les conditions ne tiennent plus (canette trouvée, plus de double, partage coupé).
+- **Messagerie** : ouverte quand les deux ont choisi « Échange » (`GET` / `POST /api/echanges/{id}/messages`,
+  texte de 1 000 caractères au plus, 60 messages par heure et par compte, `SM_MESSAGES_MAX_HEURE`). Relue toutes les
+  5 s quand la conversation est affichée. Jamais d'adresse ni de nom : « Toi » et « un collectionneur ».
 
 ## Wiki (catalogue partagé)
 ### Champs d'une fiche (issue #5)

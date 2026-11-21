@@ -295,10 +295,13 @@ test('échanges : les doubles d’un membre sont partagés d’office, un autre 
   await nav(autre, 'Wiki').click()
   await autre.getByLabel('Chercher dans le Wiki').fill(nom)
   await autre.locator('.wiki-grille').getByText(nom).click()
-  await expect(autre.getByText('1 collectionneur l’a en double')).toBeVisible()
+  // Bloc Échanges de la fiche du Wiki : uniquement « Je la cherche », aucun compteur.
+  const blocEchanges = autre.getByRole('region', { name: 'Échanges' })
+  await expect(blocEchanges.getByRole('button')).toHaveText(['Je la cherche'])
+  await expect(blocEchanges.getByText(/collectionneur|Personne/)).toHaveCount(0)
   await expect(autre.locator('.fiche-wiki').getByText('Possédée', { exact: true })).toHaveCount(0) // l'autre membre ne l'a pas
   await autre.getByRole('button', { name: 'Je la cherche' }).click()
-  await expect(autre.getByText('1 collectionneur la cherche')).toBeVisible()
+  await expect(blocEchanges.getByRole('button')).toHaveText(['Je ne la cherche plus'])
   await autre.getByRole('button', { name: 'Fermer' }).first().click()
   await autre.getByLabel('Chercher dans le Wiki').fill('')
   // « Je cherche » est dans le panneau Filtres, puis devient une pastille sous la recherche.
@@ -315,6 +318,7 @@ test('échanges : les doubles d’un membre sont partagés d’office, un autre 
   await page.getByLabel('Chercher dans le Wiki').fill(nom)
   await page.locator('.wiki-grille').getByText(nom).click()
   await expect(page.locator('.fiche-wiki').getByText('Possédée', { exact: true })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Échanges' })).toHaveCount(0) // déjà possédée : rien à chercher
   await page.getByRole('button', { name: 'Fermer' }).first().click()
 
   await page.reload() // le premier membre voit qu'on la cherche, sans savoir qui
@@ -481,4 +485,51 @@ test('collection : recherche, panneau Filtres et pastilles, comme le Wiki', asyn
   await expect(page.getByRole('button', { name: 'Retirer le filtre A → Z' })).toBeVisible()
   const noms = await page.locator('.collec-nom').allTextContents()
   expect(noms).toEqual([`Alpha ${u}`, `Beta ${u}`])
+})
+
+test('échanges : mise en relation, double accord, puis messagerie', async ({ page, browser }) => {
+  const nom = `Rencontre ${unique()}`
+  const code = ean13()
+  await connecter(page, email()) // possesseur
+  await ajouterParCode(page, code, nom)
+  await saisirCode(page, code) // 2 exemplaires
+  await expect(page.getByText(`Doublon ajouté · ${nom} × 2`)).toBeVisible()
+
+  const autre = await nouvellePage(browser) // chercheur
+  await connecter(autre, email())
+  await nav(autre, 'Wiki').click()
+  await autre.getByLabel('Chercher dans le Wiki').fill(nom)
+  await autre.locator('.wiki-grille').getByText(nom).click()
+  await autre.getByRole('button', { name: 'Je la cherche' }).click()
+  await expect(autre.getByRole('button', { name: 'Je ne la cherche plus' })).toBeVisible()
+  await autre.getByRole('button', { name: 'Fermer' }).first().click()
+  await nav(autre, 'Collection').click()
+  await expect(autre.getByRole('tab', { name: /Recherchées · 1/ })).toBeVisible() // elle rejoint « Recherchées »
+
+  // Le chercheur est prévenu qu'un collectionneur l'a en double.
+  await autre.getByRole('button', { name: /^Échanges/ }).click()
+  await expect(autre.getByText(`Un collectionneur a ${nom} en double.`)).toBeVisible()
+  await autre.getByRole('button', { name: 'Échange', exact: true }).click()
+  await expect(autre.getByText(`Demande envoyée pour ${nom}. En attente de sa réponse.`)).toBeVisible()
+
+  // Le possesseur reçoit la demande (pastille), et accepte : la messagerie s'ouvre.
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Échanges, 1 nouveau' })).toBeVisible()
+  await page.getByRole('button', { name: /^Échanges/ }).click()
+  await expect(page.getByText(`Un collectionneur est intéressé par ton double de ${nom}.`)).toBeVisible()
+  await page.getByRole('button', { name: 'Échange', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: `Conversation : ${nom}` })).toBeVisible()
+  await page.getByLabel('Ton message').fill('Salut ! Je te l’échange contre une Ultra ?')
+  await page.getByRole('button', { name: 'Envoyer' }).click()
+  await expect(page.locator('.bulle.moi')).toContainText('Salut ! Je te l’échange contre une Ultra ?')
+
+  // Le chercheur retrouve la conversation dans la Messagerie, sans adresse ni nom.
+  await autre.reload()
+  await autre.getByRole('button', { name: /^Échanges/ }).click()
+  await autre.getByRole('tab', { name: /Messagerie · 1/ }).click()
+  await autre.getByRole('button', { name: new RegExp(nom) }).click()
+  await expect(autre.locator('.bulle:not(.moi)')).toContainText('Je te l’échange contre une Ultra ?')
+  await autre.getByLabel('Ton message').fill('Ça marche !')
+  await autre.keyboard.press('Enter')
+  await expect(page.locator('.bulle:not(.moi)')).toContainText('Ça marche !', { timeout: 10_000 }) // relu en direct
 })

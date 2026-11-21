@@ -123,3 +123,32 @@ export type ModifFicheWiki = Pick<
   FicheWiki,
   'ean' | 'nom' | 'volume' | 'categorie' | 'flavor' | 'status' | 'region' | 'variante' | 'description'
 >
+
+/** Échanges, étape 2 : mise en relation entre un collectionneur qui cherche et un autre qui a la canette en double.
+ * Jamais d'adresse ni de nom de l'autre membre. */
+export type MiseEnRelation = {
+  id: number
+  /** Ce compte cherche la canette (chercheur) ou en a des doubles (possesseur). */
+  role: 'chercheur' | 'possesseur'
+  /** signalee : paire repérée, notifiée au chercheur ; demandee : le chercheur veut échanger, notifiée au
+   * possesseur ; acceptee : la messagerie est ouverte ; annulee : arrêtée par l'un des deux. */
+  statut: 'signalee' | 'demandee' | 'acceptee' | 'annulee'
+  maj: string
+  fiche: { ean: string; nom: string; photo: string | null }
+}
+
+export type NotificationEchange = MiseEnRelation & {
+  /** Vrai quand ce compte doit répondre (Échange ou Annuler). */
+  action: boolean
+}
+
+export type ConversationEchange = MiseEnRelation & { non_lus: number; dernier: string | null }
+
+export type EtatEchanges = {
+  notifications: NotificationEchange[]
+  conversations: ConversationEchange[]
+  /** Pastille : notifications à traiter + messages non lus. */
+  non_lus: number
+}
+
+export type MessageEchange = { id: number; de_moi: boolean; texte: string; cree: string }

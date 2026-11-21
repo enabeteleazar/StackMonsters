@@ -69,19 +69,21 @@ export default function Collection({ canettes, surOuvrir, surNonAutorise }: Prop
     void chargerRecherchees()
   }, [chargerRecherchees, canettes.length])
 
-  const fermer = useCallback(() => {
-    setOuverte(null)
-    // Une canette décochée « Je la cherche » dans la fiche quitte la liste à la fermeture.
-    setRecherchees((liste) => liste?.filter((f) => f.je_cherche) ?? null)
-  }, [])
+  const fermer = useCallback(() => setOuverte(null), [])
   const ficheOuverte = ouverte ? (recherchees?.find((f) => f.ean === ouverte) ?? null) : null
+  // Une canette décochée « Je la cherche » reste affichée tant que sa fiche est ouverte, puis quitte la liste
+  // (même si la réponse du serveur arrive après la fermeture).
+  const cherchees = useMemo(
+    () => recherchees?.filter((f) => f.je_cherche !== false || f.ean === ouverte) ?? null,
+    [recherchees, ouverte],
+  )
 
   const mots = useMemo(() => sansAccents(q).split(/\s+/).filter(Boolean), [q])
 
   const rechercheesVues = useMemo(() => {
-    const filtrees = (recherchees ?? []).filter((f) => correspond(f, mots, gamme, region, variante))
+    const filtrees = (cherchees ?? []).filter((f) => correspond(f, mots, gamme, region, variante))
     return tri === 'nom' ? [...filtrees].sort((a, b) => a.nom.localeCompare(b.nom)) : filtrees
-  }, [recherchees, mots, gamme, region, variante, tri])
+  }, [cherchees, mots, gamme, region, variante, tri])
 
   const vues = useMemo(() => {
     const filtrees = canettes.filter((c) => correspond(c, mots, gamme, region, variante))
@@ -124,7 +126,7 @@ export default function Collection({ canettes, surOuvrir, surNonAutorise }: Prop
           </button>
           <button role="tab" aria-selected={onglet === 'recherchees'} onClick={() => setOnglet('recherchees')}>
             <SearchCheck size={16} aria-hidden="true" />
-            Recherchées{recherchees ? ` · ${recherchees.length}` : ''}
+            Recherchées{cherchees ? ` · ${cherchees.length}` : ''}
           </button>
         </div>
 
@@ -215,9 +217,9 @@ export default function Collection({ canettes, surOuvrir, surNonAutorise }: Prop
             <SearchCheck size={34} />
             {erreurRecherchees && recherchees === null
               ? 'Liste des canettes recherchées indisponible hors ligne.'
-              : recherchees === null
+              : cherchees === null
                 ? 'Chargement…'
-                : recherchees.length
+                : cherchees.length
                   ? 'Aucune canette ne correspond à ces critères.'
                   : 'Aucune canette recherchée. Dans le Wiki, ouvre une fiche et touche « Je la cherche ».'}
           </p>

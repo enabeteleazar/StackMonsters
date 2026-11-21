@@ -95,6 +95,15 @@ export default function Confidentialite() {
                 pour toute ta collection : coupé, aucun de tes doubles n’est compté. Ces données sont effacées avec ton
                 compte ; une canette ajoutée à ta collection n’est plus « recherchée ».
               </p>
+              <p>
+                Mise en relation et messagerie : quand un collectionneur a en double une canette que tu cherches, tu
+                en es prévenu sans savoir qui c’est. Si tu choisis « Échange », il est prévenu à son tour, sans
+                savoir qui tu es. Si vous choisissez tous les deux « Échange », une messagerie s’ouvre entre vous :
+                vos messages sont conservés et visibles de vous deux seulement, et ton adresse e-mail n’est jamais
+                montrée. « Annuler » arrête la mise en relation sans prévenir l’autre. Ces échanges et messages sont
+                effacés quand l’un de vous deux supprime son compte, et ne sont plus proposés si le partage des
+                doublons est coupé.
+              </p>
             </Bloc>
 
             <Bloc titre="Combien de temps ?">

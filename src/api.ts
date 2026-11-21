@@ -1,5 +1,8 @@
 import { API_URL, CLE_JETON } from './config'
-import type { Canette, FicheWiki, ModifFicheWiki, PropositionWiki, ReponseWiki, ResultatRechercheWiki, TriWiki } from './types'
+import type {
+  Canette, EtatEchanges, FicheWiki, MessageEchange, MiseEnRelation, ModifFicheWiki, PropositionWiki, ReponseWiki,
+  ResultatRechercheWiki, TriWiki,
+} from './types'
 
 /** Levée quand le service répond 401 : jeton absent ou refusé. */
 export class NonAutorise extends Error {
@@ -95,6 +98,15 @@ async function requete<T>(chemin: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   liste: () => requete<Canette[]>('/cans'),
+  /** Échanges : notifications de mise en relation et conversations ouvertes (repère aussi les nouvelles paires). */
+  echanges: () => requete<EtatEchanges>('/echanges'),
+  /** « Échange » : demande (chercheur) ou acceptation (possesseur). */
+  accepterEchange: (id: number) => requete<MiseEnRelation>(`/echanges/${id}/accepter`, { method: 'POST' }),
+  annulerEchange: (id: number) => requete<MiseEnRelation>(`/echanges/${id}/annuler`, { method: 'POST' }),
+  messages: (id: number, apres = 0) =>
+    requete<MiseEnRelation & { messages: MessageEchange[] }>(`/echanges/${id}/messages?apres=${apres}`),
+  envoyerMessage: (id: number, texte: string) =>
+    requete<MessageEchange>(`/echanges/${id}/messages`, { method: 'POST', body: JSON.stringify({ texte }) }),
   enregistrer: (c: Canette) =>
     requete<Canette>('/cans', { method: 'PUT', body: JSON.stringify(c) }),
   ajuster: (ean: string, delta: number) =>

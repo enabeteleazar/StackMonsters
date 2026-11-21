@@ -27,8 +27,8 @@ Idées et tâches à venir, pas encore planifiées. Voir aussi le [tableau de su
 ## Échanges entre collectionneurs
 
 - [x] **1. Doubles et recherchées** : branche `market` (compteurs anonymes, filtres du Wiki).
-- [ ] **2. Correspondances automatiques** : page « Échanges », proposition d'échange, contact après acceptation
-  mutuelle.
+- [x] **2. Correspondances automatiques** : branche `messagerie` (notifications, double accord « Échange »,
+  messagerie interne anonyme). À suivre : signaler ou bloquer un membre, notifications push.
 - [ ] **3. Bourse d'échange** : petites annonces sans argent, liées aux fiches, avec modération.
 - [ ] **4. Échange suivi de bout en bout** : proposé → accepté → envoyé → reçu, collections mises à jour,
   réputation.

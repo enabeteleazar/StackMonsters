@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePhotoEtirable } from '../etirement'
-import { Ban, CheckCircle2, EyeOff, Flag, ImageOff, ImagePlus, Repeat2, SearchCheck, ShieldQuestion, Trash2, X } from 'lucide-react'
+import { Ban, CheckCircle2, EyeOff, Flag, ImageOff, ImagePlus, SearchCheck, ShieldQuestion, Trash2, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import { CATEGORIES, libelleStatut, REGIONS, STATUTS } from '../categories'
 import { ChampSaveur, ChampVariante, ChampVolume } from './ChampsFiche'
@@ -274,35 +274,20 @@ export default function FicheWiki({
               </dl>
             </div>
 
-            {/* Partage des doublons désactivé dans les Réglages : pas de bloc Échanges. */}
-            {fiche.partage_doubles !== false && (
+            {/* Bloc Échanges : seulement « Je la cherche », sans aucun compteur. Absent quand la canette est déjà
+                dans la collection, ou quand le partage des doublons est désactivé dans les Réglages. */}
+            {fiche.partage_doubles !== false && !fiche.je_possede && (
               <div className="fiche-echanges" role="region" aria-label="Échanges">
                 <span className="etiquette">Échanges</span>
-                <p>
-                  <Repeat2 size={17} aria-hidden="true" />
-                  {fiche.doubles
-                    ? `${fiche.doubles} collectionneur${fiche.doubles > 1 ? 's' : ''} l’${fiche.doubles > 1 ? 'ont' : 'a'} en double`
-                    : 'Personne ne la propose en double pour l’instant'}
-                </p>
-                <p>
-                  <SearchCheck size={17} aria-hidden="true" />
-                  {fiche.recherches
-                    ? `${fiche.recherches} collectionneur${fiche.recherches > 1 ? 's' : ''} la cherche${fiche.recherches > 1 ? 'nt' : ''}`
-                    : 'Personne ne la cherche pour l’instant'}
-                </p>
-                {fiche.je_possede ? (
-                  <p className="fiche-echanges-note">Elle est dans ta collection : tes doubles sont partagés selon tes Réglages.</p>
-                ) : (
-                  <button
-                    className={`btn ${fiche.je_cherche ? 'btn-fantome' : 'btn-primaire'}`}
-                    aria-pressed={!!fiche.je_cherche}
-                    disabled={rechercheOccupee}
-                    onClick={() => void basculerRecherche()}
-                  >
-                    <SearchCheck size={18} />
-                    {fiche.je_cherche ? 'Je ne la cherche plus' : 'Je la cherche'}
-                  </button>
-                )}
+                <button
+                  className={`btn ${fiche.je_cherche ? 'btn-fantome' : 'btn-primaire'}`}
+                  aria-pressed={!!fiche.je_cherche}
+                  disabled={rechercheOccupee}
+                  onClick={() => void basculerRecherche()}
+                >
+                  <SearchCheck size={18} />
+                  {fiche.je_cherche ? 'Je ne la cherche plus' : 'Je la cherche'}
+                </button>
                 {erreurRecherche && <p className="sous" role="alert">{erreurRecherche}</p>}
               </div>
             )}

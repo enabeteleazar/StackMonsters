@@ -413,6 +413,34 @@ CREATE INDEX IF NOT EXISTS recherches_fiche ON recherches (fiche);
     (17, """
 ALTER TABLE users ADD COLUMN IF NOT EXISTS partage_doubles BOOLEAN NOT NULL DEFAULT true;
 """),
+    # Échanges, étape 2 : mise en relation. Une ligne par trio (fiche, chercheur, possesseur), créée quand l'appli
+    # repère que l'un cherche une canette que l'autre a en double (statut « signalee » : notifié au chercheur).
+    # Le chercheur demande l'échange (« demandee » : notifié au possesseur), qui l'accepte (« acceptee » : la
+    # messagerie s'ouvre) ; l'un ou l'autre peut annuler (« annulee », rien n'est dit à l'autre). Les membres ne
+    # voient jamais l'adresse de l'autre. vu_* : dernier message lu par chacun. Tout part avec le compte.
+    (18, """
+CREATE TABLE IF NOT EXISTS echanges (
+    id BIGSERIAL PRIMARY KEY,
+    fiche TEXT NOT NULL REFERENCES wiki(ean) ON UPDATE CASCADE ON DELETE CASCADE,
+    chercheur BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    possesseur BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    statut TEXT NOT NULL DEFAULT 'signalee' CHECK (statut IN ('signalee', 'demandee', 'acceptee', 'annulee')),
+    cree TEXT NOT NULL,
+    maj TEXT NOT NULL,
+    vu_chercheur BIGINT NOT NULL DEFAULT 0,
+    vu_possesseur BIGINT NOT NULL DEFAULT 0,
+    UNIQUE (fiche, chercheur, possesseur),
+    CHECK (chercheur <> possesseur));
+CREATE INDEX IF NOT EXISTS echanges_chercheur ON echanges (chercheur);
+CREATE INDEX IF NOT EXISTS echanges_possesseur ON echanges (possesseur);
+CREATE TABLE IF NOT EXISTS messages (
+    id BIGSERIAL PRIMARY KEY,
+    echange BIGINT NOT NULL REFERENCES echanges(id) ON DELETE CASCADE,
+    auteur BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    texte TEXT NOT NULL,
+    cree TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS messages_echange ON messages (echange, id);
+"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -553,6 +581,10 @@ class Verification(Demande):
 
 class Echange(BaseModel):
     echange: bool
+
+
+class Message(BaseModel):
+    texte: str = Field(min_length=1, max_length=1000)
 
 
 class Vidage(BaseModel):
@@ -1481,6 +1513,179 @@ def wiki_ne_plus_chercher(ean: str, u: dict = Depends(utilisateur), cx: psycopg.
         if r is None or (r["moderation"] == "refusee" and not proprio):
             raise HTTPException(404, "fiche inconnue")
         return _marquer_recherches(cx, [_fiche(r, proprio)], u["id"])[0]
+
+
+# --- Échanges, étape 2 : mise en relation et messagerie --------------------------------------------------
+
+MESSAGES_MAX_HEURE = 60  # messages envoyés par compte et par heure
+
+# Une mise en relation en attente (« signalee », « demandee ») ne vaut que tant que le chercheur cherche toujours la
+# canette, que le possesseur en a encore au moins 2, et que tous deux partagent leurs doublons. Sinon elle est
+# simplement masquée (et redevient visible si les conditions reviennent).
+_EN_RELATION_VALIDE = (
+    "EXISTS (SELECT 1 FROM recherches r WHERE r.user_id = e.chercheur AND r.fiche = e.fiche) "
+    "AND EXISTS (SELECT 1 FROM collection c WHERE c.user_id = e.possesseur AND c.nb >= 2 AND (c.ean = e.fiche OR "
+    "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = e.fiche))) "
+    "AND (SELECT u.partage_doubles FROM users u WHERE u.id = e.chercheur) "
+    "AND (SELECT u.partage_doubles FROM users u WHERE u.id = e.possesseur)"
+)
+
+
+def _reperer_paires(cx: psycopg.Connection, user_id: int) -> None:
+    """Crée les mises en relation de ce compte comme chercheur : chaque collectionneur qui a en double une canette
+    qu'il cherche (partage activé des deux côtés). Une paire déjà connue, même annulée, n'est jamais recréée."""
+    now = maintenant()
+    cx.execute(
+        "INSERT INTO echanges (fiche, chercheur, possesseur, statut, cree, maj) "
+        "SELECT DISTINCT r.fiche, r.user_id, c.user_id, 'signalee', %s, %s FROM recherches r "
+        "JOIN users ur ON ur.id = r.user_id AND ur.partage_doubles "
+        "JOIN collection c ON c.nb >= 2 AND c.user_id <> r.user_id AND (c.ean = r.fiche OR "
+        "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = r.fiche)) "
+        "JOIN users uc ON uc.id = c.user_id AND uc.partage_doubles "
+        "WHERE r.user_id = %s ON CONFLICT DO NOTHING",
+        (now, now, user_id),
+    )
+
+
+def _echange_du_compte(cx: psycopg.Connection, echange_id: int, user_id: int) -> dict:
+    """La mise en relation, si ce compte y prend part ; 404 sinon (sans dire si elle existe)."""
+    e = cx.execute(
+        "SELECT e.*, w.nom, CASE WHEN w.photo IS NOT NULL THEN w.maj END AS photo_wiki FROM echanges e JOIN wiki w ON w.ean = e.fiche "
+        "WHERE e.id = %s AND %s IN (e.chercheur, e.possesseur)", (echange_id, user_id),
+    ).fetchone()
+    if e is None:
+        raise HTTPException(404, "échange inconnu")
+    e["role"] = "chercheur" if e["chercheur"] == user_id else "possesseur"
+    return e
+
+
+def _en_relation_valide(cx: psycopg.Connection, echange_id: int) -> bool:
+    return cx.execute(f"SELECT 1 FROM echanges e WHERE e.id = %s AND {_EN_RELATION_VALIDE}", (echange_id,)).fetchone() is not None
+
+
+def _vue_echange(e: dict) -> dict:
+    """Ce qu'un membre voit d'une mise en relation : jamais l'identité ni l'adresse de l'autre."""
+    return {
+        "id": e["id"], "role": e["role"], "statut": e["statut"], "maj": e["maj"],
+        "fiche": {"ean": e["fiche"], "nom": e["nom"], "photo": e["photo_wiki"]},
+    }
+
+
+@router.get("/echanges")
+def echanges(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Notifications (mises en relation qui attendent une réponse de ce compte, ou ses demandes en attente) et
+    conversations ouvertes, avec le nombre d'éléments non lus (pastille de l'appli)."""
+    uid = u["id"]
+    with cx.transaction():
+        _reperer_paires(cx, uid)
+        lignes = cx.execute(
+            "SELECT e.*, w.nom, CASE WHEN w.photo IS NOT NULL THEN w.maj END AS photo_wiki, "
+            "(SELECT COUNT(*) FROM messages m WHERE m.echange = e.id AND m.auteur <> %s AND m.id > "
+            " CASE WHEN e.chercheur = %s THEN e.vu_chercheur ELSE e.vu_possesseur END) AS non_lus, "
+            "(SELECT m.texte FROM messages m WHERE m.echange = e.id ORDER BY m.id DESC LIMIT 1) AS dernier, "
+            f"({_EN_RELATION_VALIDE}) AS valide "
+            "FROM echanges e JOIN wiki w ON w.ean = e.fiche "
+            "WHERE %s IN (e.chercheur, e.possesseur) AND e.statut <> 'annulee' ORDER BY e.maj DESC, e.id DESC",
+            (uid, uid, uid),
+        ).fetchall()
+    notifications, conversations, fiches_vues = [], [], set()
+    # Côté chercheur, une seule notification par canette à la fois : la plus ancienne paire, et aucune tant
+    # qu'une demande pour cette canette attend une réponse ou qu'une conversation est ouverte.
+    occupees = {e["fiche"] for e in lignes if e["chercheur"] == uid and e["statut"] in ("demandee", "acceptee")}
+    for e in sorted(lignes, key=lambda x: x["id"]):
+        e["role"] = "chercheur" if e["chercheur"] == uid else "possesseur"
+        if e["statut"] == "acceptee":
+            continue
+        if not e["valide"]:
+            continue
+        if e["statut"] == "signalee":
+            if e["role"] != "chercheur" or e["fiche"] in occupees or e["fiche"] in fiches_vues:
+                continue
+            fiches_vues.add(e["fiche"])
+        notifications.append({**_vue_echange(e), "action": e["role"] == "chercheur" and e["statut"] == "signalee"
+                              or e["role"] == "possesseur" and e["statut"] == "demandee"})
+    for e in lignes:
+        if e["statut"] == "acceptee":
+            conversations.append({**_vue_echange(e), "non_lus": e["non_lus"], "dernier": e["dernier"]})
+    notifications.sort(key=lambda n: n["maj"], reverse=True)
+    a_traiter = sum(1 for n in notifications if n["action"])
+    return {"notifications": notifications, "conversations": conversations,
+            "non_lus": a_traiter + sum(c["non_lus"] for c in conversations)}
+
+
+@router.post("/echanges/{echange_id}/accepter")
+def accepter_echange(echange_id: int, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """« Échange » : le chercheur demande l'échange (le possesseur est notifié), puis le possesseur l'accepte
+    (la messagerie s'ouvre pour les deux)."""
+    with cx.transaction():
+        e = _echange_du_compte(cx, echange_id, u["id"])
+        suivant = {("chercheur", "signalee"): "demandee", ("possesseur", "demandee"): "acceptee"}.get((e["role"], e["statut"]))
+        if suivant is None or not _en_relation_valide(cx, echange_id):
+            raise HTTPException(409, "cet échange n'attend pas ta réponse")
+        cx.execute("UPDATE echanges SET statut = %s, maj = %s WHERE id = %s", (suivant, maintenant(), echange_id))
+        e["statut"] = suivant
+    return _vue_echange(e)
+
+
+@router.post("/echanges/{echange_id}/annuler")
+def annuler_echange(echange_id: int, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """« Annuler » : la mise en relation s'arrête là, rien n'est envoyé à l'autre. Elle n'est jamais reproposée."""
+    with cx.transaction():
+        e = _echange_du_compte(cx, echange_id, u["id"])
+        if e["statut"] not in ("signalee", "demandee") or (e["role"] == "possesseur" and e["statut"] != "demandee"):
+            raise HTTPException(409, "cet échange ne peut plus être annulé")
+        cx.execute("UPDATE echanges SET statut = 'annulee', maj = %s WHERE id = %s", (maintenant(), echange_id))
+        e["statut"] = "annulee"
+    return _vue_echange(e)
+
+
+def _conversation(cx: psycopg.Connection, echange_id: int, user_id: int) -> dict:
+    e = _echange_du_compte(cx, echange_id, user_id)
+    if e["statut"] != "acceptee":
+        raise HTTPException(404, "conversation inconnue")
+    return e
+
+
+@router.get("/echanges/{echange_id}/messages")
+def lire_messages(
+    echange_id: int, apres: int = Query(default=0, ge=0),
+    u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Messages de la conversation (après « apres » pour les relectures), marqués lus pour ce compte."""
+    with cx.transaction():
+        e = _conversation(cx, echange_id, u["id"])
+        lignes = cx.execute(
+            "SELECT id, auteur, texte, cree FROM messages WHERE echange = %s AND id > %s ORDER BY id LIMIT 500",
+            (echange_id, apres),
+        ).fetchall()
+        if lignes:
+            colonne = "vu_chercheur" if e["role"] == "chercheur" else "vu_possesseur"
+            cx.execute(f"UPDATE echanges SET {colonne} = GREATEST({colonne}, %s) WHERE id = %s",
+                       (lignes[-1]["id"], echange_id))
+    return {**_vue_echange(e), "messages": [
+        {"id": m["id"], "de_moi": m["auteur"] == u["id"], "texte": m["texte"], "cree": m["cree"]} for m in lignes
+    ]}
+
+
+@router.post("/echanges/{echange_id}/messages")
+def envoyer_message(
+    echange_id: int, m: Message, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
+) -> dict:
+    """Envoie un message à l'autre membre de l'échange (texte seul, 1 000 caractères au plus)."""
+    texte = m.texte.strip()
+    if not texte:
+        raise HTTPException(422, "message vide")
+    now = int(time.time())
+    with cx.transaction():
+        e = _conversation(cx, echange_id, u["id"])
+    _compter(cx, _cle_limite(f"message:{u['id']}"), _seuil("SM_MESSAGES_MAX_HEURE", MESSAGES_MAX_HEURE),
+             FENETRE_DEMANDES, now, "trop de messages, réessaie plus tard")
+    with cx.transaction():
+        r = cx.execute("INSERT INTO messages (echange, auteur, texte, cree) VALUES (%s, %s, %s, %s) RETURNING id, cree",
+                       (echange_id, u["id"], texte, maintenant())).fetchone()
+        colonne = "vu_chercheur" if e["role"] == "chercheur" else "vu_possesseur"
+        cx.execute(f"UPDATE echanges SET {colonne} = %s, maj = %s WHERE id = %s", (r["id"], maintenant(), echange_id))
+    return {"id": r["id"], "de_moi": True, "texte": texte, "cree": r["cree"]}
 
 
 @router.get("/wiki/saveurs")
