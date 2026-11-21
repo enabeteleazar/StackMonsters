@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Cpu, Database, Eraser, Lock, Radio, Repeat2, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { BarChart3, Cpu, Database, Eraser, Flag, Lock, Radio, Repeat2, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 import { CONTACT } from '../config'
 import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
@@ -11,6 +11,8 @@ type Props = {
   joignable: boolean
   surVerrouiller: () => void
   surStats: () => void
+  /** Propriétaire : signalements de membres envoyés depuis la messagerie. */
+  surSignalements: () => void
   /** Nombre de canettes de la collection (pour la confirmation du vidage). */
   nbCanettes: number
   surCollectionVidee: (retirees: number) => void
@@ -22,7 +24,7 @@ type Props = {
 const SUPPRESSION_COMPTE_VISIBLE = false
 
 export default function Settings({
-  emailUtilisateur, joignable, surVerrouiller, surStats, nbCanettes, surCollectionVidee, surPreferencesChangees,
+  emailUtilisateur, joignable, surVerrouiller, surStats, surSignalements, nbCanettes, surCollectionVidee, surPreferencesChangees,
 }: Props) {
   const [sante, setSante] = useState<{ status: string; version: string; references: number } | null>(null)
 
@@ -178,6 +180,10 @@ export default function Settings({
               <button className="accueil-co-secondaire" onClick={surStats}>
                 <BarChart3 size={18} />
                 Statistiques
+              </button>
+              <button className="accueil-co-secondaire" onClick={surSignalements}>
+                <Flag size={18} />
+                Signalements de membres
               </button>
             </div>
           </>

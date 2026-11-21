@@ -1,7 +1,7 @@
 import { API_URL, CLE_JETON } from './config'
 import type {
   Canette, EtatEchanges, FicheWiki, MessageEchange, MiseEnRelation, ModifFicheWiki, PropositionWiki, ReponseWiki,
-  ResultatRechercheWiki, TriWiki,
+  ResultatRechercheWiki, SignalementMembre, TriWiki,
 } from './types'
 
 /** Levée quand le service répond 401 : jeton absent ou refusé. */
@@ -107,6 +107,15 @@ export const api = {
     requete<MiseEnRelation & { messages: MessageEchange[] }>(`/echanges/${id}/messages?apres=${apres}`),
   envoyerMessage: (id: number, texte: string) =>
     requete<MessageEchange>(`/echanges/${id}/messages`, { method: 'POST', body: JSON.stringify({ texte }) }),
+  /** « Valider l'échange » : appliqué (-1 / +1) quand les deux ont validé. */
+  validerEchange: (id: number) => requete<MiseEnRelation>(`/echanges/${id}/valider`, { method: 'POST' }),
+  /** Signale l'autre membre : la conversation se ferme et la paire n'est plus proposée. */
+  signalerMembre: (id: number, motif: string, detail: string) =>
+    requete<MiseEnRelation>(`/echanges/${id}/signaler`, { method: 'POST', body: JSON.stringify({ motif, detail }) }),
+  /** Propriétaire : signalements de membres à examiner. */
+  signalementsMembres: () => requete<SignalementMembre[]>('/admin/signalements-membres'),
+  signalementMembreTraite: (id: number) =>
+    requete<{ id: number }>(`/admin/signalements-membres/${id}/traite`, { method: 'POST' }),
   enregistrer: (c: Canette) =>
     requete<Canette>('/cans', { method: 'PUT', body: JSON.stringify(c) }),
   ajuster: (ean: string, delta: number) =>

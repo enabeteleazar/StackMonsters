@@ -28,7 +28,8 @@ Idées et tâches à venir, pas encore planifiées. Voir aussi le [tableau de su
 
 - [x] **1. Doubles et recherchées** : branche `market` (compteurs anonymes, filtres du Wiki).
 - [x] **2. Correspondances automatiques** : branche `messagerie` (notifications, double accord « Échange »,
-  messagerie interne anonyme). À suivre : signaler ou bloquer un membre, notifications push.
+  messagerie interne anonyme, « Valider l'échange » (-1 / +1), « Signaler »). À suivre : sanctions côté
+  propriétaire (suspendre un compte signalé), notifications push.
 - [ ] **3. Bourse d'échange** : petites annonces sans argent, liées aux fiches, avec modération.
 - [ ] **4. Échange suivi de bout en bout** : proposé → accepté → envoyé → reçu, collections mises à jour,
   réputation.

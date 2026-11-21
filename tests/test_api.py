@@ -1328,6 +1328,7 @@ def test_wiki_amorce_depuis_les_collections_existantes_une_seule_fois(env):
     c.put("/api/cans", json=canette("LOCAL-AMORCE", nom="Perso"), headers=ha)
     # Simule une base d'avant le Wiki : la table n'existe pas encore, les collections si.
     with ix.connecter() as cx:
+        cx.execute("DROP TABLE signalements_membres")
         cx.execute("DROP TABLE messages")
         cx.execute("DROP TABLE echanges")
         cx.execute("DROP TABLE recherches")
@@ -2123,3 +2124,81 @@ def test_messages_limites_par_heure(env, monkeypatch):
     url = f"/api/echanges/{n['id']}/messages"
     assert [c.post(url, json={"texte": str(i)}, headers=hb).status_code for i in range(3)] == [200, 200, 429]
     assert c.post(url, json={"texte": "à moi"}, headers=ha).status_code == 200  # compté par compte
+
+
+def _conversation_ouverte(c, codes, nb=2):
+    """A a Mango en double, B le cherche, les deux ont choisi « Échange » : la conversation est ouverte."""
+    ha, hb = _mise_en_relation(c, codes, nb=nb)
+    n = _echanges(c, hb)["notifications"][0]
+    c.post(f"/api/echanges/{n['id']}/accepter", headers=hb)
+    c.post(f"/api/echanges/{n['id']}/accepter", headers=ha)
+    return ha, hb, n["id"]
+
+
+def test_valider_l_echange_fait_moins_un_et_plus_un(env):
+    c, codes = env
+    ha, hb, eid = _conversation_ouverte(c, codes, nb=3)
+    hc = connecter(c, codes, C)
+    assert c.post(f"/api/echanges/{eid}/valider", headers=hc).status_code == 404
+    # Le premier qui valide : rien ne bouge encore, l'autre doit valider à son tour (pastille).
+    r = c.post(f"/api/echanges/{eid}/valider", headers=ha).json()
+    assert (r["statut"], r["valide_moi"], r["valide_autre"]) == ("acceptee", True, False)
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["nb"] == 3
+    eb = _echanges(c, hb)
+    assert eb["conversations"][0]["a_valider"] is True and eb["non_lus"] == 1
+    # Le second valide : -1 chez le possesseur, +1 chez le chercheur (ajoutée, plus recherchée).
+    r = c.post(f"/api/echanges/{eid}/valider", headers=hb).json()
+    assert r["statut"] == "terminee" and r["valide_moi"] and r["valide_autre"]
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["nb"] == 2
+    recue = c.get("/api/cans/2000000000015", headers=hb).json()
+    assert recue["nb"] == 1 and recue["nom"] == "Mango"
+    assert fiche(c, hb, "2000000000015")["je_cherche"] is False
+    assert c.post(f"/api/echanges/{eid}/valider", headers=hb).status_code == 409  # une seule fois
+    # La conversation reste, pour se remercier.
+    assert _echanges(c, hb)["conversations"][0]["statut"] == "terminee"
+    assert c.post(f"/api/echanges/{eid}/messages", json={"texte": "Merci !"}, headers=hb).status_code == 200
+
+
+def test_valider_refuse_si_le_double_n_existe_plus(env):
+    c, codes = env
+    ha, hb, eid = _conversation_ouverte(c, codes)
+    c.post(f"/api/echanges/{eid}/valider", headers=hb)
+    c.patch("/api/cans/2000000000015/nb", json={"delta": -1}, headers=ha)  # plus qu'un exemplaire
+    assert c.post(f"/api/echanges/{eid}/valider", headers=ha).status_code == 409
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["nb"] == 1  # rien n'a bougé
+    assert c.get("/api/cans/2000000000015", headers=hb).status_code == 404
+
+
+def test_signaler_ferme_la_conversation_et_bloque_la_paire(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    ha, hb, eid = _conversation_ouverte(c, codes)
+    hc = connecter(c, codes, C)
+    c.post(f"/api/echanges/{eid}/messages", json={"texte": "Achète-moi des canettes à 10 €"}, headers=ha)
+    url = f"/api/echanges/{eid}/signaler"
+    assert c.post(url, json={"motif": "Inconnu"}, headers=hb).status_code == 422
+    assert c.post(url, json={"motif": "Spam ou publicité"}, headers=hc).status_code == 404
+    r = c.post(url, json={"motif": "Arnaque ou tentative de vente", "detail": "veut vendre"}, headers=hb)
+    assert r.status_code == 200 and r.json()["statut"] == "fermee"
+    # Fermée pour les deux : lisible, mais plus d'envoi ni de validation.
+    for h in (ha, hb):
+        assert _echanges(c, h)["conversations"][0]["statut"] == "fermee"
+        assert c.post(f"/api/echanges/{eid}/messages", json={"texte": "?"}, headers=h).status_code == 409
+        assert c.post(f"/api/echanges/{eid}/valider", headers=h).status_code == 409
+    assert len(c.get(f"/api/echanges/{eid}/messages", headers=ha).json()["messages"]) == 1
+    # Plus jamais mis en relation : nouvelle canette cherchée par B, en double chez A.
+    c.put("/api/cans", json=canette("2000000000022", nom="Ultra", nb=2), headers=ha)
+    c.delete("/api/cans/2000000000022", headers=hb)
+    c.post("/api/wiki/2000000000022/recherche", headers=hb)
+    assert _echanges(c, hb)["notifications"] == []
+    # Le propriétaire voit le signalement et la conversation, sans adresse ; seul lui y a accès.
+    assert c.get("/api/admin/signalements-membres", headers=ha).status_code == 403
+    liste = c.get("/api/admin/signalements-membres", headers=hc).json()
+    assert len(liste) == 1 and liste[0]["motif"] == "Arnaque ou tentative de vente" and liste[0]["detail"] == "veut vendre"
+    assert liste[0]["messages"] == [{"de": "signale", "texte": "Achète-moi des canettes à 10 €", "cree": liste[0]["messages"][0]["cree"]}]
+    assert A not in str(liste) and B not in str(liste)
+    sid = liste[0]["id"]
+    assert c.post(f"/api/admin/signalements-membres/{sid}/traite", headers=ha).status_code == 403
+    assert c.post(f"/api/admin/signalements-membres/{sid}/traite", headers=hc).status_code == 200
+    assert c.post(f"/api/admin/signalements-membres/{sid}/traite", headers=hc).status_code == 404
+    assert c.get("/api/admin/signalements-membres", headers=hc).json() == []

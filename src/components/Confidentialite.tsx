@@ -104,6 +104,13 @@ export default function Confidentialite() {
                 effacés quand l’un de vous deux supprime son compte, et ne sont plus proposés si le partage des
                 doublons est coupé.
               </p>
+              <p>
+                « Valider l’échange » : quand vous avez validé tous les deux, la canette est retirée de la collection
+                de celui qui l’avait en double et ajoutée à celle de celui qui la cherchait. « Signaler » : la
+                conversation est fermée pour vous deux et vous n’êtes plus mis en relation ; le motif choisi, tes
+                précisions et la conversation sont alors lisibles par le responsable du service, sans ton adresse, pour
+                traiter le signalement. Les signalements sont effacés avec la conversation.
+              </p>
             </Bloc>
 
             <Bloc titre="Combien de temps ?">

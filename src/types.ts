@@ -131,10 +131,14 @@ export type MiseEnRelation = {
   /** Ce compte cherche la canette (chercheur) ou en a des doubles (possesseur). */
   role: 'chercheur' | 'possesseur'
   /** signalee : paire repérée, notifiée au chercheur ; demandee : le chercheur veut échanger, notifiée au
-   * possesseur ; acceptee : la messagerie est ouverte ; annulee : arrêtée par l'un des deux. */
-  statut: 'signalee' | 'demandee' | 'acceptee' | 'annulee'
+   * possesseur ; acceptee : la messagerie est ouverte ; annulee : arrêtée par l'un des deux ; terminee : échange
+   * validé par les deux (-1 / +1 dans les collections) ; fermee : conversation fermée par un signalement. */
+  statut: 'signalee' | 'demandee' | 'acceptee' | 'annulee' | 'terminee' | 'fermee'
   maj: string
   fiche: { ean: string; nom: string; photo: string | null }
+  /** « Valider l'échange » : déjà fait par ce compte, par l'autre. */
+  valide_moi: boolean
+  valide_autre: boolean
 }
 
 export type NotificationEchange = MiseEnRelation & {
@@ -142,7 +146,31 @@ export type NotificationEchange = MiseEnRelation & {
   action: boolean
 }
 
-export type ConversationEchange = MiseEnRelation & { non_lus: number; dernier: string | null }
+export type ConversationEchange = MiseEnRelation & {
+  non_lus: number
+  dernier: string | null
+  /** L'autre a validé l'échange : à ce compte de valider. */
+  a_valider: boolean
+}
+
+export const MOTIFS_SIGNALEMENT_MEMBRE = [
+  'Spam ou publicité',
+  'Propos déplacés',
+  'Arnaque ou tentative de vente',
+  'Autre',
+] as const
+
+/** Signalement d'un membre, vu par le propriétaire (jamais d'adresse : « auteur » ou « signale »). */
+export type SignalementMembre = {
+  id: number
+  motif: string
+  detail: string
+  cree: string
+  canette: string
+  membre_signale: number
+  signalements_du_membre: number
+  messages: { de: 'auteur' | 'signale'; texte: string; cree: string }[]
+}
 
 export type EtatEchanges = {
   notifications: NotificationEchange[]

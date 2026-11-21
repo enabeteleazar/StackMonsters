@@ -13,6 +13,7 @@ import Echanges from './components/Echanges'
 import ResultatScan from './components/ResultatScan'
 import { viderPhotos } from './components/PhotoWiki'
 import Settings from './components/Settings'
+import SignalementsMembres from './components/SignalementsMembres'
 import Stats from './components/Stats'
 import Verdict from './components/Verdict'
 import Wiki from './components/Wiki'
@@ -20,7 +21,7 @@ import { inviterAInstaller } from './installation'
 import { suivre } from './suivi'
 import type { Canette, EtatEchanges } from './types'
 
-type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats' | 'echanges'
+type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats' | 'echanges' | 'signalements'
 
 /** Relecture des échanges (notifications, messages non lus) tant que l'appli est affichée. */
 const RELECTURE_ECHANGES_MS = 60_000
@@ -319,6 +320,7 @@ export default function App() {
             joignable={joignable}
             surVerrouiller={verrouiller}
             surStats={() => setVue('stats')}
+            surSignalements={() => setVue('signalements')}
             nbCanettes={canettes.length}
             surPreferencesChangees={recharger}
             surCollectionVidee={(retirees) => {
@@ -329,12 +331,14 @@ export default function App() {
           />
         )}
         {vue === 'stats' && <Stats surRetour={() => setVue('reglages')} />}
+        {vue === 'signalements' && <SignalementsMembres surRetour={() => setVue('reglages')} surNonAutorise={verrouiller} />}
         {vue === 'echanges' && (
           <Echanges
             etat={echanges}
             erreur={erreurEchanges}
             surRecharger={chargerEchanges}
             surMessage={toast}
+            surCollectionChangee={recharger}
             surNonAutorise={verrouiller}
           />
         )}
@@ -370,7 +374,7 @@ export default function App() {
           <BookOpen size={19} />
           Wiki
         </button>
-        <button aria-current={vue === 'reglages' || vue === 'stats'} onClick={() => setVue('reglages')}>
+        <button aria-current={vue === 'reglages' || vue === 'stats' || vue === 'signalements'} onClick={() => setVue('reglages')}>
           <Settings2 size={19} />
           Réglages
         </button>

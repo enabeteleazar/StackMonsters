@@ -164,6 +164,15 @@ Branche `messagerie`. Table `echanges` (une ligne par fiche, chercheur et posses
 - **Messagerie** : ouverte quand les deux ont choisi « Échange » (`GET` / `POST /api/echanges/{id}/messages`,
   texte de 1 000 caractères au plus, 60 messages par heure et par compte, `SM_MESSAGES_MAX_HEURE`). Relue toutes les
   5 s quand la conversation est affichée. Jamais d'adresse ni de nom : « Toi » et « un collectionneur ».
+- **Valider l'échange** (`POST /api/echanges/{id}/valider`, migration 19) : chacun valide ; au second, dans la
+  même transaction, -1 chez le possesseur (refusé en 409 s'il n'a plus de double) et +1 chez le chercheur
+  (canette ajoutée depuis la fiche du Wiki si besoin, retirée des recherchées). Statut `terminee` : la conversation
+  reste ouverte. La pastille compte aussi « l'autre a validé, à toi ».
+- **Signaler** (`POST /api/echanges/{id}/signaler`, motif parmi une liste fermée, précisions de 500 caractères,
+  10 par jour et par compte) : table `signalements_membres`, conversation `fermee` pour les deux (lisible, plus
+  d'envoi) et paire bloquée pour toujours, dans les deux sens. Le propriétaire les examine dans Réglages →
+  Administration → « Signalements de membres » (`GET /api/admin/signalements-membres`, conversation comprise,
+  membres désignés par leur rôle et un numéro), puis « Marquer comme traité ».
 
 ## Wiki (catalogue partagé)
 ### Champs d'une fiche (issue #5)

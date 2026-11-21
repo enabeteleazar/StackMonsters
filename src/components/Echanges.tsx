@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Bell, Check, ChevronRight, MessagesSquare, Repeat2, Send, X } from 'lucide-react'
+import { ArrowLeft, Bell, Check, CheckCheck, ChevronRight, Flag, Lock, MessagesSquare, Repeat2, Send, X } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
-import type { ConversationEchange, EtatEchanges, MessageEchange, NotificationEchange } from '../types'
+import { MOTIFS_SIGNALEMENT_MEMBRE, type ConversationEchange, type EtatEchanges, type MessageEchange, type NotificationEchange } from '../types'
 import PhotoWiki from './PhotoWiki'
 
 type Props = {
@@ -10,6 +10,8 @@ type Props = {
   erreur: boolean
   surRecharger: () => Promise<void>
   surMessage: (m: string) => void
+  /** Après un échange validé par les deux : la collection a changé (-1 ou +1). */
+  surCollectionChangee: () => Promise<void>
   surNonAutorise: () => void
 }
 
@@ -30,9 +32,9 @@ function texteNotification(n: NotificationEchange) {
  * Échanges entre collectionneurs : notifications de mise en relation (Échange ou Annuler) et messagerie interne,
  * ouverte quand les deux ont choisi « Échange ».
  */
-export default function Echanges({ etat, erreur, surRecharger, surMessage, surNonAutorise }: Props) {
+export default function Echanges({ etat, erreur, surRecharger, surMessage, surCollectionChangee, surNonAutorise }: Props) {
   const aTraiter = etat?.notifications.filter((n) => n.action).length ?? 0
-  const nonLus = etat?.conversations.reduce((t, c) => t + c.non_lus, 0) ?? 0
+  const nonLus = etat?.conversations.reduce((t, c) => t + c.non_lus + (c.a_valider ? 1 : 0), 0) ?? 0
   const [onglet, setOnglet] = useState<Onglet>(() => (!aTraiter && nonLus ? 'messagerie' : 'notifications'))
   const [occupe, setOccupe] = useState<number | null>(null)
   const [ouverte, setOuverte] = useState<number | null>(null)
@@ -59,6 +61,7 @@ export default function Echanges({ etat, erreur, surRecharger, surMessage, surNo
   }
 
   const conversation = ouverte ? (etat?.conversations.find((c) => c.id === ouverte) ?? null) : null
+  const desynchronise = useCallback(() => void surRecharger(), [surRecharger])
 
   return (
     <section className="collec echanges">
@@ -111,8 +114,7 @@ export default function Echanges({ etat, erreur, surRecharger, surMessage, surNo
           ) : (
             <p className="collec-vide">
               <Repeat2 size={34} />
-              Aucune notification. Marque des canettes « Je la cherche » dans le Wiki : tu seras prévenu dès qu’un
-              collectionneur en a une en double.
+              Aucune notification.
             </p>
           )
         ) : etat.conversations.length ? (
@@ -125,7 +127,15 @@ export default function Echanges({ etat, erreur, surRecharger, surMessage, surNo
                   </span>
                   <span className="collec-nom echange-conv">
                     {c.fiche.nom || 'Canette'}
-                    <small>{c.dernier ?? 'Aucun message pour l’instant'}</small>
+                    <small>
+                      {c.statut === 'terminee'
+                        ? 'Échange validé ✓'
+                        : c.statut === 'fermee'
+                          ? 'Conversation fermée'
+                          : c.a_valider
+                            ? 'L’autre a validé l’échange : à toi'
+                            : (c.dernier ?? 'Aucun message pour l’instant')}
+                    </small>
                   </span>
                   {!!c.non_lus && <b className="echange-pastille" aria-label={`${c.non_lus} non lu${c.non_lus > 1 ? 's' : ''}`}>{c.non_lus}</b>}
                   <ChevronRight size={20} className="collec-chevron" />
@@ -148,6 +158,15 @@ export default function Echanges({ etat, erreur, surRecharger, surMessage, surNo
             setOuverte(null)
             void surRecharger()
           }}
+          surChange={async (statut) => {
+            await surRecharger()
+            if (statut === 'terminee') {
+              await surCollectionChangee()
+              surMessage('Échange validé : collections mises à jour')
+            } else if (statut === 'fermee') surMessage('Signalement envoyé : la conversation est fermée')
+            else surMessage('Validation enregistrée : l’autre doit valider à son tour')
+          }}
+          surDesynchronise={desynchronise}
           surNonAutorise={surNonAutorise}
         />
       )}
@@ -156,21 +175,57 @@ export default function Echanges({ etat, erreur, surRecharger, surMessage, surNo
 }
 
 /** Fil de discussion entre les deux membres d'un échange accepté (relu toutes les 5 secondes). */
-function Conversation({ conversation, surFermeture, surNonAutorise }: {
+function Conversation({ conversation, surFermeture, surChange, surDesynchronise, surNonAutorise }: {
   conversation: ConversationEchange
   surFermeture: () => void
+  /** Validation ou signalement enregistré (statut renvoyé par le serveur). */
+  surChange: (statut: ConversationEchange['statut']) => Promise<void>
+  /** L'autre a validé ou signalé pendant que la conversation est affichée : relire les échanges. */
+  surDesynchronise: () => void
   surNonAutorise: () => void
 }) {
   const [messages, setMessages] = useState<MessageEchange[]>([])
   const [texte, setTexte] = useState('')
   const [envoi, setEnvoi] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  const [action, setAction] = useState(false)
+  const [signalement, setSignalement] = useState(false)
+  const [motif, setMotif] = useState<string>(MOTIFS_SIGNALEMENT_MEMBRE[0])
+  const [detail, setDetail] = useState('')
+  const ouverte = conversation.statut === 'acceptee'
+  const nom = conversation.fiche.nom || 'cette canette'
+
+  const agir = async (appel: () => Promise<{ statut: ConversationEchange['statut'] }>) => {
+    setAction(true)
+    setErreur(null)
+    try {
+      const r = await appel()
+      setSignalement(false)
+      await surChange(r.statut)
+    } catch (e) {
+      if (e instanceof NonAutorise) surNonAutorise()
+      else if (e instanceof ErreurAPI && (e.status === 409 || e.status === 429)) setErreur(e.detail)
+      else setErreur('Impossible pour le moment, réessaie avec le réseau.')
+    } finally {
+      setAction(false)
+    }
+  }
+
+  const valider = () => {
+    const texte =
+      conversation.role === 'possesseur'
+        ? `Confirmer que tu as donné ton double de ${nom} ? Quand vous aurez validé tous les deux, il sera retiré de ta collection (−1).`
+        : `Confirmer que tu as reçu ${nom} ? Quand vous aurez validé tous les deux, elle sera ajoutée à ta collection (+1).`
+    if (confirm(texte)) void agir(() => api.validerEchange(conversation.id))
+  }
+
   const dernier = useRef(0)
   const fin = useRef<HTMLDivElement>(null)
 
   const relire = useCallback(async () => {
     try {
       const r = await api.messages(conversation.id, dernier.current)
+      if (r.statut !== conversation.statut || r.valide_autre !== conversation.valide_autre) surDesynchronise()
       if (r.messages.length) {
         dernier.current = r.messages[r.messages.length - 1].id
         setMessages((liste) => [...liste, ...r.messages.filter((m) => !liste.some((x) => x.id === m.id))])
@@ -178,7 +233,7 @@ function Conversation({ conversation, surFermeture, surNonAutorise }: {
     } catch (e) {
       if (e instanceof NonAutorise) surNonAutorise()
     }
-  }, [conversation.id, surNonAutorise])
+  }, [conversation.id, conversation.statut, conversation.valide_autre, surDesynchronise, surNonAutorise])
 
   useEffect(() => {
     void relire()
@@ -233,6 +288,74 @@ function Conversation({ conversation, surFermeture, surNonAutorise }: {
         </div>
       </div>
 
+      {/* Fin de l'échange : validation par les deux (-1 / +1), ou signalement de l'autre membre. */}
+      <div className="conversation-actions">
+        {conversation.statut === 'terminee' ? (
+          <p className="conversation-etat ok">
+            <CheckCheck size={17} aria-hidden="true" /> Échange validé : collections mises à jour.
+          </p>
+        ) : conversation.statut === 'fermee' ? (
+          <p className="conversation-etat">
+            <Lock size={17} aria-hidden="true" /> Conversation fermée après un signalement.
+          </p>
+        ) : (
+          <>
+            <button
+              className={`btn ${conversation.valide_moi ? 'btn-fantome' : 'btn-primaire'}`}
+              disabled={action || conversation.valide_moi}
+              onClick={valider}
+            >
+              <CheckCheck size={17} />
+              {conversation.valide_moi ? 'Validé, en attente de l’autre' : 'Valider l’échange'}
+            </button>
+            <button className="btn btn-fantome conversation-signaler" disabled={action} onClick={() => setSignalement((v) => !v)}>
+              <Flag size={17} /> Signaler
+            </button>
+          </>
+        )}
+      </div>
+      {ouverte && conversation.valide_autre && !conversation.valide_moi && (
+        <p className="conversation-etat a-toi" role="status">L’autre a validé l’échange : valide à ton tour une fois la canette reçue.</p>
+      )}
+
+      {signalement && ouverte && (
+        <form
+          className="conversation-signalement"
+          aria-label="Signaler ce membre"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void agir(() => api.signalerMembre(conversation.id, motif, detail))
+          }}
+        >
+          <p>
+            La conversation sera fermée pour vous deux et vous ne serez plus mis en relation. Le responsable du service
+            examinera le signalement et pourra lire cette conversation.
+          </p>
+          <fieldset>
+            <legend>Motif</legend>
+            {MOTIFS_SIGNALEMENT_MEMBRE.map((m) => (
+              <label key={m}>
+                <input type="radio" name="motif" value={m} checked={motif === m} onChange={() => setMotif(m)} /> {m}
+              </label>
+            ))}
+          </fieldset>
+          <textarea
+            value={detail}
+            maxLength={500}
+            rows={2}
+            placeholder="Précisions (facultatif)"
+            aria-label="Précisions"
+            onChange={(e) => setDetail(e.target.value)}
+          />
+          <div className="conversation-signalement-actions">
+            <button type="button" className="btn btn-fantome" onClick={() => setSignalement(false)}>Annuler</button>
+            <button type="submit" className="btn btn-primaire reglages-danger" disabled={action}>
+              <Flag size={17} /> Envoyer le signalement
+            </button>
+          </div>
+        </form>
+      )}
+
       <div className="conversation-fil" aria-live="polite">
         <p className="conversation-note">
           Convenez ici de l’échange (canettes, envoi ou rencontre). Ne partage ton adresse qu’avec prudence.
@@ -246,6 +369,7 @@ function Conversation({ conversation, surFermeture, surNonAutorise }: {
         <div ref={fin} />
       </div>
 
+      {conversation.statut !== 'fermee' && (
       <form
         className="conversation-saisie"
         onSubmit={(e) => {
@@ -272,6 +396,8 @@ function Conversation({ conversation, surFermeture, surNonAutorise }: {
           <Send size={19} />
         </button>
       </form>
+      )}
+      {conversation.statut === 'fermee' && erreur && <p className="sous" role="alert">{erreur}</p>}
     </div>
   )
 }
