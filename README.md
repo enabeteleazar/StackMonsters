@@ -227,8 +227,9 @@ Menu **Wiki** : toutes les canettes répertoriées dans l'application, tous comp
 ## Référencement
 `public/robots.txt` autorise l'indexation du site, sauf l'API et la page de maintenance, et annonce
 `public/sitemap.xml`, qui ne liste que la page d'accueil publique (le reste exige une connexion). Les deux
-visent le domaine `stackmonsters.fr` : il doit être relié au projet Vercel (Settings → Domains) pour que les
-moteurs de recherche les suivent. Mettre à jour `<lastmod>` quand la page d'accueil change.
+visent le domaine `stackmonsters.fr`, l'adresse publique du site : relié au projet Vercel (Settings → Domains ;
+chez IONOS, `@` en A vers Vercel et `www` en CNAME, redirigé vers `stackmonsters.fr`). Les liens et images des
+e-mails utilisent la même adresse (`SITE_URL`, par défaut `https://stackmonsters.fr`). Mettre à jour `<lastmod>` quand la page d'accueil change.
 
 ## Photos de la page d'accueil
 La photo de canette dans `public/images/` provient de Wikimedia Commons et est affichée avec attribution :
@@ -249,7 +250,7 @@ dans `src/config.ts`) et de `mail.stackmonsters.fr` (dont `contact@mail.stackmon
   `StackMonsters Contact <contact@mail.stackmonsters.fr>`), sujet préfixé « [Contact] », l'adresse du client en
   « Répondre à ». Une clé d'idempotence (`svix-id`) évite les doublons quand Resend renvoie le webhook. Pièces jointes
   recopiées jusqu'à 30 Mo ; au-delà, le message le signale.
-- Webhook à créer dans Resend (Webhooks → Add) vers `https://canstackmonsters.vercel.app/api/mail/entrant`, événement
+- Webhook à créer dans Resend (Webhooks → Add) vers `https://stackmonsters.fr/api/mail/entrant`, événement
   `email.received` ; son secret va dans la variable Vercel `RESEND_WEBHOOK_SECRET`.
 - Répondre depuis l'adresse de contact : dans Gmail, « Envoyer des e-mails en tant que » avec le SMTP de Resend
   (`smtp.resend.com`, port 465, utilisateur `resend`, mot de passe : une clé d'API Resend dédiée à l'envoi).

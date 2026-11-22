@@ -833,7 +833,7 @@ def _trop_de_tentatives(attente: int, detail: str = "trop de tentatives") -> HTT
 
 def _url_site() -> str:
     """Adresse publique du site, pour les liens et images du mail (une image de mail doit être en ligne)."""
-    return (os.environ.get("SITE_URL") or "https://canstackmonsters.vercel.app").rstrip("/")
+    return (os.environ.get("SITE_URL") or "https://stackmonsters.fr").rstrip("/")
 
 
 def mail_code_html(code: str) -> str:
