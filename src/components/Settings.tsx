@@ -132,6 +132,9 @@ export default function Settings({
         setNotifs(r === 'active')
         if (r === 'refusee') setErreurCompte('Notifications refusées : autorise-les dans les réglages du téléphone.')
         if (r === 'indisponible') setErreurCompte('Notifications indisponibles pour le moment.')
+        if (r === 'sans-service-worker') {
+          setErreurCompte('Notifications indisponibles ici : elles fonctionnent sur le site en ligne, dans l’appli installée.')
+        }
       }
     } catch (e) {
       if (e instanceof NonAutorise) surVerrouiller()
