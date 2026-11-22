@@ -19,6 +19,8 @@ Tickets [#21](https://github.com/enabeteleazar/StackMonsters/issues/21), [#22](h
 
 ### v0.7.1 — Corrections de bugs
 - Retours de la mise en ligne (notifications, barre du bas et popups sur iPhone).
+- [ ] [#3](https://github.com/enabeteleazar/StackMonsters/issues/3) — Suppression du compte par le membre lui-même : réafficher le bouton des Réglages (aujourd'hui masqué, demande par e-mail).
+- [ ] [#9](https://github.com/enabeteleazar/StackMonsters/issues/9) — Propositions de fiches : ne pas présenter une fiche « à vérifier » comme validée aux autres membres ; décider pour l'auteur (non enregistré aujourd'hui).
 - [ ] [#25](https://github.com/enabeteleazar/StackMonsters/issues/25) — Envoi depuis `contact@stackmonsters.fr` : répondre aux clients depuis l'adresse où ils écrivent.
 
 ### v0.8.0 — Confiance et partage
