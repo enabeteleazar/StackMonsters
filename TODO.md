@@ -3,6 +3,13 @@
 Idées et tâches à venir, pas encore planifiées. Voir aussi le [tableau de suivi](PROJECT-BOARD.md) et la
 [roadmap](ROADMAP.md).
 
+## Prochaines versions
+Détail dans la [roadmap](ROADMAP.md#prochaines-versions-plan-du-22-novembre-2026).
+- **0.7.0** — mise en ligne lundi 23 novembre 2026.
+- **0.7.1** — corrections de bugs (retours de la mise en ligne, envoi depuis `contact@stackmonsters.fr`).
+- **0.8.0** — confiance et partage : secrets (#1), sauvegardes (#16), notifications des échanges, fusion de
+  fiches (ci-dessous), liste partageable avec QR code (#14).
+
 ## Wiki
 
 - [ ] **Fusionner deux fiches du Wiki** (propriétaire)

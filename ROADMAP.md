@@ -2,6 +2,32 @@
 
 > Feuille de route produit proposée pour STACKMONSTERS. Les versions représentent des étapes de livraison et non des dates garanties. L'ordre pourra évoluer selon les retours, les contraintes techniques et les priorités de sécurité.
 
+## Prochaines versions (plan du 22 novembre 2026)
+
+Ce plan remplace l'ordre des sections historiques ci-dessous pour les prochaines livraisons.
+
+### v0.7.0 — Mise en ligne lundi 23 novembre 2026
+- Échanges entre collectionneurs : doubles et canettes recherchées, partage réglable, mise en relation, messagerie,
+  « Valider l'échange » (−1 / +1) et « Signaler ».
+- Collection allégée (onglets Possédées / Recherchées, filtres), doublon ajouté automatiquement au scan, badge « Possédée ».
+- Administration (comptes, fiches signalées et proposées, membres signalés, message à tous).
+- Notifications système (Web Push) et popups dans l'appli.
+- Boîte de contact : `contact@stackmonsters.fr` reçu par Resend et transféré vers la boîte du propriétaire.
+
+### v0.7.1 — Corrections de bugs
+- Retours de la mise en ligne (notifications, barre du bas et popups sur iPhone).
+- Envoi depuis `contact@stackmonsters.fr` : répondre aux clients depuis l'adresse où ils écrivent.
+
+### v0.8.0 — Confiance et partage
+- [ ] **P0 · #1** — Auditer et renouveler les secrets (mot de passe Neon, clés Resend, `SESSION_SECRET`).
+- [ ] **P1 · #16** — Sauvegarde automatique de la base et restauration testée.
+- [ ] Notifications des échanges sur l'écran verrouillé (appli fermée), en plus des popups.
+- [ ] Fusionner deux fiches du Wiki qui décrivent la même canette (voir `TODO.md`).
+- [ ] **P4 · #14** — Liste partageable « Mes doubles / Je cherche » avec QR code.
+
+### Plus tard
+- #6 plusieurs photos par canette, #7 historique des opérations, #13 badges et niveaux, bourse d'échange avec annonces.
+
 ## Vision du produit
 
 Construire une application fiable pour inventorier, organiser et enrichir une collection de canettes Monster Energy, avec un catalogue de références partagé et, à terme, des fonctions de progression et de partage communautaire.
