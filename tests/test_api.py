@@ -2341,3 +2341,97 @@ def test_abonnement_push_suit_le_compte(env):
     c.post("/api/push/desabonnement", json=ABONNEMENT, headers=hb)
     with ix.base() as cx:
         assert cx.execute("SELECT COUNT(*) AS n FROM abonnements_push").fetchone()["n"] == 0
+
+
+# --- Boîte de contact : transfert des e-mails reçus par Resend ---------------------------------
+
+
+import base64 as _b64
+import hashlib as _hashlib
+import hmac as _hmac
+import time as _time
+
+SECRET_WEBHOOK = "whsec_" + _b64.b64encode(b"secret-de-test-du-webhook-resend").decode()
+
+
+def _signe(corps: bytes, ident="msg_1", horodatage=None, secret=SECRET_WEBHOOK):
+    horodatage = str(horodatage or int(_time.time()))
+    cle = _b64.b64decode(secret.split("_", 1)[1])
+    sig = _b64.b64encode(_hmac.new(cle, f"{ident}.{horodatage}.".encode() + corps, _hashlib.sha256).digest()).decode()
+    return {"svix-id": ident, "svix-timestamp": horodatage, "svix-signature": f"v1,{sig}", "Content-Type": "application/json"}
+
+
+def _evenement(email_id="e-123", type_="email.received"):
+    return json.dumps({"type": type_, "created_at": "2026-11-22T13:06:24Z",
+                       "data": {"email_id": email_id, "from": "client@exemple.fr", "to": ["contact@mail.stackmonsters.fr"]}}).encode()
+
+
+@pytest.fixture
+def boite(monkeypatch):
+    monkeypatch.setenv("RESEND_WEBHOOK_SECRET", SECRET_WEBHOOK)
+    monkeypatch.setenv("MAIL_TRANSFERT", "proprio@exemple.fr")
+    appels = []
+
+    def appel(methode, chemin, corps=None, entetes=None):
+        appels.append((methode, chemin, corps, entetes))
+        if chemin == "/emails/receiving/e-123":
+            return {"id": "e-123", "from": "client@exemple.fr", "headers": {"from": "Client <client@exemple.fr>"},
+                    "to": ["contact@mail.stackmonsters.fr"], "subject": "Une question", "html": None,
+                    "text": "Bonjour <b>vous</b>", "attachments": [{"id": "a1"}]}
+        if chemin == "/emails/receiving/e-123/attachments":
+            return {"data": [{"id": "a1", "filename": "photo.png", "content_type": "image/png", "size": 4,
+                              "content_disposition": "attachment", "download_url": "https://cdn.exemple/a1"}]}
+        return {"id": "envoye"}
+
+    monkeypatch.setattr(ix, "appel_resend", appel)
+    monkeypatch.setattr(ix, "telecharger", lambda url: b"\x89PNG")
+    return TestClient(ix.app), appels
+
+
+def test_signature_svix_exemple_officiel(monkeypatch):
+    # Vecteur de https://docs.svix.com/receiving/verifying-payloads/how-manual
+    monkeypatch.setenv("RESEND_WEBHOOK_SECRET", "whsec_plJ3nmyCDGBKInavdOK15jsl")
+    monkeypatch.setattr(ix.time, "time", lambda: 1731705121)
+    entetes = {"svix-id": "msg_loFOjxBNrRLzqYUf", "svix-timestamp": "1731705121",
+               "svix-signature": "v1,rAvfW3dJ/X/qxhsaXPOyyCGmRKsaKWcsNccKXlIktD0="}
+    assert ix._verifier_webhook_resend(b'{"event_type":"ping","data":{"success":true}}', entetes) == "msg_loFOjxBNrRLzqYUf"
+
+
+def test_mail_entrant_refuse_sans_signature_valide(boite, monkeypatch):
+    c, appels = boite
+    corps = _evenement()
+    assert c.post("/api/mail/entrant", content=corps).status_code == 400  # en-têtes absents
+    faux = _signe(corps, secret="whsec_" + _b64.b64encode(b"autre-secret").decode())
+    assert c.post("/api/mail/entrant", content=corps, headers=faux).status_code == 401
+    vieux = _signe(corps, horodatage=int(_time.time()) - 3600)
+    assert c.post("/api/mail/entrant", content=corps, headers=vieux).status_code == 401
+    modifie = _signe(corps)
+    assert c.post("/api/mail/entrant", content=corps + b" ", headers=modifie).status_code == 401
+    assert appels == []  # rien n'est lu ni envoyé
+    monkeypatch.delenv("RESEND_WEBHOOK_SECRET")
+    assert c.post("/api/mail/entrant", content=corps, headers=_signe(corps)).status_code == 503
+
+
+def test_mail_entrant_transfere_vers_la_boite_du_proprietaire(boite):
+    c, appels = boite
+    corps = _evenement()
+    r = c.post("/api/mail/entrant", content=corps, headers=_signe(corps, ident="msg_42"))
+    assert r.status_code == 200 and r.json() == {"transfere": "e-123"}
+    methode, chemin, envoi, entetes = appels[-1]
+    assert (methode, chemin) == ("POST", "/emails")
+    assert envoi["to"] == ["proprio@exemple.fr"] and envoi["reply_to"] == "client@exemple.fr"
+    assert envoi["subject"] == "[Contact] Une question"
+    assert "Client &lt;client@exemple.fr&gt;" in envoi["html"]
+    assert "Bonjour &lt;b&gt;vous&lt;/b&gt;" in envoi["html"]  # texte brut échappé, jamais interprété
+    assert envoi["attachments"] == [{"filename": "photo.png", "content": _b64.b64encode(b"\x89PNG").decode(),
+                                     "content_type": "image/png"}]
+    assert entetes == {"Idempotency-Key": "transfert-msg_42"}  # un renvoi de Resend ne crée pas de doublon
+    # Fonctionne aussi sans le préfixe /api (selon ce que Vercel transmet).
+    assert c.post("/mail/entrant", content=corps, headers=_signe(corps)).status_code == 200
+
+
+def test_mail_entrant_ignore_les_autres_evenements(boite):
+    c, appels = boite
+    corps = _evenement(type_="email.delivered")
+    r = c.post("/api/mail/entrant", content=corps, headers=_signe(corps))
+    assert r.status_code == 200 and r.json() == {"ignore": "email.delivered"} and appels == []

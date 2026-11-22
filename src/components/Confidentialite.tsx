@@ -153,7 +153,7 @@ export default function Confidentialite() {
               <ul>
                 <li>Vercel Inc. — hébergement du site et de l’API, mesure d’audience.</li>
                 <li>Neon Inc. — base de données.</li>
-                <li>Resend — envoi des codes de connexion par e-mail.</li>
+                <li>Resend — envoi des codes de connexion par e-mail, et réception des e-mails écrits à l’adresse de contact.</li>
               </ul>
               <p>
                 La base de données et l’API sont hébergées aux États-Unis. Ces transferts hors de l’Union européenne
