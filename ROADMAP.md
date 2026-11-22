@@ -4,9 +4,12 @@
 
 ## Prochaines versions (plan du 22 novembre 2026)
 
-Ce plan remplace l'ordre des sections historiques ci-dessous pour les prochaines livraisons.
+Ce plan remplace l'ordre des sections historiques ci-dessous pour les prochaines livraisons. Les tâches sont suivies
+dans le [tableau GitHub « STACKMONSTERS - Roadmap & Suivi »](https://github.com/users/enabeteleazar/projects/6) (colonnes Backlog, À faire, En cours, En test,
+Terminé ; jalons `0.7.0`, `0.7.1`, `0.8.0`), qui remplace l'ancien fichier `TODO.md`.
 
 ### v0.7.0 — Mise en ligne lundi 23 novembre 2026
+Tickets [#21](https://github.com/enabeteleazar/StackMonsters/issues/21), [#22](https://github.com/enabeteleazar/StackMonsters/issues/22), [#23](https://github.com/enabeteleazar/StackMonsters/issues/23), [#24](https://github.com/enabeteleazar/StackMonsters/issues/24).
 - Échanges entre collectionneurs : doubles et canettes recherchées, partage réglable, mise en relation, messagerie,
   « Valider l'échange » (−1 / +1) et « Signaler ».
 - Collection allégée (onglets Possédées / Recherchées, filtres), doublon ajouté automatiquement au scan, badge « Possédée ».
@@ -16,17 +19,19 @@ Ce plan remplace l'ordre des sections historiques ci-dessous pour les prochaines
 
 ### v0.7.1 — Corrections de bugs
 - Retours de la mise en ligne (notifications, barre du bas et popups sur iPhone).
-- Envoi depuis `contact@stackmonsters.fr` : répondre aux clients depuis l'adresse où ils écrivent.
+- [ ] [#25](https://github.com/enabeteleazar/StackMonsters/issues/25) — Envoi depuis `contact@stackmonsters.fr` : répondre aux clients depuis l'adresse où ils écrivent.
 
 ### v0.8.0 — Confiance et partage
-- [ ] **P0 · #1** — Auditer et renouveler les secrets (mot de passe Neon, clés Resend, `SESSION_SECRET`).
-- [ ] **P1 · #16** — Sauvegarde automatique de la base et restauration testée.
-- [ ] Notifications des échanges sur l'écran verrouillé (appli fermée), en plus des popups.
-- [ ] Fusionner deux fiches du Wiki qui décrivent la même canette (voir `TODO.md`).
-- [ ] **P4 · #14** — Liste partageable « Mes doubles / Je cherche » avec QR code.
+- [ ] **P0 · [#1](https://github.com/enabeteleazar/StackMonsters/issues/1)** — Auditer et renouveler les secrets (mot de passe Neon, clés Resend, `SESSION_SECRET`).
+- [ ] **P1 · [#16](https://github.com/enabeteleazar/StackMonsters/issues/16)** — Sauvegarde automatique de la base et restauration testée.
+- [ ] [#26](https://github.com/enabeteleazar/StackMonsters/issues/26) — Notifications des échanges sur l'écran verrouillé (appli fermée), en plus des popups.
+- [ ] [#27](https://github.com/enabeteleazar/StackMonsters/issues/27) — Fusionner deux fiches du Wiki qui décrivent la même canette (codes, collections, historique).
+- [ ] **P4 · [#14](https://github.com/enabeteleazar/StackMonsters/issues/14)** — Liste partageable « Mes doubles / Je cherche » avec QR code.
 
-### Plus tard
-- #6 plusieurs photos par canette, #7 historique des opérations, #13 badges et niveaux, bourse d'échange avec annonces.
+### Plus tard (Backlog)
+- [#6](https://github.com/enabeteleazar/StackMonsters/issues/6) plusieurs photos par canette, [#7](https://github.com/enabeteleazar/StackMonsters/issues/7) historique des opérations, [#11](https://github.com/enabeteleazar/StackMonsters/issues/11) parcours après le scan,
+  [#12](https://github.com/enabeteleazar/StackMonsters/issues/12) statistiques avancées, [#13](https://github.com/enabeteleazar/StackMonsters/issues/13) badges et niveaux.
+- [#28](https://github.com/enabeteleazar/StackMonsters/issues/28) bourse d'échange (petites annonces sans argent), [#29](https://github.com/enabeteleazar/StackMonsters/issues/29) échange suivi de bout en bout et réputation.
 
 ## Vision du produit
 

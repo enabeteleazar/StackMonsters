@@ -127,7 +127,7 @@ API, la fenêtre montre le geste Partager → « Sur l'écran d'accueil » → �
   (`GET /api/cans/{ean}/photo`). Un `PUT /api/cans` sans champ `photo` conserve la photo existante.
 
 ## Échanges, étape 1 : doubles et recherchées
-Branche `market` (idée 1 des échanges entre collectionneurs, voir `TODO.md`). Aucun contact entre membres :
+Branche `market` (idée 1 des échanges entre collectionneurs ; suite dans le [tableau GitHub](https://github.com/users/enabeteleazar/projects/6), tickets #26, #28, #29). Aucun contact entre membres :
 seulement des compteurs anonymes.
 - **Doubles** : toute canette de la collection en 2 exemplaires ou plus compte comme double, sans rien
   proposer canette par canette ; seul l'interrupteur des Réglages décide (voir plus bas). La colonne
