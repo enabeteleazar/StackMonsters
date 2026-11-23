@@ -2247,6 +2247,52 @@ def test_aucune_mise_en_relation_creee_sur_une_fiche_refusee(env, monkeypatch):
         assert cx.execute("SELECT COUNT(*) AS n FROM echanges").fetchone()["n"] == 0
 
 
+def test_photo_d_une_fiche_refusee_reservee_au_proprietaire(env, monkeypatch):
+    """#32 : une fiche peut être refusée pour sa photo ; elle n'est plus servie qu'au propriétaire."""
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    hc = connecter(c, codes, C)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango", photo=PNG_1PX), headers=ha)  # la photo devient celle de la fiche
+    url = "/api/wiki/2000000000015/photo"
+    assert [c.get(url, headers=h).status_code for h in (hb, hc)] == [200, 200]
+    c.post("/api/wiki/2000000000015/moderation", json={"decision": "refusee", "motif": "Photo"}, headers=hc)
+    assert c.get(url).status_code == 401  # sans connexion (déjà le cas avant #32)
+    assert c.get(url, headers=hb).status_code == 404  # un membre
+    assert c.get(url, headers=ha).status_code == 404  # même celui qui l'a ajoutée
+    assert c.get(url, headers=hc).status_code == 200  # le propriétaire
+    c.post("/api/wiki/2000000000015/moderation", json={"decision": "acceptee"}, headers=hc)
+    assert c.get(url, headers=hb).status_code == 200
+
+
+def test_fiche_refusee_sans_photo_dans_echanges_et_collection(env, monkeypatch):
+    """#32 : conversation ouverte puis canette reçue après le refus : pas de photo (vignette par défaut)."""
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    hc = connecter(c, codes, C)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango", nb=2, photo=PNG_1PX), headers=ha)
+    c.delete("/api/cans/2000000000015", headers=hb)
+    c.post("/api/wiki/2000000000015/recherche", headers=hb)
+    n = _echanges(c, hb)["notifications"][0]
+    assert n["fiche"]["photo"]  # photo visible tant que la fiche n'est pas refusée
+    c.post(f"/api/echanges/{n['id']}/accepter", headers=hb)
+    c.post(f"/api/echanges/{n['id']}/accepter", headers=ha)
+    c.post("/api/wiki/2000000000015/moderation", json={"decision": "refusee", "motif": "Photo"}, headers=hc)
+    # Conversation ouverte : plus de photo, ni dans la liste ni dans la conversation.
+    assert _echanges(c, hb)["conversations"][0]["fiche"]["photo"] is None
+    assert c.get(f"/api/echanges/{n['id']}/messages", headers=hb).json()["fiche"]["photo"] is None
+    # Canette reçue après le refus : dans la collection, sans la photo de la fiche refusée.
+    c.post(f"/api/echanges/{n['id']}/valider", headers=ha)
+    c.post(f"/api/echanges/{n['id']}/valider", headers=hb)
+    ligne = next(x for x in c.get("/api/cans", headers=hb).json() if x["ean"] == "2000000000015")
+    assert ligne["nom"] == "Mango" and ligne["photo_version"] is None and ligne["photo_wiki"] is False
+    assert c.get("/api/cans/2000000000015/photo", headers=hb).status_code == 404
+    # Celui qui avait la canette garde sa propre photo, s'il en avait une, mais pas celle de la fiche refusée.
+    ligne_a = next(x for x in c.get("/api/cans", headers=ha).json() if x["ean"] == "2000000000015")
+    assert ligne_a["photo_wiki"] is False
+
+
 def test_valider_refuse_si_le_double_n_existe_plus(env):
     c, codes = env
     ha, hb, eid = _conversation_ouverte(c, codes)
