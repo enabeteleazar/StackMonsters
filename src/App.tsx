@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Home, LayoutGrid, MessagesSquare, ScanLine, Settings2 } from 'lucide-react'
+import { avecDelai } from './delai'
 import { api, jeton, NonAutorise, renouvelerJeton } from './api'
 import AccueilPublic from './components/AccueilPublic'
 import Acces from './components/Acces'
@@ -28,6 +29,8 @@ type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats' | 'echanges' | '
 
 /** Relecture des échanges (notifications, messages non lus) tant que l'appli est affichée. */
 const RELECTURE_ECHANGES_MS = 60_000
+/** Message d'accueil (#34) : au-delà, les autres popups s'affichent sans attendre. */
+const DELAI_ACCUEIL_MS = 3000
 type EtatAcces = 'verification' | 'accueil' | 'connexion' | 'prive'
 
 export default function App() {
@@ -209,7 +212,8 @@ export default function App() {
   useEffect(() => {
     if (etatAcces !== 'prive') return
     setAccueil(undefined)
-    api.accueil().then((r) => setAccueil(r.accueil)).catch(() => setAccueil(null))
+    // Au plus 3 s d'attente : sur un réseau lent, on continue sans accueil (il reste « non vu » pour la prochaine fois).
+    void avecDelai(api.accueil(), DELAI_ACCUEIL_MS, null).then((r) => setAccueil(r?.accueil ?? null))
   }, [etatAcces])
   useEffect(() => {
     if (etatAcces !== 'prive') return

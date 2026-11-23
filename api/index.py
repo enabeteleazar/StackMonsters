@@ -2202,7 +2202,7 @@ def admin_accueil(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depen
     _reserve_au_proprietaire(u)
     with cx.transaction():
         r = cx.execute("SELECT titre, texte, actif, maj FROM accueil").fetchone()
-        attente = cx.execute("SELECT COUNT(*) AS n FROM users WHERE NOT accueil_vu").fetchone()["n"]
+        attente = cx.execute("SELECT COUNT(*) AS n FROM users WHERE NOT accueil_vu AND bloque IS NULL").fetchone()["n"]
     return {**(r or {**ACCUEIL_PROVISOIRE, "actif": False, "maj": None}), "comptes_en_attente": attente}
 
 

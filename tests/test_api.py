@@ -2466,7 +2466,11 @@ def test_message_d_accueil_une_fois_pour_les_nouveaux_comptes(env, monkeypatch):
     assert c.get("/api/accueil", headers=hd).json()["accueil"]["texte"] == "Bienvenue !"
     c.put("/api/admin/accueil", json={"titre": "Salut toi", "texte": "Bienvenue !", "actif": False}, headers=hc)
     assert c.get("/api/accueil", headers=hd).json() == {"accueil": None}
-    assert c.get("/api/admin/accueil", headers=hc).json()["comptes_en_attente"] >= 1
+    attente = c.get("/api/admin/accueil", headers=hc).json()["comptes_en_attente"]
+    assert attente >= 1
+    with ix.base() as cx:  # un compte bloqué ne compte pas parmi ceux qui attendent l'accueil
+        cx.execute("UPDATE users SET bloque = 'test' WHERE email = 'test-d@example.com'")
+    assert c.get("/api/admin/accueil", headers=hc).json()["comptes_en_attente"] == attente - 1
 
 
 def test_migration_22_laisse_les_comptes_existants_a_vu(env):
