@@ -37,6 +37,12 @@ if [ -z "${DATABASE_URL:-}" ]; then
   exit 1
 fi
 
+# Garde-fou (23/11/2026) : jamais la base de production par mégarde, ni pour l'appli locale ni pour --migrer.
+# Voir scripts/garde_prod.py (SM_PROD_DB_HOST dans .env.local ; exception : SM_JE_VEUX_LA_PROD=1).
+if ! python3 scripts/garde_prod.py; then
+  exit 1
+fi
+
 python3 - <<'PY'
 import socket
 import sys
