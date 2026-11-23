@@ -833,7 +833,7 @@ def _trop_de_tentatives(attente: int, detail: str = "trop de tentatives") -> HTT
 
 def _url_site() -> str:
     """Adresse publique du site, pour les liens et images du mail (une image de mail doit être en ligne)."""
-    return (os.environ.get("SITE_URL") or "https://canstackmonsters.vercel.app").rstrip("/")
+    return (os.environ.get("SITE_URL") or "https://stackmonsters.fr").rstrip("/")
 
 
 def mail_code_html(code: str) -> str:
@@ -1988,7 +1988,7 @@ def envoyer_push(abonnement: dict, charge: dict, privee: str) -> int:
                                "keys": {"p256dh": abonnement["p256dh"], "auth": abonnement["auth"]}},
             data=json.dumps(charge, ensure_ascii=False),
             vapid_private_key=privee,
-            vapid_claims={"sub": os.environ.get("VAPID_SUBJECT", "mailto:contact@mail.stackmonsters.fr")},
+            vapid_claims={"sub": os.environ.get("VAPID_SUBJECT", "mailto:contact@stackmonsters.fr")},
             ttl=86400,
             timeout=10,
         )
@@ -2385,6 +2385,145 @@ def wiki_signalement_traite(ident: int, u: dict = Depends(utilisateur), cx: psyc
     return _fiche(r, proprietaire=True)
 
 
+# --- Boîte de contact : e-mails reçus par Resend, transférés vers la boîte du propriétaire -------------------
+# Resend reçoit tout le courrier de stackmonsters.fr et de mail.stackmonsters.fr (MX) et appelle ce webhook à chaque
+# e-mail (événement email.received). Le webhook ne contient que les métadonnées : le contenu et les pièces
+# jointes sont relus par l'API Receiving, puis l'e-mail est renvoyé à MAIL_TRANSFERT, avec l'adresse du client
+# en « Répondre à ». Route publique, protégée par la signature Svix (RESEND_WEBHOOK_SECRET).
+
+courrier = APIRouter(prefix="/mail")
+TOLERANCE_WEBHOOK = 300  # secondes d'écart admises sur svix-timestamp (rejeu d'une vieille requête)
+PIECES_JOINTES_MAX = 30 * 1024 * 1024  # au-delà, les pièces jointes ne sont pas recopiées (limite d'envoi 40 Mo)
+
+
+def _verifier_webhook_resend(corps: bytes, entetes) -> str:
+    """Vérifie la signature Svix d'un webhook Resend ; renvoie l'identifiant du message (svix-id)."""
+    secret = os.environ.get("RESEND_WEBHOOK_SECRET", "").strip()
+    if not secret.startswith("whsec_"):
+        raise HTTPException(503, "transfert des e-mails non configuré")
+    ident = entetes.get("svix-id") or entetes.get("webhook-id")
+    horodatage = entetes.get("svix-timestamp") or entetes.get("webhook-timestamp")
+    signatures = entetes.get("svix-signature") or entetes.get("webhook-signature")
+    if not (ident and horodatage and signatures):
+        raise HTTPException(400, "en-têtes de signature manquants")
+    try:
+        ecart = abs(time.time() - int(horodatage))
+    except ValueError:
+        raise HTTPException(400, "horodatage invalide") from None
+    if ecart > TOLERANCE_WEBHOOK:
+        raise HTTPException(401, "requête trop ancienne")
+    try:
+        cle = base64.b64decode(secret.split("_", 1)[1])
+    except (binascii.Error, ValueError):
+        raise HTTPException(503, "secret du webhook invalide") from None
+    attendue = base64.b64encode(
+        hmac.new(cle, f"{ident}.{horodatage}.".encode() + corps, hashlib.sha256).digest()
+    ).decode()
+    for signature in signatures.split():
+        version, _, valeur = signature.partition(",")
+        if version == "v1" and hmac.compare_digest(valeur, attendue):
+            return ident
+    raise HTTPException(401, "signature invalide")
+
+
+def appel_resend(methode: str, chemin: str, corps: dict | None = None, entetes: dict | None = None) -> dict:
+    """Appel JSON à l'API Resend (lecture d'un e-mail reçu, envoi)."""
+    cle = os.environ.get("RESEND_API_KEY")
+    if not cle:
+        raise HTTPException(503, "envoi d'e-mail non configuré")
+    req = urllib.request.Request(
+        "https://api.resend.com" + chemin, method=methode,
+        data=json.dumps(corps).encode() if corps is not None else None,
+        headers={"Authorization": f"Bearer {cle}", "Content-Type": "application/json", "User-Agent": "stackmonster/1",
+                 **(entetes or {})},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        logger.warning("Resend a répondu HTTP %d sur %s %s", exc.code, methode, chemin.split("?")[0])
+        raise HTTPException(502, "le fournisseur d'e-mail a refusé la requête") from None
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        logger.warning("Service Resend injoignable (%s)", type(exc).__name__)
+        raise HTTPException(502, "fournisseur d'e-mail injoignable") from None
+
+
+def telecharger(url: str) -> bytes:
+    """Contenu d'une pièce jointe reçue (lien signé de Resend, valable une heure)."""
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "stackmonster/1"}), timeout=20) as r:
+        return r.read()
+
+
+def _texte_en_html(texte: str) -> str:
+    import html as _html
+    return "<pre style=\"white-space:pre-wrap;font:14px/1.5 sans-serif;margin:0\">" + _html.escape(texte) + "</pre>"
+
+
+@courrier.post("/entrant")
+async def mail_entrant(request: Request) -> dict:
+    """Webhook Resend email.received : transfère l'e-mail reçu vers MAIL_TRANSFERT."""
+    import html as _html
+
+    corps = await request.body()
+    ident = _verifier_webhook_resend(corps, request.headers)
+    try:
+        evenement = json.loads(corps)
+    except ValueError:
+        raise HTTPException(400, "contenu invalide") from None
+    if evenement.get("type") != "email.received":
+        return {"ignore": evenement.get("type")}  # autre événement : rien à faire, pas de nouvel essai
+    destination = os.environ.get("MAIL_TRANSFERT", "").strip()
+    if not destination:
+        raise HTTPException(503, "adresse de transfert non configurée")
+    email_id = (evenement.get("data") or {}).get("email_id")
+    if not email_id:
+        raise HTTPException(400, "email_id manquant")
+
+    recu = appel_resend("GET", f"/emails/receiving/{email_id}")
+    expediteur = (recu.get("headers") or {}).get("from") or recu.get("from") or ""
+    adresse = recu.get("from") or ""
+    sujet = recu.get("subject") or "(sans objet)"
+    pour = ", ".join(recu.get("to") or [])
+
+    pieces, poids = [], 0
+    if recu.get("attachments"):
+        for pj in appel_resend("GET", f"/emails/receiving/{email_id}/attachments").get("data", []):
+            if not pj.get("download_url") or poids + (pj.get("size") or 0) > PIECES_JOINTES_MAX:
+                continue
+            contenu = telecharger(pj["download_url"])
+            poids += len(contenu)
+            piece = {"filename": pj.get("filename") or "piece-jointe", "content": base64.b64encode(contenu).decode()}
+            if pj.get("content_type"):
+                piece["content_type"] = pj["content_type"]
+            if pj.get("content_id") and pj.get("content_disposition") == "inline":
+                piece["content_id"] = pj["content_id"]
+            pieces.append(piece)
+    omises = len(recu.get("attachments") or []) - len(pieces)
+
+    bandeau = (
+        "<div style=\"font:13px/1.5 sans-serif;color:#555;border-bottom:1px solid #ddd;padding:0 0 8px;margin:0 0 12px\">"
+        f"<b>De :</b> {_html.escape(expediteur)}<br><b>À :</b> {_html.escape(pour)}"
+        + (f"<br><b>{omises} pièce(s) jointe(s) trop lourde(s)</b> : à voir dans Resend (Emails → Receiving)." if omises else "")
+        + "</div>"
+    )
+    contenu_html = recu.get("html") or _texte_en_html(recu.get("text") or "")
+    envoi = {
+        # Expéditeur sur mail.stackmonsters.fr : le seul domaine où l'envoi est activé dans Resend.
+        "from": os.environ.get("MAIL_CONTACT", "StackMonsters Contact <contact@mail.stackmonsters.fr>"),
+        "to": [destination],
+        "reply_to": adresse or None,
+        "subject": f"[Contact] {sujet}",
+        "html": bandeau + contenu_html,
+        "text": f"De : {expediteur}\nÀ : {pour}\n\n" + (recu.get("text") or ""),
+    }
+    if pieces:
+        envoi["attachments"] = pieces
+    envoi = {k: v for k, v in envoi.items() if v is not None}
+    # Resend renvoie le webhook en cas d'échec avec le même svix-id : la clé d'idempotence évite un doublon.
+    appel_resend("POST", "/emails", envoi, {"Idempotency-Key": f"transfert-{ident}"[:256]})
+    return {"transfere": email_id}
+
+
 app = FastAPI(title="StackMonsters", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
 
 
@@ -2394,6 +2533,6 @@ async def _validation_lisible(_: Request, e: RequestValidationError) -> JSONResp
     messages = [str(err.get("msg", "")).removeprefix("Value error, ") for err in e.errors()]
     return JSONResponse(status_code=422, content={"detail": " ; ".join(m for m in messages if m) or "données invalides"})
 
-for r in (auth, router):  # avec et sans le préfixe /api (selon ce que Vercel transmet)
+for r in (auth, router, courrier):  # avec et sans le préfixe /api (selon ce que Vercel transmet)
     app.include_router(r)
     app.include_router(r, prefix="/api")

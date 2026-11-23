@@ -27,11 +27,15 @@ export async function notificationsActives(): Promise<boolean> {
   return Notification.permission === 'granted' && (await abonnementActuel()) !== null
 }
 
-export type ResultatActivation = 'active' | 'refusee' | 'indisponible'
+/** sans-service-worker : le service worker n'est enregistré que sur le site en ligne (build de production),
+ * pas avec ./dev.sh : aucun appareil ne peut s'y abonner. */
+export type ResultatActivation = 'active' | 'refusee' | 'indisponible' | 'sans-service-worker'
 
 /** Demande l'autorisation (à appeler depuis un geste de l'utilisateur), abonne l'appareil et l'enregistre. */
 export async function activerNotifications(): Promise<ResultatActivation> {
   if (!notificationsPossibles()) return 'indisponible'
+  // Sans service worker, navigator.serviceWorker.ready ne se résoudrait jamais : on répond tout de suite.
+  if (!(await navigator.serviceWorker.getRegistration())) return 'sans-service-worker'
   const { cle } = await api.pushCle()
   if (!cle) return 'indisponible'
   if ((await Notification.requestPermission()) !== 'granted') return 'refusee'
