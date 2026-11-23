@@ -242,7 +242,8 @@ Tout le courrier de `stackmonsters.fr` (dont **`contact@stackmonsters.fr`, l'adr
 dans `src/config.ts`) et de `mail.stackmonsters.fr` (dont `contact@mail.stackmonsters.fr`, l'ancienne) arrive chez Resend. DNS chez IONOS :
 - `mail.stackmonsters.fr` (envoi et réception) : **MX** `mail` → `inbound-smtp.eu-west-1.amazonaws.com` (priorité 10) ;
 - `stackmonsters.fr` (réception seule dans Resend, aucune boîte IONOS) : **MX** `@` → `receive-euw1.forge.rmta.net`
-  (priorité 9, les MX IONOS ont été retirés) et **TXT** `resend._domainkey` (DKIM). Le SPF IONOS reste en place.
+  (priorité 9, les MX IONOS ont été retirés) et **TXT** `resend._domainkey` (DKIM). Aucun SPF ni DMARC sur le
+  domaine au 23 novembre 2026 (relevé DNS public).
 - Les e-mails reçus sont visibles dans Resend → Emails → **Receiving**.
 - Transfert automatique : Resend appelle `POST /api/mail/entrant` (webhook, événement `email.received`). La route
   vérifie la signature Svix (`RESEND_WEBHOOK_SECRET`, `whsec_…`, 5 minutes de tolérance), relit le contenu et les
@@ -252,8 +253,30 @@ dans `src/config.ts`) et de `mail.stackmonsters.fr` (dont `contact@mail.stackmon
   recopiées jusqu'à 30 Mo ; au-delà, le message le signale.
 - Webhook à créer dans Resend (Webhooks → Add) vers `https://stackmonsters.fr/api/mail/entrant`, événement
   `email.received` ; son secret va dans la variable Vercel `RESEND_WEBHOOK_SECRET`.
-- Répondre depuis l'adresse de contact : dans Gmail, « Envoyer des e-mails en tant que » avec le SMTP de Resend
-  (`smtp.resend.com`, port 465, utilisateur `resend`, mot de passe : une clé d'API Resend dédiée à l'envoi).
+
+### Répondre depuis `contact@stackmonsters.fr` (#25, en attente de validation)
+Aujourd'hui l'envoi n'est activé dans Resend que pour `mail.stackmonsters.fr` ; une réponse part donc de
+`contact@mail.stackmonsters.fr` ou de Gmail. Aucun code à changer : uniquement de la configuration. Les changements
+Resend et DNS se font avec l'accord d'Eleazar ; Hedy (infra) les applique.
+
+1. **Resend** : activer l'envoi (« Sending ») sur `stackmonsters.fr`. Réversible, sans effet sur la réception.
+   Resend affiche alors les enregistrements d'envoi du sous-domaine `send` ; ce sont eux qui font foi.
+2. **DNS chez IONOS** : trois ajouts, rien à modifier ni à supprimer (le MX de réception de `@` ne bouge pas) :
+   | Type | Nom | Valeur | Priorité |
+   |---|---|---|---|
+   | MX | `send` | `feedback-smtp.eu-west-1.amazonses.com` | 10 |
+   | TXT | `send` | `v=spf1 include:amazonses.com ~all` | |
+   | TXT | `_dmarc` | `v=DMARC1; p=none; rua=mailto:contact@stackmonsters.fr` | |
+
+   Les deux premiers sont ceux déjà en place pour `send.mail.stackmonsters.fr` ; à confirmer avec l'étape 1.
+   `p=none` observe sans rien rejeter (on pourra passer à `quarantine` une fois les rapports propres).
+3. **Clé SMTP** : créée par Eleazar dans Resend (API Keys → *Sending access*, limitée au domaine
+   `stackmonsters.fr`, nom « Gmail SMTP »). Elle sert de mot de passe : elle ne passe ni par git ni par un agent.
+4. **Gmail** (Eleazar) : Paramètres → Comptes → « Envoyer des e-mails en tant que » → `contact@stackmonsters.fr`,
+   SMTP `smtp.resend.com`, port 465 (SSL), utilisateur `resend`, mot de passe = la clé de l'étape 3. Le code de
+   confirmation envoyé par Gmail revient par le transfert ci-dessus.
+5. **Vérification** : une réponse envoyée à une adresse de test (pas à un client) ; dans « Afficher l'original »,
+   `Authentication-Results` doit indiquer `spf=pass`, `dkim=pass` et `dmarc=pass`.
 
 ## Administration (propriétaire)
 Réglages → **Administration** (visible seulement pour `OWNER_EMAIL`, routes `/api/admin/*` en 403 pour les autres),
