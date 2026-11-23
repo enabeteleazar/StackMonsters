@@ -65,11 +65,14 @@ def _statut(prefixe: str) -> str:
 # Une canette de la collection affiche les informations de sa fiche du Wiki (nom, édition, volume,
 # description, photo...). Ses propres valeurs ne servent que lorsque le Wiki n'en a pas
 # (canette LOCAL-, fiche retirée, champ vide). État, quantité et notes restent personnels.
+# Photo du Wiki montrée hors du Wiki (collection, échanges) : jamais celle d'une fiche refusée (#32), qui a pu
+# l'être à cause de sa photo.
+PHOTO_WIKI_VISIBLE = "(w.photo IS NOT NULL AND w.moderation <> 'refusee')"
 COLONNES_COLLECTION = (
     "c.ean, COALESCE(NULLIF(w.nom, ''), c.nom) AS nom, "
     "COALESCE(NULLIF(w.volume, ''), c.volume) AS volume, c.etat, c.nb, c.notes, c.ajout, "
-    "CASE WHEN w.photo IS NOT NULL THEN 'wiki-' || w.maj WHEN c.photo IS NOT NULL THEN c.maj END AS photo_version, "
-    "COALESCE(w.photo IS NOT NULL, false) AS photo_wiki, (w.ean IS NOT NULL) AS dans_wiki, "
+    "CASE WHEN " + PHOTO_WIKI_VISIBLE + " THEN 'wiki-' || w.maj WHEN c.photo IS NOT NULL THEN c.maj END AS photo_version, "
+    "COALESCE(" + PHOTO_WIKI_VISIBLE + ", false) AS photo_wiki, (w.ean IS NOT NULL) AS dans_wiki, "
     "COALESCE(w.description, '') AS description, "
     "COALESCE(NULLIF(w.categorie, ''), w.gamme, '') AS categorie, "
     "COALESCE(w.flavor, '') AS flavor, COALESCE(" + _statut("w.") + ", '') AS status, COALESCE(w.region, '') AS region, "
@@ -1190,7 +1193,7 @@ def photo_canette(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connecti
     """Photo d'une canette de sa propre collection, chargée à la demande : celle du Wiki en priorité."""
     with cx.transaction():
         r = cx.execute(
-            f"SELECT COALESCE(w.photo, c.photo) AS photo FROM collection c {JOINTURE_WIKI} "
+            f"SELECT CASE WHEN {PHOTO_WIKI_VISIBLE} THEN w.photo ELSE c.photo END AS photo FROM collection c {JOINTURE_WIKI} "
             "WHERE c.user_id = %s AND c.ean = %s",
             (u["id"], ean),
         ).fetchone()
@@ -1629,7 +1632,7 @@ def _reperer_paires(cx: psycopg.Connection, user_id: int) -> None:
 def _echange_du_compte(cx: psycopg.Connection, echange_id: int, user_id: int) -> dict:
     """La mise en relation, si ce compte y prend part ; 404 sinon (sans dire si elle existe)."""
     e = cx.execute(
-        "SELECT e.*, w.nom, CASE WHEN w.photo IS NOT NULL THEN w.maj END AS photo_wiki FROM echanges e JOIN wiki w ON w.ean = e.fiche "
+        "SELECT e.*, w.nom, CASE WHEN " + PHOTO_WIKI_VISIBLE + " THEN w.maj END AS photo_wiki FROM echanges e JOIN wiki w ON w.ean = e.fiche "
         "WHERE e.id = %s AND %s IN (e.chercheur, e.possesseur)", (echange_id, user_id),
     ).fetchone()
     if e is None:
@@ -1665,7 +1668,7 @@ def echanges(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(co
             "ORDER BY a.id DESC LIMIT 20", (uid,),
         ).fetchall()
         lignes = cx.execute(
-            "SELECT e.*, w.nom, CASE WHEN w.photo IS NOT NULL THEN w.maj END AS photo_wiki, "
+            "SELECT e.*, w.nom, CASE WHEN " + PHOTO_WIKI_VISIBLE + " THEN w.maj END AS photo_wiki, "
             "(SELECT COUNT(*) FROM messages m WHERE m.echange = e.id AND m.auteur <> %s AND m.id > "
             " CASE WHEN e.chercheur = %s THEN e.vu_chercheur ELSE e.vu_possesseur END) AS non_lus, "
             "(SELECT m.texte FROM messages m WHERE m.echange = e.id ORDER BY m.id DESC LIMIT 1) AS dernier, "
@@ -2149,9 +2152,13 @@ def wiki_saveurs(cx: psycopg.Connection = Depends(connexion)) -> list[str]:
 
 
 @router.get("/wiki/{ean}/photo")
-def wiki_photo(ean: str, cx: psycopg.Connection = Depends(connexion)) -> Response:
+def wiki_photo(ean: str, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> Response:
+    """Photo d'une fiche (connexion requise, comme tout le routeur). Celle d'une fiche refusée (#32) : 404 pour
+    tous les comptes, même celui qui l'a ajoutée, sauf le propriétaire."""
     with cx.transaction():
-        r = cx.execute("SELECT photo FROM wiki WHERE ean = %s", (ean,)).fetchone()
+        r = cx.execute("SELECT photo, moderation FROM wiki WHERE ean = %s", (ean,)).fetchone()
+    if r and r["moderation"] == "refusee" and not _est_proprietaire(u["email"]):
+        raise HTTPException(404, "photo inconnue")
     m = PHOTO_RE.match(r["photo"]) if r and r["photo"] else None
     if not m:
         raise HTTPException(404, "photo inconnue")
