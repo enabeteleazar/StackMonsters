@@ -26,14 +26,51 @@ def test_prod_declaree_avec_pooler_ou_plusieurs_hotes():
 
 
 def test_preview_et_base_locale_autorisees_quand_la_prod_est_declaree():
-    assert g.verdict(PREVIEW, DECLARE, False) == (True, "")
-    assert g.verdict(LOCALE, DECLARE, False) == (True, "")
+    assert g.verdict(PREVIEW, DECLARE, False, env={}) == (True, "")
+    assert g.verdict(LOCALE, DECLARE, False, env={}) == (True, "")
 
 
-def test_sans_declaration_toute_base_neon_est_refusee_mais_pas_une_base_locale():
-    ok, message = g.verdict(PREVIEW, "", False)
-    assert not ok and "SM_PROD_DB_HOST" in message
-    assert g.verdict(LOCALE, "", False) == (True, "")
+def test_sans_declaration_seules_les_bases_locales_passent():
+    for url in (PREVIEW, "postgresql://u:x@db.abc.supabase.co/postgres", "postgresql://u:x@10.0.0.5/db"):
+        ok, message = g.verdict(url, "", False, env={})
+        assert not ok and "SM_PROD_DB_HOST" in message, url
+    for url in (LOCALE, "postgresql://u:x@localhost/db", "postgresql://u:x@[::1]:5432/db", "postgresql:///db",
+                "postgresql://u:x@db:5432/postgres", "host=/var/run/postgresql dbname=x", "dbname=x"):
+        assert g.verdict(url, "", False, env={}) == (True, ""), url
+
+
+# Formes signalées par Sarah (« fail-open ») : chacune doit être reconnue.
+VERCEL_PROD = "postgres://u:secret@ep-prod-123456-pooler.eu-central-1.postgres.vercel-storage.com/verceldb"
+
+
+def test_vercel_postgres_compare_par_endpoint():
+    assert not g.verdict(VERCEL_PROD, DECLARE, False, env={})[0]  # même endpoint que la prod Neon déclarée
+    assert not g.verdict(VERCEL_PROD, "", False, env={})[0]  # distant, rien de déclaré
+    assert g.verdict(VERCEL_PROD.replace("ep-prod-123456", "ep-preview-9"), DECLARE, False, env={})[0]
+
+
+def test_forme_mots_cles_et_parametre_host():
+    for url in (
+        "host=ep-prod-123456-pooler.eu-central-1.aws.neon.tech dbname=neondb user=u password=secret",
+        "host='ep-prod-123456.eu-central-1.aws.neon.tech' dbname=neondb",
+        "postgresql://u:secret@/neondb?host=ep-prod-123456.eu-central-1.aws.neon.tech",
+        "postgresql://u:secret@localhost/neondb?host=ep-prod-123456.eu-central-1.aws.neon.tech",
+        "postgresql://u:secret@127.0.0.1,ep-prod-123456-pooler.eu-central-1.aws.neon.tech/neondb",
+    ):
+        ok, message = g.verdict(url, DECLARE, False, env={})
+        assert not ok and "PRODUCTION" in message and "secret" not in message, url
+
+
+def test_pghost_quand_l_url_ne_donne_pas_d_hote():
+    env = {"PGHOST": "ep-prod-123456.eu-central-1.aws.neon.tech"}
+    assert not g.verdict("postgresql:///neondb", DECLARE, False, env=env)[0]
+    assert not g.verdict("dbname=neondb", "", False, env=env)[0]
+
+
+def test_url_illisible_refusee():
+    for url in ("mysql://u:x@localhost/db", "n'importe quoi", "host='non fermé", "   "):
+        ok, message = g.verdict(url, DECLARE, False, env={})
+        assert not ok and "illisible" in message, url
 
 
 def test_exception_explicite_avec_avertissement():
