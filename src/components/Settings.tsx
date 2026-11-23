@@ -6,6 +6,7 @@ import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../su
 import { moteurNatif } from '../scanner'
 import { activerNotifications, desactiverNotifications, notificationsActives, notificationsPossibles } from '../notifications'
 import LienInstagram from './LienInstagram'
+import { oublierDonneesLocales } from '../notificationsVues'
 
 type Props = {
   emailUtilisateur: string
@@ -58,6 +59,7 @@ export default function Settings({
     setSuppressionEnCours(true)
     try {
       await api.supprimerCompte(saisieSuppression)
+      oublierDonneesLocales(emailUtilisateur) // rien ne reste du compte sur cet appareil
       quitter()
     } catch (e) {
       if (e instanceof NonAutorise) surVerrouiller()

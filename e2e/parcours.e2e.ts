@@ -208,6 +208,9 @@ test('la suppression du compte exige l’adresse et efface la collection', async
   const autre = await nouvellePage(browser)
   await connecter(autre, adresse)
 
+  // Une clé locale liée au compte (popups déjà vues) : elle doit disparaître avec lui.
+  await page.evaluate((a) => localStorage.setItem(`sm-notifs-vues:${a}`, '["n-1-signalee"]'), adresse)
+
   // Annuler ne supprime rien.
   await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
   await expect(page.getByText('ta collection : canettes, quantités, états, notes et photos')).toBeVisible()
@@ -222,6 +225,8 @@ test('la suppression du compte exige l’adresse et efface la collection', async
   await page.getByLabel(/Pour confirmer/).fill(adresse.toUpperCase())
   await confirmer.click()
   await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
+  // Rien ne reste du compte sur cet appareil.
+  expect(await page.evaluate((a) => Object.keys(localStorage).filter((k) => k.toLowerCase().includes(a)), adresse)).toEqual([])
 
   await autre.reload() // l'autre appareil perd aussi l'accès
   await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
