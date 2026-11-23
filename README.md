@@ -277,6 +277,12 @@ migration 20 :
   envoyée uniquement aux appareils abonnés du compte propriétaire, rien dans `annonces` (ni popup ni historique chez
   les membres). Résultat affiché : nombre d'appareils atteints, services en échec avec leur code (Apple, Google,
   Mozilla…), abonnements expirés retirés ; « Aucun appareil abonné sur ce compte » s'il n'y en a pas.
+- **Message d'accueil des nouveaux comptes** (#34, onglet Message, migration 22) : titre (60 caractères), texte
+  (1 000), interrupteur « Actif » ; `GET`/`PUT /api/admin/accueil`, table `accueil` à une ligne. Désactivé par
+  défaut (texte provisoire proposé, jamais montré). Actif, il s'affiche en popup une seule fois par compte, tous
+  appareils confondus (`GET /api/accueil`, `POST /api/accueil/vu`, colonne `users.accueil_vu`), avant l'invitation à
+  installer, les messages à tous et les popups d'échange. Les comptes créés avant la migration 22 ont
+  `accueil_vu = true` (défaut de la colonne) et ne le voient pas. Aucune notification système, rien dans Notifications.
 - **Notifications (Web Push)** : dépendance `pywebpush`, clés VAPID dans `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
   (secrète) et `VAPID_SUBJECT`. `scripts/generer_vapid.py` les crée dans `.env.local` sans les afficher ; les copier
   ensuite dans les variables d'environnement Vercel. Sans clés, seule la popup est envoyée. Sur iPhone, les
@@ -367,6 +373,8 @@ de migrer, sur la base de production (`scripts/garde_prod.py`, lancé avant tout
 - les hôtes sont lus dans l'URL (plusieurs hôtes, `?host=`, `?hostaddr=`), dans la forme mots-clés
   (`host=… dbname=…`) et, à défaut, dans `PGHOST` / `PGHOSTADDR` ; une `DATABASE_URL` illisible est refusée ;
 - exception volontaire et ponctuelle : `SM_JE_VEUX_LA_PROD=1 ./dev.sh` (avertissement en rouge).
+Dans `.env.local`, mets chaque valeur entre **guillemets simples** (`DATABASE_URL='postgresql://…?sslmode=require&channel_binding=require'`) :
+`./dev.sh` lit le fichier comme un script shell, et un `&` non protégé coupe la ligne (la variable reste vide).
 Les migrations de production passent par `scripts/migrer_schema.py`, avec le feu vert d'Eleazar, pas par `./dev.sh`.
 En local, saisis un e-mail : le code s'affiche dans le terminal (ligne `[dev]`).
 Tests : `pnpm test` ; `TEST_DATABASE_URL=… python -m pytest tests` (jamais sur la production).
