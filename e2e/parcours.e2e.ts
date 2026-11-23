@@ -688,3 +688,31 @@ test('message à tous : la popup s’affiche aussi à la réception, appli déj�
   await popup.getByRole('button', { name: 'OK' }).click()
   await expect(popup).toHaveCount(0)
 })
+
+test('administration : notification de test vers ses propres appareils, rien chez les membres', async ({ page, browser }) => {
+  // Le membre existe et a l'appli ouverte AVANT le clic : un message créé à ce moment-là lui serait montré
+  // (même mécanisme que le parcours « la popup s'affiche aussi à la réception »).
+  const membre = await nouvellePage(browser)
+  await connecter(membre, email())
+  await expect(nav(membre, 'Accueil')).toBeVisible()
+
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Administration' }).click()
+  await page.getByRole('tab', { name: 'Message' }).click()
+  await page.getByRole('button', { name: 'M’envoyer une notification de test' }).click()
+  // Le serveur de test n'a pas de clés VAPID : le résultat le dit, sans rien envoyer. (Le cas « aucun appareil
+  // abonné sur ce compte » et les envois réels sont couverts par les tests de l'API.)
+  await expect(page.getByRole('status').filter({ hasText: /Notifications non configurées sur le serveur|Aucun appareil abonné sur ce compte/ })).toBeVisible()
+
+  // Chez le membre : ni popup à la relecture (appli ouverte), ni après rechargement, ni dans Notifications.
+  await membre.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await membre.waitForTimeout(1500)
+  await expect(membre.getByRole('dialog')).toHaveCount(0)
+  await membre.reload()
+  await expect(nav(membre, 'Accueil')).toBeVisible()
+  await membre.waitForTimeout(1500)
+  await expect(membre.getByRole('dialog')).toHaveCount(0)
+  await membre.getByRole('button', { name: /^Échanges/ }).click()
+  await expect(membre.locator('.annonce-notif')).toHaveCount(0)
+})

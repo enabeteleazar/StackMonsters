@@ -2435,3 +2435,53 @@ def test_mail_entrant_ignore_les_autres_evenements(boite):
     corps = _evenement(type_="email.delivered")
     r = c.post("/api/mail/entrant", content=corps, headers=_signe(corps))
     assert r.status_code == 200 and r.json() == {"ignore": "email.delivered"} and appels == []
+
+
+# --- Notification de test (propriétaire, #31) -------------------------------------------------
+
+
+def test_notification_de_test_seulement_vers_les_appareils_du_proprietaire(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    monkeypatch.setenv("VAPID_PUBLIC_KEY", "cle-publique")
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "cle-privee")
+    envois = []
+    reponses = {"https://web.push.apple.com/proprio-1": 201, "https://fcm.googleapis.com/fcm/send/proprio-2": 410,
+                "https://updates.push.services.mozilla.com/proprio-3": 403, "https://web.push.apple.com/membre": 201}
+    monkeypatch.setattr(ix, "envoyer_push", lambda ab, charge, privee: envois.append((ab["endpoint"], charge)) or reponses[ab["endpoint"]])
+    ha, hc = connecter(c, codes, A), connecter(c, codes, C)
+    url = "/api/admin/push/test"
+    assert c.post(url, headers=ha).status_code == 403  # réservé au propriétaire
+
+    # Aucun appareil abonné : rien n'est envoyé, le résultat le dit.
+    assert c.post(url, headers=hc).json() == {"push": True, "appareils": 0, "notifies": 0, "erreurs": []}
+    assert envois == []
+
+    c.post("/api/push/abonnement", json={**ABONNEMENT, "endpoint": "https://web.push.apple.com/membre"}, headers=ha)
+    for e in ("https://web.push.apple.com/proprio-1", "https://fcm.googleapis.com/fcm/send/proprio-2",
+              "https://updates.push.services.mozilla.com/proprio-3"):
+        c.post("/api/push/abonnement", json={**ABONNEMENT, "endpoint": e}, headers=hc)
+    with ix.base() as cx:
+        annonces_avant = cx.execute("SELECT COUNT(*) AS n FROM annonces").fetchone()["n"]
+    r = c.post(url, headers=hc).json()
+    assert r["push"] is True and r["appareils"] == 3 and r["notifies"] == 1 and r["expires"] == 1
+    assert sorted(r["erreurs"], key=lambda e: e["code"]) == [{"service": "Mozilla", "code": 403}, {"service": "Google", "code": 410}]
+    assert "web.push.apple.com/membre" not in str(envois)  # jamais les appareils des membres
+    assert all(charge["texte"].startswith("Notification de test") for _, charge in envois)
+    assert "proprio" not in str(r)  # le résultat ne montre pas les adresses d'abonnement
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM annonces").fetchone()["n"] == annonces_avant  # ni popup ni historique
+        restants = {x["endpoint"] for x in cx.execute("SELECT endpoint FROM abonnements_push").fetchall()}
+    assert "https://fcm.googleapis.com/fcm/send/proprio-2" not in restants  # abonnement expiré effacé
+    assert c.get("/api/annonce", headers=ha).json()["annonce"] is None
+
+
+def test_notification_de_test_sans_cles(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    monkeypatch.delenv("VAPID_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("VAPID_PRIVATE_KEY", raising=False)
+    monkeypatch.setattr(ix, "envoyer_push", lambda *a: (_ for _ in ()).throw(AssertionError("aucun envoi")))
+    hc = connecter(c, codes, C)
+    c.post("/api/push/abonnement", json=ABONNEMENT, headers=hc)
+    assert c.post("/api/admin/push/test", headers=hc).json() == {"push": False, "appareils": 1, "notifies": 0, "erreurs": []}
