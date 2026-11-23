@@ -90,8 +90,7 @@ pas le code, utilisable depuis une autre IP ou plus tard tant qu'il n'a pas expi
   Les autres seuils sont des constantes de `api/index.py`.
 
 ### Suppression du compte
-Bouton « Supprimer mon compte » des Réglages **masqué pour tous** (`SUPPRESSION_COMPTE_VISIBLE` dans
-`Settings.tsx`) ; la politique de confidentialité renvoie vers l'adresse de contact. Une fois rétabli, il ouvre un panneau qui détaille les conséquences ; il faut y saisir
+Réglages → « Supprimer mon compte » (membres seulement, jamais le compte propriétaire ; réaffiché en 0.7.1, #3) ouvre un panneau qui détaille les conséquences ; il faut y saisir
 l'adresse du compte. L'API (`DELETE /api/auth/compte`, corps `{"confirmation": "<adresse>"}`) vérifie elle
 aussi cette adresse (422 sinon) et refuse le compte `OWNER_EMAIL` (403). Effacés immédiatement, dans une
 transaction : le compte, la collection (notes et photos comprises), toutes les sessions (tous les appareils)

@@ -198,11 +198,37 @@ test('vider sa collection : réservé au propriétaire, garde le compte et le Wi
   await expect(page.locator('.wiki-grille').getByText(nom)).toBeVisible() // la fiche du Wiki reste
 })
 
-test('le bouton « Supprimer mon compte » est masqué', async ({ page }) => {
-  await connecter(page, email())
+test('la suppression du compte exige l’adresse et efface la collection', async ({ page, browser }) => {
+  const adresse = email()
+  const nom = `À effacer ${unique()}`
+  await connecter(page, adresse)
+  await ajouterParCode(page, ean13(), nom)
   await nav(page, 'Réglages').click()
-  await expect(page.getByRole('button', { name: 'Se déconnecter', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Supprimer mon compte' })).toHaveCount(0)
+
+  const autre = await nouvellePage(browser)
+  await connecter(autre, adresse)
+
+  // Annuler ne supprime rien.
+  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
+  await expect(page.getByText('ta collection : canettes, quantités, états, notes et photos')).toBeVisible()
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  await expect(page.getByRole('button', { name: 'Supprimer définitivement' })).toHaveCount(0)
+
+  // Le bouton reste inactif tant que l'adresse saisie n'est pas celle du compte.
+  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
+  const confirmer = page.getByRole('button', { name: 'Supprimer définitivement' })
+  await page.getByLabel(/Pour confirmer/).fill('mauvaise@example.com')
+  await expect(confirmer).toBeDisabled()
+  await page.getByLabel(/Pour confirmer/).fill(adresse.toUpperCase())
+  await confirmer.click()
+  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
+
+  await autre.reload() // l'autre appareil perd aussi l'accès
+  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
+
+  await connecter(page, adresse)
+  await nav(page, 'Collection').click()
+  await expect(page.getByText(nom)).toHaveCount(0)
 })
 
 test('déconnexion : cet appareil seulement', async ({ page, browser }) => {

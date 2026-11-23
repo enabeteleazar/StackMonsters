@@ -20,8 +20,6 @@ type Props = {
   surPreferencesChangees: () => Promise<void>
 }
 
-/** Bouton « Supprimer mon compte » : masqué pour tous pour l'instant (passer à true pour le rétablir). */
-const SUPPRESSION_COMPTE_VISIBLE = false
 
 export default function Settings({
   emailUtilisateur, joignable, surVerrouiller, surAdministration, nbCanettes, surCollectionVidee, surPreferencesChangees,
@@ -278,8 +276,8 @@ export default function Settings({
             <Lock size={18} />
             Se déconnecter
           </button>
-          {/* Masqué pour tous (SUPPRESSION_COMPTE_VISIBLE) ; la route et le panneau restent en place. */}
-          {SUPPRESSION_COMPTE_VISIBLE && proprietaire === false && !suppression && (
+          {/* Suppression du compte par le membre lui-même (#3) ; jamais pour le compte propriétaire. */}
+          {proprietaire === false && !suppression && (
             <button
               className="accueil-co-secondaire reglages-danger"
               onClick={() => {
