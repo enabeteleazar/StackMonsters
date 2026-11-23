@@ -124,6 +124,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ titre, texte }),
     }),
+  /** Propriétaire : notification de test vers ses propres appareils abonnés (rien chez les membres). */
+  adminPushTest: () =>
+    requete<{ push: boolean; appareils: number; notifies: number; erreurs: { service: string; code: number }[]; expires?: number }>(
+      '/admin/push/test',
+      { method: 'POST' },
+    ),
   adminAnnonces: () =>
     requete<{ annonces: { id: number; titre: string; texte: string; cree: number; notifies: number }[]; appareils: number; push: boolean }>(
       '/admin/annonces',

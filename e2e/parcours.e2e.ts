@@ -588,6 +588,54 @@ test('échanges : mise en relation, double accord, puis messagerie', async ({ pa
   await expect(page.locator('.fiche-infos div').filter({ hasText: 'Quantité' })).toContainText('1') // -1
 })
 
+test('fiche en cours de vérification : mention pour les membres, refus qui masque la mise en relation', async ({ page, browser }) => {
+  const nom = `Verif ${unique()}`
+  const code = ean13()
+  const possesseur = await nouvellePage(browser) // un membre : sa fiche reste en attente
+  await connecter(possesseur, email())
+  await ajouterParCode(possesseur, code, nom)
+  await saisirCode(possesseur, code) // 2 exemplaires
+  await expect(possesseur.getByText(`Doublon ajouté · ${nom} × 2`)).toBeVisible()
+
+  // Un autre membre voit la mention sur la carte et sur la fiche, et peut quand même la chercher.
+  const chercheur = await nouvellePage(browser)
+  await connecter(chercheur, email())
+  await nav(chercheur, 'Wiki').click()
+  await chercheur.getByLabel('Chercher dans le Wiki').fill(nom)
+  const carte = chercheur.locator('.wiki-carte').filter({ hasText: nom })
+  await expect(carte.getByText('En cours de vérification')).toBeVisible()
+  await expect(carte.getByText('À vérifier')).toHaveCount(0)
+  await carte.click()
+  await expect(chercheur.getByRole('status').filter({ hasText: 'En cours de vérification' })).toBeVisible()
+  await chercheur.getByRole('button', { name: 'Je la cherche' }).click()
+  await expect(chercheur.getByRole('button', { name: 'Je ne la cherche plus' })).toBeVisible()
+  await chercheur.reload()
+  await expect(chercheur.getByRole('dialog', { name: 'Échanges' })).toContainText(`Un collectionneur a ${nom} en double.`)
+  await chercheur.getByRole('dialog', { name: 'Échanges' }).getByRole('button', { name: 'OK' }).click()
+
+  // Le propriétaire garde son badge « À vérifier », sans la mention des membres, et refuse la fiche.
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Wiki').click()
+  await page.getByLabel('Chercher dans le Wiki').fill(nom)
+  const carteProprio = page.locator('.wiki-carte').filter({ hasText: nom })
+  await expect(carteProprio.getByText('À vérifier')).toBeVisible()
+  await expect(carteProprio.getByText('En cours de vérification')).toHaveCount(0)
+  await carteProprio.click()
+  await page.getByRole('button', { name: 'Refuser la fiche' }).click()
+  await page.getByRole('button', { name: 'Confirmer le refus' }).click()
+  await expect(page.getByText('Fiche refusée ou masquée', { exact: false })).toBeVisible()
+
+  // Chez le chercheur : la mise en relation pas encore acceptée disparaît, et sa recherche n'est plus visible.
+  await chercheur.reload()
+  await expect(nav(chercheur, 'Accueil')).toBeVisible()
+  await chercheur.getByRole('button', { name: /^Échanges/ }).click()
+  await expect(chercheur.getByText('Aucune notification.')).toBeVisible()
+  await expect(chercheur.getByText(`Un collectionneur a ${nom} en double.`)).toHaveCount(0)
+  await chercheur.reload()
+  await nav(chercheur, 'Collection').click()
+  await expect(chercheur.getByRole('tab', { name: /Recherchées · 0/ })).toBeVisible()
+})
+
 test('échanges : signaler un membre ferme la conversation, le propriétaire l’examine', async ({ page, browser }) => {
   const nom = `Signal ${unique()}`
   const code = ean13()
@@ -713,4 +761,32 @@ test('message à tous : la popup s’affiche aussi à la réception, appli déj�
   await expect(popup).toContainText(texte)
   await popup.getByRole('button', { name: 'OK' }).click()
   await expect(popup).toHaveCount(0)
+})
+
+test('administration : notification de test vers ses propres appareils, rien chez les membres', async ({ page, browser }) => {
+  // Le membre existe et a l'appli ouverte AVANT le clic : un message créé à ce moment-là lui serait montré
+  // (même mécanisme que le parcours « la popup s'affiche aussi à la réception »).
+  const membre = await nouvellePage(browser)
+  await connecter(membre, email())
+  await expect(nav(membre, 'Accueil')).toBeVisible()
+
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Administration' }).click()
+  await page.getByRole('tab', { name: 'Message' }).click()
+  await page.getByRole('button', { name: 'M’envoyer une notification de test' }).click()
+  // Le serveur de test n'a pas de clés VAPID : le résultat le dit, sans rien envoyer. (Le cas « aucun appareil
+  // abonné sur ce compte » et les envois réels sont couverts par les tests de l'API.)
+  await expect(page.getByRole('status').filter({ hasText: /Notifications non configurées sur le serveur|Aucun appareil abonné sur ce compte/ })).toBeVisible()
+
+  // Chez le membre : ni popup à la relecture (appli ouverte), ni après rechargement, ni dans Notifications.
+  await membre.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await membre.waitForTimeout(1500)
+  await expect(membre.getByRole('dialog')).toHaveCount(0)
+  await membre.reload()
+  await expect(nav(membre, 'Accueil')).toBeVisible()
+  await membre.waitForTimeout(1500)
+  await expect(membre.getByRole('dialog')).toHaveCount(0)
+  await membre.getByRole('button', { name: /^Échanges/ }).click()
+  await expect(membre.locator('.annonce-notif')).toHaveCount(0)
 })

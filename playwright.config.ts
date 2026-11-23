@@ -31,6 +31,8 @@ export default defineConfig({
         OWNER_EMAIL: 'proprietaire-e2e@example.com',
         // Tous les comptes de test viennent de 127.0.0.1 : les limites par IP les bloqueraient.
         SM_COMPTES_MAX_IP_JOUR: '1000',
+        SM_COMPTES_MAX_HEURE: '1000',
+        SM_DEMANDES_MAX_HEURE: '1000',
         SM_DEMANDES_MAX_IP: '1000',
         SM_DEMANDES_MAX_IP_JOUR: '1000',
       },

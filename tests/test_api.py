@@ -1091,6 +1091,7 @@ def test_wiki_recoit_les_canettes_ajoutees_sans_donnees_de_collection(env):
         "ean", "nom", "volume", "categorie", "flavor", "status", "region", "variante",
         "description", "photo", "codes", "doubles", "recherches", "je_cherche", "je_possede",
         "partage_doubles",  # réglage du compte qui consulte, pas de celui qui a ajouté la canette
+        "en_verification",  # fiche pas encore validée (#9), sans le statut de modération ni l'auteur
     }
     assert f["photo"]  # la fiche n'avait pas de photo : celle envoyée devient la sienne
     assert c.get("/api/wiki/2000000000015/photo", headers=hb).status_code == 200
@@ -2161,6 +2162,75 @@ def test_valider_l_echange_fait_moins_un_et_plus_un(env):
     assert c.post(f"/api/echanges/{eid}/messages", json={"texte": "Merci !"}, headers=hb).status_code == 200
 
 
+def test_fiche_en_verification_visible_de_tous_avec_la_mention(env, monkeypatch):
+    """#9, option B : la fiche d'un membre reste visible, avec « en_verification » pour tous (sans le statut)."""
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    ha, hb = _mise_en_relation(c, codes)  # créée par A (membre) : en attente
+    hc = connecter(c, codes, C)
+    f = fiche(c, hb, "2000000000015")
+    assert f["en_verification"] is True and "moderation" not in f
+    assert [x["en_verification"] for x in _rechercher(c, hb, q="Mango")["fiches"]] == [True]
+    # Échanges permis sur une fiche en attente (règle E1).
+    assert len(_echanges(c, hb)["notifications"]) == 1
+    c.post("/api/wiki/2000000000015/moderation", json={"decision": "acceptee"}, headers=hc)
+    assert fiche(c, hb, "2000000000015")["en_verification"] is False
+
+
+def test_fiche_refusee_masque_les_mises_en_relation_mais_garde_les_conversations(env, monkeypatch):
+    """#9, règle E1 : après un refus, plus de nouvelle mise en relation ; celles pas encore acceptées sont
+    masquées ; une conversation ouverte reste lisible et validable ; les « Je la cherche » sont gardés, invisibles."""
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    hc = connecter(c, codes, C)
+    url = "/api/wiki/2000000000015/moderation"
+    # 1. Mise en relation pas encore acceptée : masquée par le refus, de retour si la fiche est réacceptée.
+    ha, hb = _mise_en_relation(c, codes)
+    assert len(_echanges(c, hb)["notifications"]) == 1
+    assert c.post(url, json={"decision": "refusee", "motif": "Doublon"}, headers=hc).status_code == 200
+    eb = _echanges(c, hb)
+    assert eb["notifications"] == [] and eb["non_lus"] == 0
+    assert _rechercher(c, hb, je_cherche="true")["je_cherche"] == 0  # gardée en base, mais invisible
+    assert _rechercher(c, hb, je_cherche="true")["fiches"] == []
+    c.post(url, json={"decision": "acceptee"}, headers=hc)
+    assert len(_echanges(c, hb)["notifications"]) == 1
+    assert _rechercher(c, hb, je_cherche="true")["je_cherche"] == 1
+    n = _echanges(c, hb)["notifications"][0]
+    # 2. Demande envoyée (pas encore acceptée par le possesseur) : masquée, et l'accepter est refusé.
+    c.post(f"/api/echanges/{n['id']}/accepter", headers=hb)
+    c.post(url, json={"decision": "refusee", "motif": "Doublon"}, headers=hc)
+    assert _echanges(c, ha)["notifications"] == []
+    assert c.post(f"/api/echanges/{n['id']}/accepter", headers=ha).status_code == 409
+    # 3. Conversation déjà ouverte : reste lisible et validable malgré le refus.
+    c.post(url, json={"decision": "acceptee"}, headers=hc)
+    assert c.post(f"/api/echanges/{n['id']}/accepter", headers=ha).status_code == 200
+    c.post(url, json={"decision": "refusee", "motif": "Doublon"}, headers=hc)
+    assert [x["id"] for x in _echanges(c, hb)["conversations"]] == [n["id"]]
+    assert c.post(f"/api/echanges/{n['id']}/messages", json={"texte": "On garde le rendez-vous ?"}, headers=hb).status_code == 200
+    assert c.post(f"/api/echanges/{n['id']}/valider", headers=ha).status_code == 200
+    assert c.post(f"/api/echanges/{n['id']}/valider", headers=hb).json()["statut"] == "terminee"
+    assert c.get("/api/cans/2000000000015", headers=hb).json()["nb"] == 1
+    # La canette reçue s'affiche normalement dans sa collection, même si la fiche lui est cachée dans le Wiki.
+    ligne = next(x for x in c.get("/api/cans", headers=hb).json() if x["ean"] == "2000000000015")
+    assert ligne["nom"] == "Mango" and ligne["nb"] == 1
+    assert fiche(c, hb, "2000000000015") is None  # toujours cachée dans son Wiki
+
+
+def test_aucune_mise_en_relation_creee_sur_une_fiche_refusee(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    hc = connecter(c, codes, C)
+    ha, hb = connecter(c, codes, A), connecter(c, codes, B)
+    c.put("/api/cans", json=canette(nom="Mango", nb=1), headers=ha)
+    c.delete("/api/cans/2000000000015", headers=hb)
+    assert c.post("/api/wiki/2000000000015/recherche", headers=hb).status_code == 200
+    c.post("/api/wiki/2000000000015/moderation", json={"decision": "refusee", "motif": "Doublon"}, headers=hc)
+    c.patch("/api/cans/2000000000015/nb", json={"delta": 1}, headers=ha)  # le double arrive après le refus
+    assert _echanges(c, hb)["notifications"] == []
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM echanges").fetchone()["n"] == 0
+
+
 def test_valider_refuse_si_le_double_n_existe_plus(env):
     c, codes = env
     ha, hb, eid = _conversation_ouverte(c, codes)
@@ -2435,3 +2505,53 @@ def test_mail_entrant_ignore_les_autres_evenements(boite):
     corps = _evenement(type_="email.delivered")
     r = c.post("/api/mail/entrant", content=corps, headers=_signe(corps))
     assert r.status_code == 200 and r.json() == {"ignore": "email.delivered"} and appels == []
+
+
+# --- Notification de test (propriétaire, #31) -------------------------------------------------
+
+
+def test_notification_de_test_seulement_vers_les_appareils_du_proprietaire(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    monkeypatch.setenv("VAPID_PUBLIC_KEY", "cle-publique")
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "cle-privee")
+    envois = []
+    reponses = {"https://web.push.apple.com/proprio-1": 201, "https://fcm.googleapis.com/fcm/send/proprio-2": 410,
+                "https://updates.push.services.mozilla.com/proprio-3": 403, "https://web.push.apple.com/membre": 201}
+    monkeypatch.setattr(ix, "envoyer_push", lambda ab, charge, privee: envois.append((ab["endpoint"], charge)) or reponses[ab["endpoint"]])
+    ha, hc = connecter(c, codes, A), connecter(c, codes, C)
+    url = "/api/admin/push/test"
+    assert c.post(url, headers=ha).status_code == 403  # réservé au propriétaire
+
+    # Aucun appareil abonné : rien n'est envoyé, le résultat le dit.
+    assert c.post(url, headers=hc).json() == {"push": True, "appareils": 0, "notifies": 0, "erreurs": []}
+    assert envois == []
+
+    c.post("/api/push/abonnement", json={**ABONNEMENT, "endpoint": "https://web.push.apple.com/membre"}, headers=ha)
+    for e in ("https://web.push.apple.com/proprio-1", "https://fcm.googleapis.com/fcm/send/proprio-2",
+              "https://updates.push.services.mozilla.com/proprio-3"):
+        c.post("/api/push/abonnement", json={**ABONNEMENT, "endpoint": e}, headers=hc)
+    with ix.base() as cx:
+        annonces_avant = cx.execute("SELECT COUNT(*) AS n FROM annonces").fetchone()["n"]
+    r = c.post(url, headers=hc).json()
+    assert r["push"] is True and r["appareils"] == 3 and r["notifies"] == 1 and r["expires"] == 1
+    assert sorted(r["erreurs"], key=lambda e: e["code"]) == [{"service": "Mozilla", "code": 403}, {"service": "Google", "code": 410}]
+    assert "web.push.apple.com/membre" not in str(envois)  # jamais les appareils des membres
+    assert all(charge["texte"].startswith("Notification de test") for _, charge in envois)
+    assert "proprio" not in str(r)  # le résultat ne montre pas les adresses d'abonnement
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM annonces").fetchone()["n"] == annonces_avant  # ni popup ni historique
+        restants = {x["endpoint"] for x in cx.execute("SELECT endpoint FROM abonnements_push").fetchall()}
+    assert "https://fcm.googleapis.com/fcm/send/proprio-2" not in restants  # abonnement expiré effacé
+    assert c.get("/api/annonce", headers=ha).json()["annonce"] is None
+
+
+def test_notification_de_test_sans_cles(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    monkeypatch.delenv("VAPID_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("VAPID_PRIVATE_KEY", raising=False)
+    monkeypatch.setattr(ix, "envoyer_push", lambda *a: (_ for _ in ()).throw(AssertionError("aucun envoi")))
+    hc = connecter(c, codes, C)
+    c.post("/api/push/abonnement", json=ABONNEMENT, headers=hc)
+    assert c.post("/api/admin/push/test", headers=hc).json() == {"push": False, "appareils": 1, "notifies": 0, "erreurs": []}

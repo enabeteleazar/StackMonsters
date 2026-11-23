@@ -20,6 +20,7 @@ import re
 import secrets
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
@@ -1358,6 +1359,8 @@ def _fiche(r: dict, proprietaire: bool = False) -> dict:
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
         "codes": list(r["codes"]),
         "doubles": r["doubles"], "recherches": r["recherches"],
+        # Visible de tous (option B, #9) : la fiche, ajoutée par un membre, attend la décision du propriétaire.
+        "en_verification": r["moderation"] == "en_attente",
     }
     if proprietaire:
         fiche["moderation"] = r["moderation"]
@@ -1518,7 +1521,11 @@ def wiki_recherche(
             "SELECT COUNT(*) AS n FROM wiki WHERE moderation = 'en_attente'"
         ).fetchone()["n"] if proprio else 0
         fiches = _marquer_recherches(cx, [_fiche(r, proprio) for r in lignes], u["id"])
-        nb_je_cherche = cx.execute("SELECT COUNT(*) AS n FROM recherches WHERE user_id = %s", (u["id"],)).fetchone()["n"]
+        # Les « Je la cherche » d'une fiche refusée sont gardés mais invisibles pour un membre (comme la fiche).
+        nb_je_cherche = cx.execute(
+            "SELECT COUNT(*) AS n FROM recherches r JOIN wiki w ON w.ean = r.fiche WHERE r.user_id = %s"
+            + ("" if proprio else " AND w.moderation <> 'refusee'"), (u["id"],),
+        ).fetchone()["n"]
     return {
         "peut_editer": proprio,
         "fiches": fiches,
@@ -1591,7 +1598,10 @@ _EN_RELATION_VALIDE = (
     "AND (SELECT u.partage_doubles FROM users u WHERE u.id = e.chercheur) "
     "AND (SELECT u.partage_doubles FROM users u WHERE u.id = e.possesseur) "
     "AND NOT EXISTS (SELECT 1 FROM signalements_membres s WHERE "
-    "(s.auteur = e.chercheur AND s.signale = e.possesseur) OR (s.auteur = e.possesseur AND s.signale = e.chercheur))"
+    "(s.auteur = e.chercheur AND s.signale = e.possesseur) OR (s.auteur = e.possesseur AND s.signale = e.chercheur)) "
+    # Fiche refusée par le propriétaire (#9) : les mises en relation pas encore acceptées sont masquées ; les
+    # conversations déjà ouvertes ne passent pas par cette règle et restent lisibles et validables.
+    "AND EXISTS (SELECT 1 FROM wiki w WHERE w.ean = e.fiche AND w.moderation <> 'refusee')"
 )
 
 CONVERSATIONS = ("acceptee", "terminee", "fermee")
@@ -1604,6 +1614,7 @@ def _reperer_paires(cx: psycopg.Connection, user_id: int) -> None:
     cx.execute(
         "INSERT INTO echanges (fiche, chercheur, possesseur, statut, cree, maj) "
         "SELECT DISTINCT r.fiche, r.user_id, c.user_id, 'signalee', %s, %s FROM recherches r "
+        "JOIN wiki w ON w.ean = r.fiche AND w.moderation <> 'refusee' "  # aucune mise en relation sur une fiche refusée
         "JOIN users ur ON ur.id = r.user_id AND ur.partage_doubles "
         "JOIN collection c ON c.nb >= 2 AND c.user_id <> r.user_id AND (c.ean = r.fiche OR "
         "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = r.fiche)) "
@@ -2059,6 +2070,42 @@ def admin_annoncer(a: Annonce, u: dict = Depends(utilisateur), cx: psycopg.Conne
             cx.execute("DELETE FROM abonnements_push WHERE endpoint = ANY(%s)", (perimes,))
         cx.execute("UPDATE annonces SET notifies = %s WHERE id = %s", (notifies, annonce["id"]))
     return {"id": annonce["id"], "notifies": notifies, "appareils": len(abonnements), "push": cles is not None}
+
+
+def _service_de_notification(endpoint: str) -> str:
+    """Nom du service de notifications d'un abonnement (Apple, Google, Mozilla…), sans l'adresse complète."""
+    hote = urllib.parse.urlsplit(endpoint).hostname or ""
+    for motif, nom in (("apple.com", "Apple"), ("googleapis.com", "Google"), ("mozilla", "Mozilla"), ("windows.com", "Microsoft")):
+        if hote.endswith(motif) or motif in hote:
+            return nom
+    return hote or "inconnu"
+
+
+@router.post("/admin/push/test")
+def admin_push_test(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Notification de test, envoyée UNIQUEMENT aux appareils abonnés du compte qui la demande (propriétaire).
+    N'écrit rien dans annonces : ni popup ni historique chez les membres. Les abonnements expirés sont effacés."""
+    _reserve_au_proprietaire(u)
+    with cx.transaction():
+        abonnements = cx.execute(
+            "SELECT endpoint, p256dh, auth FROM abonnements_push WHERE user_id = %s ORDER BY cree", (u["id"],),
+        ).fetchall()
+    cles = _cles_vapid()
+    if cles is None or not abonnements:
+        return {"push": cles is not None, "appareils": len(abonnements), "notifies": 0, "erreurs": []}
+    from concurrent.futures import ThreadPoolExecutor
+
+    charge = {"titre": "StackMonsters", "texte": "Notification de test : les notifications arrivent bien sur cet appareil."}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        codes = list(pool.map(lambda ab: envoyer_push(ab, charge, cles[1]), abonnements))
+    erreurs = [{"service": _service_de_notification(ab["endpoint"]), "code": code}
+               for ab, code in zip(abonnements, codes) if not 200 <= code < 300]
+    perimes = [ab["endpoint"] for ab, code in zip(abonnements, codes) if code in (404, 410)]
+    if perimes:
+        with cx.transaction():
+            cx.execute("DELETE FROM abonnements_push WHERE endpoint = ANY(%s)", (perimes,))
+    return {"push": True, "appareils": len(abonnements), "notifies": len(abonnements) - len(erreurs),
+            "erreurs": erreurs, "expires": len(perimes)}
 
 
 @router.get("/admin/annonces")
