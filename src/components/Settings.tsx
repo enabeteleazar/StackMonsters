@@ -63,6 +63,8 @@ export default function Settings({
       quitter()
     } catch (e) {
       if (e instanceof NonAutorise) surVerrouiller()
+      // Signalement en cours d'examen (#3) : le serveur explique pourquoi et à qui écrire.
+      else if (e instanceof ErreurAPI && e.status === 409) setErreurCompte(e.detail)
       else setErreurCompte('Suppression impossible, réessaie avec le réseau. Ton compte n’a pas été supprimé.')
     } finally {
       setSuppressionEnCours(false)

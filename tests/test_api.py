@@ -2303,6 +2303,34 @@ def test_valider_refuse_si_le_double_n_existe_plus(env):
     assert c.get("/api/cans/2000000000015", headers=hb).status_code == 404
 
 
+def test_signalement_non_traite_bloque_la_suppression_du_compte_vise(env, monkeypatch):
+    """#3, option b : le compte visé par un signalement non traité ne peut pas se supprimer (409, message clair) ;
+    l'auteur du signalement, lui, le peut ; une fois le signalement traité, la suppression redevient possible."""
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    ha, hb, eid = _conversation_ouverte(c, codes)
+    hc = connecter(c, codes, C)
+    c.post(f"/api/echanges/{eid}/signaler", json={"motif": "Arnaque ou tentative de vente"}, headers=hb)  # B signale A
+    r = supprimer(c, ha, A)
+    assert r.status_code == 409 and r.json()["detail"] == ix.SUPPRESSION_SIGNALEMENT
+    assert "contact@stackmonsters.fr" in r.json()["detail"]
+    assert c.get("/api/auth/moi", headers=ha).status_code == 200  # rien n'a été supprimé
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM signalements_membres").fetchone()["n"] == 1
+    # Le propriétaire traite le signalement : la suppression redevient possible (le signalement part avec le compte).
+    sid = c.get("/api/admin/signalements-membres", headers=hc).json()[0]["id"]
+    assert c.post(f"/api/admin/signalements-membres/{sid}/traite", headers=hc).status_code == 200
+    assert supprimer(c, ha, A).status_code == 204
+
+
+def test_l_auteur_d_un_signalement_peut_supprimer_son_compte(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    ha, hb, eid = _conversation_ouverte(c, codes)
+    c.post(f"/api/echanges/{eid}/signaler", json={"motif": "Arnaque ou tentative de vente"}, headers=hb)
+    assert supprimer(c, hb, B).status_code == 204
+
+
 def test_signaler_ferme_la_conversation_et_bloque_la_paire(env, monkeypatch):
     c, codes = env
     monkeypatch.setenv("OWNER_EMAIL", C)
