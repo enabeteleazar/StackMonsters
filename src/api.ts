@@ -11,6 +11,9 @@ export class NonAutorise extends Error {
   }
 }
 
+/** Message d'accueil vu par le propriétaire dans l'Administration. */
+export type AccueilAdmin = { titre: string; texte: string; actif: boolean; maj: string | null; comptes_en_attente: number }
+
 export class ErreurAPI extends Error {
   constructor(
     readonly status: number,
@@ -134,6 +137,13 @@ export const api = {
     requete<{ annonces: { id: number; titre: string; texte: string; cree: number; notifies: number }[]; appareils: number; push: boolean }>(
       '/admin/annonces',
     ),
+  /** Message d'accueil (#34) : pour un compte qui ne l'a pas encore vu, s'il est actif. */
+  accueil: () => requete<{ accueil: { titre: string; texte: string } | null }>('/accueil'),
+  accueilVu: () => requete<void>('/accueil/vu', { method: 'POST' }),
+  /** Propriétaire : message d'accueil des nouveaux comptes (texte provisoire, désactivé, tant qu'aucun n'est enregistré). */
+  adminAccueil: () => requete<AccueilAdmin>('/admin/accueil'),
+  adminAccueilEnregistrer: (a: { titre: string; texte: string; actif: boolean }) =>
+    requete<AccueilAdmin>('/admin/accueil', { method: 'PUT', body: JSON.stringify(a) }),
   /** Dernier message du propriétaire pas encore vu par ce compte. */
   annonce: () => requete<{ annonce: { id: number; titre: string; texte: string; cree: number } | null }>('/annonce'),
   annonceVue: (id: number) => requete<void>(`/annonce/${id}/vue`, { method: 'POST' }),

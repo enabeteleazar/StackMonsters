@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft, BarChart3, BellRing, BookOpen, Flag, Lock, LockOpen, Megaphone, Search, Send, ShieldQuestion, Trash2, Users,
 } from 'lucide-react'
-import { api, ErreurAPI, NonAutorise } from '../api'
+import { api, ErreurAPI, NonAutorise, type AccueilAdmin } from '../api'
 import type { CompteAdmin, FicheWiki as Fiche } from '../types'
 import FicheWiki from './FicheWiki'
 import PhotoWiki from './PhotoWiki'
@@ -62,7 +62,12 @@ export default function Administration({ surRetour, surStats, surMessage, surNon
         {onglet === 'comptes' && <Comptes echec={echec} surMessage={surMessage} />}
         {onglet === 'fiches' && <Fiches echec={echec} surNonAutorise={surNonAutorise} />}
         {onglet === 'membres' && <SignalementsMembres surNonAutorise={surNonAutorise} />}
-        {onglet === 'message' && <MessageATous echec={echec} surMessage={surMessage} />}
+        {onglet === 'message' && (
+          <>
+            <MessageATous echec={echec} surMessage={surMessage} />
+            <MessageAccueil echec={echec} surMessage={surMessage} />
+          </>
+        )}
 
         <div className="reglages-actions stats-actions">
           <button className="accueil-co-secondaire" onClick={surStats}>
@@ -397,6 +402,90 @@ function MessageATous({ echec, surMessage }: { echec: (e: unknown) => void; surM
           </ul>
         </>
       )}
+    </div>
+  )
+}
+
+/**
+ * Message d'accueil des nouveaux comptes (#34) : popup une seule fois par compte (tous appareils), à la première
+ * ouverture de l'appli, seulement s'il est actif. Les comptes créés avant la mise en place ne le voient pas.
+ */
+function MessageAccueil({ echec, surMessage }: { echec: (e: unknown) => void; surMessage: (m: string) => void }) {
+  const [enregistre, setEnregistre] = useState<AccueilAdmin | null>(null)
+  const [titre, setTitre] = useState('')
+  const [texte, setTexte] = useState('')
+  const [actif, setActif] = useState(false)
+  const [occupe, setOccupe] = useState(false)
+
+  const appliquer = (a: AccueilAdmin) => {
+    setEnregistre(a)
+    setTitre(a.titre)
+    setTexte(a.texte)
+    setActif(a.actif)
+  }
+
+  useEffect(() => {
+    api.adminAccueil().then(appliquer).catch(echec)
+  }, [echec])
+
+  const modifie = !!enregistre && (titre !== enregistre.titre || texte !== enregistre.texte || actif !== enregistre.actif)
+
+  const enregistrer = async () => {
+    setOccupe(true)
+    try {
+      const r = await api.adminAccueilEnregistrer({ titre: titre.trim(), texte: texte.trim(), actif })
+      appliquer(r)
+      surMessage(r.actif ? 'Message d’accueil enregistré et actif' : 'Message d’accueil enregistré, désactivé')
+    } catch (e) {
+      echec(e)
+    } finally {
+      setOccupe(false)
+    }
+  }
+
+  if (!enregistre) return null
+  return (
+    <div className="admin-section admin-accueil">
+      <h2 className="reglages-titre">Message d’accueil des nouveaux comptes</h2>
+      <p className="sous">
+        Une popup, une seule fois par compte, à la première ouverture de l’appli. Les comptes déjà inscrits ne la
+        voient pas. Aucune notification n’est envoyée.
+        {enregistre.maj === null && ' Texte provisoire, jamais enregistré.'}
+      </p>
+      <input
+        className="admin-message admin-titre"
+        value={titre}
+        maxLength={60}
+        placeholder="Titre (par défaut : Bienvenue sur StackMonsters)"
+        aria-label="Titre du message d’accueil"
+        onChange={(e) => setTitre(e.target.value)}
+      />
+      <textarea
+        className="admin-message admin-accueil-texte"
+        value={texte}
+        maxLength={1000}
+        rows={6}
+        placeholder="Texte du message d’accueil"
+        aria-label="Texte du message d’accueil"
+        onChange={(e) => setTexte(e.target.value)}
+      />
+      <p className="sous admin-compteur">{texte.length} / 1000</p>
+      <label className="admin-accueil-actif">
+        <input type="checkbox" role="switch" checked={actif} onChange={(e) => setActif(e.target.checked)} />
+        <span>{actif ? 'Actif : montré aux nouveaux comptes' : 'Désactivé : personne ne le voit'}</span>
+      </label>
+      {enregistre.actif && (
+        <p className="sous">
+          {enregistre.comptes_en_attente} compte{enregistre.comptes_en_attente > 1 ? 's' : ''} ne l’{enregistre.comptes_en_attente > 1 ? 'ont' : 'a'} pas encore vu.
+        </p>
+      )}
+      <button
+        className="btn btn-primaire"
+        disabled={occupe || !modifie || (actif && !texte.trim())}
+        onClick={() => void enregistrer()}
+      >
+        Enregistrer le message d’accueil
+      </button>
     </div>
   )
 }
