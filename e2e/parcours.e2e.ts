@@ -688,3 +688,21 @@ test('message à tous : la popup s’affiche aussi à la réception, appli déj�
   await popup.getByRole('button', { name: 'OK' }).click()
   await expect(popup).toHaveCount(0)
 })
+
+test('administration : notification de test vers ses propres appareils, rien chez les membres', async ({ page, browser }) => {
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Administration' }).click()
+  await page.getByRole('tab', { name: 'Message' }).click()
+  await page.getByRole('button', { name: 'M’envoyer une notification de test' }).click()
+  // Le serveur de test n'a pas de clés VAPID : le résultat le dit, sans rien envoyer. (Le cas « aucun appareil
+  // abonné sur ce compte » et les envois réels sont couverts par les tests de l'API.)
+  await expect(page.getByRole('status').filter({ hasText: /Notifications non configurées sur le serveur|Aucun appareil abonné sur ce compte/ })).toBeVisible()
+
+  // Aucun message n'est créé : un membre qui ouvre l'appli ne voit pas de popup.
+  const membre = await nouvellePage(browser)
+  await connecter(membre, email())
+  await expect(nav(membre, 'Accueil')).toBeVisible()
+  await membre.waitForTimeout(800)
+  await expect(membre.getByRole('dialog', { name: /Message de StackMonsters|StackMonsters/ })).toHaveCount(0)
+})

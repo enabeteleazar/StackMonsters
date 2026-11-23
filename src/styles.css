@@ -1183,3 +1183,4 @@ nav.nav-bas button[aria-current="true"] svg{color:var(--acide);transform:transla
 .admin-titre{font:600 15px var(--display);letter-spacing:.03em;resize:none}
 .admin-message:not(.admin-titre){min-height:220px}
 .admin-annonce-titre{margin:0 0 2px;font:600 14px var(--display);text-transform:uppercase;letter-spacing:.05em;color:var(--acide)}
+.admin-test-resultat{margin:0;padding:10px 14px;border-radius:14px;border:1px solid rgba(158,232,24,.35);font-size:14px;line-height:1.45}

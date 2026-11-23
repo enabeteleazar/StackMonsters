@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowLeft, BarChart3, BookOpen, Flag, Lock, LockOpen, Megaphone, Search, Send, ShieldQuestion, Trash2, Users,
+  ArrowLeft, BarChart3, BellRing, BookOpen, Flag, Lock, LockOpen, Megaphone, Search, Send, ShieldQuestion, Trash2, Users,
 } from 'lucide-react'
 import { api, ErreurAPI, NonAutorise } from '../api'
 import type { CompteAdmin, FicheWiki as Fiche } from '../types'
@@ -276,12 +276,39 @@ function MessageATous({ echec, surMessage }: { echec: (e: unknown) => void; surM
   const [texte, setTexte] = useState('')
   const [envoi, setEnvoi] = useState(false)
   const [etat, setEtat] = useState<Awaited<ReturnType<typeof api.adminAnnonces>> | null>(null)
+  const [test, setTest] = useState<{ occupe: boolean; resultat: string | null }>({ occupe: false, resultat: null })
 
-  const charger = useCallback(async () => {
+  // Notification de test : seulement vers les appareils abonnés de ce compte ; rien n'est montré aux membres.
+  const tester = async () => {
+    setTest({ occupe: true, resultat: null })
     try {
-      setEtat(await api.adminAnnonces())
+      const r = await api.adminPushTest()
+      let resultat: string
+      if (!r.push) resultat = 'Notifications non configurées sur le serveur (clés VAPID absentes) : aucun envoi.'
+      else if (r.appareils === 0) {
+        resultat = 'Aucun appareil abonné sur ce compte. Active « Notifications » dans les Réglages de l’appli installée, puis réessaie.'
+      } else {
+        resultat = `Notification de test envoyée sur ${r.notifies} appareil${r.notifies > 1 ? 's' : ''} (sur ${r.appareils}).`
+        if (r.erreurs.length) resultat += ` Échec : ${r.erreurs.map((e) => `${e.service} (${e.code})`).join(', ')}.`
+        if (r.expires) resultat += ` ${r.expires} abonnement${r.expires > 1 ? 's' : ''} expiré${r.expires > 1 ? 's' : ''} retiré${r.expires > 1 ? 's' : ''}.`
+      }
+      setTest({ occupe: false, resultat })
     } catch (e) {
+      setTest({ occupe: false, resultat: null })
       echec(e)
+    }
+  }
+
+  // Seule la lecture la plus récente compte : une lecture lente lancée à l'ouverture ne doit pas écraser
+  // l'historique relu juste après un envoi.
+  const lecture = useRef(0)
+  const charger = useCallback(async () => {
+    const numero = ++lecture.current
+    try {
+      const r = await api.adminAnnonces()
+      if (numero === lecture.current) setEtat(r)
+    } catch (e) {
+      if (numero === lecture.current) echec(e)
     }
   }, [echec])
 
@@ -344,6 +371,15 @@ function MessageATous({ echec, surMessage }: { echec: (e: unknown) => void; surM
       <button className="btn btn-primaire" disabled={envoi || !texte.trim()} onClick={() => void envoyer()}>
         <Send size={17} /> Envoyer à tous
       </button>
+
+      <h2 className="reglages-titre">Tester sur mes appareils</h2>
+      <p className="sous">
+        Envoie une notification système uniquement aux appareils abonnés de ton compte. Les membres ne voient rien.
+      </p>
+      <button className="btn btn-fantome" disabled={test.occupe} onClick={() => void tester()}>
+        <BellRing size={17} /> M’envoyer une notification de test
+      </button>
+      {test.resultat && <p className="admin-test-resultat" role="status">{test.resultat}</p>}
 
       {!!etat?.annonces.length && (
         <>

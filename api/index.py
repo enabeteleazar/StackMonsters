@@ -20,6 +20,7 @@ import re
 import secrets
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
@@ -2059,6 +2060,42 @@ def admin_annoncer(a: Annonce, u: dict = Depends(utilisateur), cx: psycopg.Conne
             cx.execute("DELETE FROM abonnements_push WHERE endpoint = ANY(%s)", (perimes,))
         cx.execute("UPDATE annonces SET notifies = %s WHERE id = %s", (notifies, annonce["id"]))
     return {"id": annonce["id"], "notifies": notifies, "appareils": len(abonnements), "push": cles is not None}
+
+
+def _service_de_notification(endpoint: str) -> str:
+    """Nom du service de notifications d'un abonnement (Apple, Google, Mozilla…), sans l'adresse complète."""
+    hote = urllib.parse.urlsplit(endpoint).hostname or ""
+    for motif, nom in (("apple.com", "Apple"), ("googleapis.com", "Google"), ("mozilla", "Mozilla"), ("windows.com", "Microsoft")):
+        if hote.endswith(motif) or motif in hote:
+            return nom
+    return hote or "inconnu"
+
+
+@router.post("/admin/push/test")
+def admin_push_test(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Notification de test, envoyée UNIQUEMENT aux appareils abonnés du compte qui la demande (propriétaire).
+    N'écrit rien dans annonces : ni popup ni historique chez les membres. Les abonnements expirés sont effacés."""
+    _reserve_au_proprietaire(u)
+    with cx.transaction():
+        abonnements = cx.execute(
+            "SELECT endpoint, p256dh, auth FROM abonnements_push WHERE user_id = %s ORDER BY cree", (u["id"],),
+        ).fetchall()
+    cles = _cles_vapid()
+    if cles is None or not abonnements:
+        return {"push": cles is not None, "appareils": len(abonnements), "notifies": 0, "erreurs": []}
+    from concurrent.futures import ThreadPoolExecutor
+
+    charge = {"titre": "StackMonsters", "texte": "Notification de test : les notifications arrivent bien sur cet appareil."}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        codes = list(pool.map(lambda ab: envoyer_push(ab, charge, cles[1]), abonnements))
+    erreurs = [{"service": _service_de_notification(ab["endpoint"]), "code": code}
+               for ab, code in zip(abonnements, codes) if not 200 <= code < 300]
+    perimes = [ab["endpoint"] for ab, code in zip(abonnements, codes) if code in (404, 410)]
+    if perimes:
+        with cx.transaction():
+            cx.execute("DELETE FROM abonnements_push WHERE endpoint = ANY(%s)", (perimes,))
+    return {"push": True, "appareils": len(abonnements), "notifies": len(abonnements) - len(erreurs),
+            "erreurs": erreurs, "expires": len(perimes)}
 
 
 @router.get("/admin/annonces")

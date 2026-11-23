@@ -271,6 +271,10 @@ migration 20 :
   (`GET /api/annonce`, `POST /api/annonce/{id}/vue`, colonne `users.annonce_vue` ; jamais pour l'auteur ni pour un
   compte créé après ; les 20 derniers restent aussi dans Échanges → Notifications, hors pastille), et notification système sur les appareils abonnés (Réglages → **Notifications** ;
   `POST /api/push/abonnement`, table `abonnements_push`). Les abonnements expirés (404/410) sont effacés à l'envoi.
+- **Notification de test** (onglet Message, « M'envoyer une notification de test », `POST /api/admin/push/test`) :
+  envoyée uniquement aux appareils abonnés du compte propriétaire, rien dans `annonces` (ni popup ni historique chez
+  les membres). Résultat affiché : nombre d'appareils atteints, services en échec avec leur code (Apple, Google,
+  Mozilla…), abonnements expirés retirés ; « Aucun appareil abonné sur ce compte » s'il n'y en a pas.
 - **Notifications (Web Push)** : dépendance `pywebpush`, clés VAPID dans `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
   (secrète) et `VAPID_SUBJECT`. `scripts/generer_vapid.py` les crée dans `.env.local` sans les afficher ; les copier
   ensuite dans les variables d'environnement Vercel. Sans clés, seule la popup est envoyée. Sur iPhone, les
