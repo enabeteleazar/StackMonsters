@@ -353,6 +353,21 @@ echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/90-inotify.conf
 En attendant : `SM_POLLING=1 ./dev.sh` (les fichiers sont relus régulièrement au lieu d'être surveillés).
 Si tu utilises Neon, configure `DATABASE_URL` avec la chaîne de connexion actuelle de la branche choisie
 (Neon → **Connect**). `./dev.sh` vérifie la connexion avant de démarrer et signale les identifiants refusés.
+
+**Jamais la production en local.** Le 23/11/2026, `./dev.sh --migrer` lancé avec un `.env.local` qui pointait sur
+la production a appliqué une migration encore en cours d'écriture. Depuis, `./dev.sh` refuse de démarrer, et donc
+de migrer, sur la base de production (`scripts/garde_prod.py`, lancé avant toute connexion) :
+- sans déclaration, seules les bases **locales** passent : `localhost`, `127.x`, `::1`, socket Unix, nom de
+  conteneur sans point (`db`). Toute base distante est refusée ;
+- pour travailler sur une base distante (branche Neon de prévisualisation), déclare l'hôte de la prod dans
+  `.env.local`, jamais dans le dépôt : `SM_PROD_DB_HOST=ep-….eu-central-1.aws.neon.tech` (plusieurs hôtes possibles,
+  séparés par des virgules). La base est alors acceptée si aucun de ses hôtes n'est celui de la prod. Pour Neon et
+  Vercel Postgres (`*.vercel-storage.com`), la comparaison porte sur l'identifiant d'endpoint (`ep-…`), avec ou
+  sans `-pooler` ;
+- les hôtes sont lus dans l'URL (plusieurs hôtes, `?host=`, `?hostaddr=`), dans la forme mots-clés
+  (`host=… dbname=…`) et, à défaut, dans `PGHOST` / `PGHOSTADDR` ; une `DATABASE_URL` illisible est refusée ;
+- exception volontaire et ponctuelle : `SM_JE_VEUX_LA_PROD=1 ./dev.sh` (avertissement en rouge).
+Les migrations de production passent par `scripts/migrer_schema.py`, avec le feu vert d'Eleazar, pas par `./dev.sh`.
 En local, saisis un e-mail : le code s'affiche dans le terminal (ligne `[dev]`).
 Tests : `pnpm test` ; `TEST_DATABASE_URL=… python -m pytest tests` (jamais sur la production).
 Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetable**, puis
