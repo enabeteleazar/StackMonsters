@@ -853,6 +853,22 @@ def test_suppression_de_compte_efface_ses_donnees_seulement(env):
     assert c.get("/api/cans", headers=h).json() == []
 
 
+def test_suppression_de_compte_efface_ses_echanges_sans_gener_l_autre(env):
+    """#3 : les mises en relation, conversations, messages et recherches du compte partent avec lui (comme
+    l'annonce la politique de confidentialité) ; l'autre membre garde une page Échanges qui fonctionne."""
+    c, codes = env
+    ha, hb, eid = _conversation_ouverte(c, codes)
+    c.post(f"/api/echanges/{eid}/messages", json={"texte": "Rendez-vous samedi"}, headers=hb)
+    assert supprimer(c, hb, B).status_code == 204
+    ea = _echanges(c, ha)
+    assert ea["conversations"] == [] and ea["notifications"] == [] and ea["non_lus"] == 0
+    assert c.get(f"/api/echanges/{eid}/messages", headers=ha).status_code == 404
+    with ix.base() as cx:
+        for table in ("echanges", "messages", "recherches"):
+            assert cx.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"] == 0, table
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["nb"] == 2  # sa collection n'a pas bougé
+
+
 def test_suppression_exige_l_adresse_du_compte(env):
     c, codes = env
     h = connecter(c, codes, A)
