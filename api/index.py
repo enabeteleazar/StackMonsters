@@ -488,6 +488,19 @@ CREATE INDEX IF NOT EXISTS abonnements_push_user ON abonnements_push (user_id);
 """),
     # Titre facultatif d'un message à tous (popup, notification système, onglet Notifications).
     (21, "ALTER TABLE annonces ADD COLUMN IF NOT EXISTS titre TEXT NOT NULL DEFAULT '';"),
+    # Message d'accueil des nouveaux comptes (#34) : un seul texte, modifiable par le propriétaire, désactivé tant
+    # qu'il n'a pas été enregistré actif. accueil_vu vaut true par défaut : les comptes existants ne le voient pas
+    # (aucune mise à jour de leurs lignes) ; seuls les comptes créés ensuite sont inscrits à false.
+    # Retour arrière : DROP TABLE accueil; ALTER TABLE users DROP COLUMN accueil_vu;
+    (22, """
+CREATE TABLE IF NOT EXISTS accueil (
+    id BOOLEAN PRIMARY KEY DEFAULT true CHECK (id),
+    titre TEXT NOT NULL DEFAULT '',
+    texte TEXT NOT NULL DEFAULT '',
+    actif BOOLEAN NOT NULL DEFAULT false,
+    maj TEXT);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS accueil_vu BOOLEAN NOT NULL DEFAULT true;
+"""),
 ]
 # « wiki » est le catalogue partagé : une fiche par EAN, sans propriétaire ni donnée de collection
 # (ni quantité, ni état, ni notes). Il est rempli à l'ajout d'une canette ; à la première création de
@@ -1047,8 +1060,9 @@ def verification(v: Verification, request: Request) -> dict:
             _limiter_ip(cx, request, "compte", comptes_ip, now, FENETRE_JOUR, INSCRIPTIONS_LIMITEES)
             _compter(cx, _cle_limite("compte"), comptes_heure, FENETRE_DEMANDES, now, INSCRIPTIONS_LIMITEES)
         cx.execute("DELETE FROM codes WHERE email = %s", (email,))
-        u = cx.execute("INSERT INTO users (email, cree) VALUES (%s, %s) ON CONFLICT (email) DO NOTHING RETURNING id",
-                       (email, now)).fetchone()
+        # Nouveau compte : le message d'accueil (#34) lui reste à montrer.
+        u = cx.execute("INSERT INTO users (email, cree, accueil_vu) VALUES (%s, %s, false) "
+                       "ON CONFLICT (email) DO NOTHING RETURNING id", (email, now)).fetchone()
         if u:  # premier passage : le propriétaire récupère la collection historique
             if _est_proprietaire(email):
                 cx.execute(
@@ -1922,6 +1936,12 @@ class Annonce(BaseModel):
     texte: str = Field(min_length=1, max_length=ANNONCE_MAX)
 
 
+class Accueil(BaseModel):
+    titre: str = Field(default="", max_length=TITRE_ANNONCE_MAX)
+    texte: str = Field(default="", max_length=ANNONCE_MAX)
+    actif: bool = False
+
+
 class Abonnement(BaseModel):
     endpoint: str = Field(min_length=10, max_length=1000)
     p256dh: str = Field(min_length=10, max_length=200)
@@ -2147,6 +2167,59 @@ def annonce_vue(annonce_id: int, u: dict = Depends(utilisateur), cx: psycopg.Con
     """Le message (et les plus anciens) ne s'affichera plus pour ce compte."""
     with cx.transaction():
         cx.execute("UPDATE users SET annonce_vue = GREATEST(annonce_vue, %s) WHERE id = %s", (annonce_id, u["id"]))
+
+
+# Texte provisoire du message d'accueil (#34), proposé au propriétaire tant qu'il n'en a enregistré aucun ; le
+# texte définitif est écrit par la communication, relu, puis validé par Eleazar. Jamais montré s'il n'est pas actif.
+ACCUEIL_PROVISOIRE = {
+    "titre": "Bienvenue sur StackMonsters",
+    "texte": "Scanne tes canettes pour construire ta collection, retrouve-les toutes dans le Wiki et marque celles "
+             "que tu cherches. Si un autre collectionneur en a une en double, tu pourras lui proposer un échange.",
+}
+
+
+@router.get("/accueil")
+def accueil_a_lire(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Message d'accueil, pour un compte qui ne l'a pas encore vu et seulement s'il est actif ; null sinon."""
+    with cx.transaction():
+        r = cx.execute(
+            "SELECT a.titre, a.texte FROM accueil a JOIN users us ON us.id = %s "
+            "WHERE a.actif AND a.texte <> '' AND NOT us.accueil_vu", (u["id"],),
+        ).fetchone()
+    return {"accueil": r}
+
+
+@router.post("/accueil/vu", status_code=204)
+def accueil_vu(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> None:
+    """Le message d'accueil ne s'affichera plus pour ce compte, sur aucun appareil."""
+    with cx.transaction():
+        cx.execute("UPDATE users SET accueil_vu = true WHERE id = %s", (u["id"],))
+
+
+@router.get("/admin/accueil")
+def admin_accueil(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Message d'accueil actuel (texte provisoire, désactivé, tant qu'aucun n'a été enregistré)."""
+    _reserve_au_proprietaire(u)
+    with cx.transaction():
+        r = cx.execute("SELECT titre, texte, actif, maj FROM accueil").fetchone()
+        attente = cx.execute("SELECT COUNT(*) AS n FROM users WHERE NOT accueil_vu").fetchone()["n"]
+    return {**(r or {**ACCUEIL_PROVISOIRE, "actif": False, "maj": None}), "comptes_en_attente": attente}
+
+
+@router.put("/admin/accueil")
+def admin_accueil_enregistrer(a: Accueil, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
+    """Enregistre le message d'accueil ; actif, il s'affiche une fois à chaque compte qui ne l'a pas encore vu."""
+    _reserve_au_proprietaire(u)
+    titre, texte = " ".join(a.titre.split()), a.texte.strip()
+    if a.actif and not texte:
+        raise HTTPException(422, "message d'accueil vide")
+    with cx.transaction():
+        cx.execute(
+            "INSERT INTO accueil (id, titre, texte, actif, maj) VALUES (true, %s, %s, %s, %s) "
+            "ON CONFLICT (id) DO UPDATE SET titre = EXCLUDED.titre, texte = EXCLUDED.texte, actif = EXCLUDED.actif, "
+            "maj = EXCLUDED.maj", (titre, texte, a.actif, maintenant()),
+        )
+    return admin_accueil(u, cx)
 
 
 @router.get("/wiki/saveurs")

@@ -2435,6 +2435,52 @@ def test_admin_supprime_un_compte(env, monkeypatch):
 ABONNEMENT = {"endpoint": "https://push.example.com/appareil-1", "p256dh": "B" * 87, "auth": "a" * 22}
 
 
+def test_message_d_accueil_une_fois_pour_les_nouveaux_comptes(env, monkeypatch):
+    """#34 : désactivé par défaut (texte provisoire) ; actif, il s'affiche une fois par compte non encore vu,
+    tous appareils confondus ; les comptes d'avant la migration 22 (accueil_vu = true) ne le voient pas."""
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    hc = connecter(c, codes, C)
+    ha = connecter(c, codes, A)
+    assert c.get("/api/accueil", headers=ha).json() == {"accueil": None}  # rien tant qu'il n'est pas actif
+    r = c.get("/api/admin/accueil", headers=hc).json()
+    assert r["actif"] is False and r["titre"] == ix.ACCUEIL_PROVISOIRE["titre"] and r["maj"] is None
+    # Réservé au propriétaire.
+    assert c.get("/api/admin/accueil", headers=ha).status_code == 403
+    assert c.put("/api/admin/accueil", json={"texte": "x", "actif": True}, headers=ha).status_code == 403
+    assert c.put("/api/admin/accueil", json={"titre": "T", "texte": "  ", "actif": True}, headers=hc).status_code == 422
+    assert c.put("/api/admin/accueil", json={"texte": "x" * (ix.ANNONCE_MAX + 1)}, headers=hc).status_code == 422
+    # Un compte « d'avant » : la migration l'a laissé à vu.
+    hb = connecter(c, codes, B)
+    with ix.base() as cx:
+        cx.execute("UPDATE users SET accueil_vu = true WHERE email = %s", (B,))
+    r = c.put("/api/admin/accueil", json={"titre": "  Salut   toi ", "texte": " Bienvenue ! ", "actif": True}, headers=hc)
+    assert r.status_code == 200 and (r.json()["titre"], r.json()["texte"], r.json()["actif"]) == ("Salut toi", "Bienvenue !", True)
+    assert c.get("/api/accueil", headers=ha).json() == {"accueil": {"titre": "Salut toi", "texte": "Bienvenue !"}}
+    assert c.get("/api/accueil", headers=hb).json() == {"accueil": None}
+    assert c.post("/api/accueil/vu", headers=ha).status_code == 204
+    ha2 = connecter(c, codes, A)  # un autre appareil du même compte
+    assert c.get("/api/accueil", headers=ha2).json() == {"accueil": None}
+    # Un compte créé ensuite le voit ; désactivé, plus personne ne le voit (sans perdre le « non vu »).
+    hd = connecter(c, codes, "test-d@example.com")
+    assert c.get("/api/accueil", headers=hd).json()["accueil"]["texte"] == "Bienvenue !"
+    c.put("/api/admin/accueil", json={"titre": "Salut toi", "texte": "Bienvenue !", "actif": False}, headers=hc)
+    assert c.get("/api/accueil", headers=hd).json() == {"accueil": None}
+    assert c.get("/api/admin/accueil", headers=hc).json()["comptes_en_attente"] >= 1
+
+
+def test_migration_22_laisse_les_comptes_existants_a_vu(env):
+    c, codes = env
+    connecter(c, codes, A)
+    with ix.connecter() as cx:
+        cx.execute("DROP TABLE accueil")
+        cx.execute("ALTER TABLE users DROP COLUMN accueil_vu")
+        cx.execute("DELETE FROM schema_migrations WHERE version = 22")
+        assert 22 in ix.appliquer_migrations(cx)
+        assert cx.execute("SELECT accueil_vu FROM users WHERE email = %s", (A,)).fetchone()["accueil_vu"] is True
+        assert cx.execute("SELECT COUNT(*) AS n FROM accueil").fetchone()["n"] == 0  # aucun texte inséré
+
+
 def test_message_a_tous_popup_une_fois_et_notifications(env, monkeypatch):
     c, codes = env
     monkeypatch.setenv("OWNER_EMAIL", C)
