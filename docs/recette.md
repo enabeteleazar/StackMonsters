@@ -87,5 +87,5 @@ Ouvrir une issue GitHub, puis prévenir le chef de projet. Bloquant pendant une 
 
 ## Points ouverts
 
-- 0.7.0 : réception réelle d'une notification système jamais vérifiée (envoi du 23/11 : 0 appareil abonné). Prévu : notification de test vers les seuls appareils du propriétaire (0.7.1).
+- 0.7.0 : réception réelle d'une notification système jamais vérifiée (envoi du 23/11 : 0 appareil abonné). Le bouton « M'envoyer une notification de test » (#31) existe sur develop, mais n'est pas mis en prod pour l'instant (décision d'Eleazar) : la réception reste à vérifier au prochain « Message à tous », avec au moins un appareil de test abonné avant l'envoi.
 - 0.7.0 : tests API et e2e non relancés par la QA faute de base de test dédiée. Une base jetable pour la QA est à décider avec Eleazar.
