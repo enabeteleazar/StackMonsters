@@ -68,9 +68,15 @@ def test_pghost_quand_l_url_ne_donne_pas_d_hote():
 
 
 def test_url_illisible_refusee():
-    for url in ("mysql://u:x@localhost/db", "n'importe quoi", "host='non fermé", "   "):
+    for url in ("mysql://u:x@localhost/db", "n'importe quoi", "host='non fermé", "   ",
+                "postgresql://u:pa/ss@ep-prod-123456.eu-central-1.aws.neon.tech/db",
+                "postgresql://u:pa?ss@ep-prod-123456.eu-central-1.aws.neon.tech/db",
+                "postgresql://u:pa#ss@ep-prod-123456.eu-central-1.aws.neon.tech/db"):
         ok, message = g.verdict(url, DECLARE, False, env={})
-        assert not ok and "illisible" in message, url
+        assert not ok and "illisible" in message and "pa/ss" not in message, url
+    # Encodé, le même mot de passe est lu correctement.
+    assert not g.verdict("postgresql://u:pa%2Fss@ep-prod-123456.eu-central-1.aws.neon.tech/db", DECLARE, False, env={})[0]
+    assert g.verdict("postgresql://u:pa%2Fss@127.0.0.1/db", DECLARE, False, env={})[0]
 
 
 def test_exception_explicite_avec_avertissement():

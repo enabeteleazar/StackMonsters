@@ -79,6 +79,10 @@ def hotes(url: str, env: dict[str, str] | None = None) -> list[str]:
         morceaux = urllib.parse.urlsplit(url)
         if morceaux.scheme not in ("postgres", "postgresql"):
             raise Illisible(f"schéma inattendu : {morceaux.scheme}")
+        # Un « / », « ? » ou « # » non encodé dans le mot de passe coupe la partie hôte trop tôt (l'hôte lu serait
+        # l'utilisateur) : un « @ » après cette coupure trahit cette URL ambiguë.
+        if "@" in url.split("://", 1)[1][len(morceaux.netloc):]:
+            raise Illisible("caractère spécial non encodé avant l'hôte (mot de passe ?)")
         trouves += [h for h in _hotes_netloc(morceaux.netloc) if h]
         for cle, valeur in urllib.parse.parse_qsl(morceaux.query):
             if cle in ("host", "hostaddr"):
