@@ -690,6 +690,12 @@ test('message à tous : la popup s’affiche aussi à la réception, appli déj�
 })
 
 test('administration : notification de test vers ses propres appareils, rien chez les membres', async ({ page, browser }) => {
+  // Le membre existe et a l'appli ouverte AVANT le clic : un message créé à ce moment-là lui serait montré
+  // (même mécanisme que le parcours « la popup s'affiche aussi à la réception »).
+  const membre = await nouvellePage(browser)
+  await connecter(membre, email())
+  await expect(nav(membre, 'Accueil')).toBeVisible()
+
   await connecter(page, PROPRIETAIRE)
   await nav(page, 'Réglages').click()
   await page.getByRole('button', { name: 'Administration' }).click()
@@ -699,10 +705,14 @@ test('administration : notification de test vers ses propres appareils, rien che
   // abonné sur ce compte » et les envois réels sont couverts par les tests de l'API.)
   await expect(page.getByRole('status').filter({ hasText: /Notifications non configurées sur le serveur|Aucun appareil abonné sur ce compte/ })).toBeVisible()
 
-  // Aucun message n'est créé : un membre qui ouvre l'appli ne voit pas de popup.
-  const membre = await nouvellePage(browser)
-  await connecter(membre, email())
+  // Chez le membre : ni popup à la relecture (appli ouverte), ni après rechargement, ni dans Notifications.
+  await membre.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+  await membre.waitForTimeout(1500)
+  await expect(membre.getByRole('dialog')).toHaveCount(0)
+  await membre.reload()
   await expect(nav(membre, 'Accueil')).toBeVisible()
-  await membre.waitForTimeout(800)
-  await expect(membre.getByRole('dialog', { name: /Message de StackMonsters|StackMonsters/ })).toHaveCount(0)
+  await membre.waitForTimeout(1500)
+  await expect(membre.getByRole('dialog')).toHaveCount(0)
+  await membre.getByRole('button', { name: /^Échanges/ }).click()
+  await expect(membre.locator('.annonce-notif')).toHaveCount(0)
 })
