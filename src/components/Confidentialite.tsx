@@ -88,6 +88,42 @@ export default function Confidentialite() {
                 responsable du Wiki, qui l’accepte ou la refuse. Ses décisions (date, motif) sont conservées avec la fiche ;
                 l’auteur de la proposition n’est pas enregistré.
               </p>
+              <p>
+                Échanges : les canettes que tu possèdes en au moins 2 exemplaires comptent comme doubles, et tu peux
+                noter celles que tu cherches. Les fiches n’en montrent que des nombres (« 2 collectionneurs l’ont en
+                double »), jamais qui. L’interrupteur « Partage des doublons » des Réglages, activé par défaut, décide
+                pour toute ta collection : coupé, aucun de tes doubles n’est compté. Ces données sont effacées avec ton
+                compte ; une canette ajoutée à ta collection n’est plus « recherchée ».
+              </p>
+              <p>
+                Mise en relation et messagerie : quand un collectionneur a en double une canette que tu cherches, tu
+                en es prévenu sans savoir qui c’est. Si tu choisis « Échange », il est prévenu à son tour, sans
+                savoir qui tu es. Si vous choisissez tous les deux « Échange », une messagerie s’ouvre entre vous :
+                vos messages sont conservés et visibles de vous deux seulement, et ton adresse e-mail n’est jamais
+                montrée. « Annuler » arrête la mise en relation sans prévenir l’autre. Ces échanges et messages sont
+                effacés quand l’un de vous deux supprime son compte, et ne sont plus proposés si le partage des
+                doublons est coupé.
+              </p>
+              <p>
+                « Valider l’échange » : quand vous avez validé tous les deux, la canette est retirée de la collection
+                de celui qui l’avait en double et ajoutée à celle de celui qui la cherchait. « Signaler » : la
+                conversation est fermée pour vous deux et vous n’êtes plus mis en relation ; le motif choisi, tes
+                précisions et la conversation sont alors lisibles par le responsable du service, sans ton adresse, pour
+                traiter le signalement. Les signalements sont effacés avec la conversation.
+              </p>
+              <p>
+                Messages du service et notifications : le responsable peut envoyer un message à tous les membres ; il
+                s’affiche une fois à l’ouverture de l’appli. Si tu actives « Notifications » dans les Réglages, ton
+                appareil reçoit aussi ces messages en notification système : l’adresse d’abonnement fournie par ton
+                navigateur (service de notifications d’Apple, de Google ou de Mozilla) est alors conservée avec ton
+                compte, jusqu’à ce que tu désactives les notifications ou supprimes ton compte. Aucune autre donnée
+                n’est envoyée à ces services que le message lui-même, chiffré.
+              </p>
+              <p>
+                Modération des comptes : le responsable peut bloquer un compte (plus aucune connexion possible) ou le
+                supprimer, par exemple après des signalements ; la suppression efface les mêmes données que si tu le
+                faisais toi-même.
+              </p>
             </Bloc>
 
             <Bloc titre="Combien de temps ?">
@@ -96,6 +132,7 @@ export default function Confidentialite() {
                 <li>Sessions : 30 jours sans utilisation, 90 jours au plus après la connexion, ou jusqu’à la déconnexion.</li>
                 <li>Codes de connexion : une heure environ ; compteurs de limitation (empreintes, jamais l’IP en clair) : 24 heures au plus.</li>
                 <li>Empreintes d’IP des connexions uniques : 13 mois.</li>
+                <li>Événements de mesure d’audience : 25 mois.</li>
                 <li>Ton choix sur la mesure d’audience : 6 mois s’il s’agit d’un refus, 13 mois pour un accord ; la
                   question t’est ensuite reposée.</li>
               </ul>
@@ -116,8 +153,7 @@ export default function Confidentialite() {
               <ul>
                 <li>Vercel Inc. — hébergement du site et de l’API, mesure d’audience.</li>
                 <li>Neon Inc. — base de données.</li>
-                <li>Resend — envoi des codes de connexion par e-mail.</li>
-                <li>ntfy.sh — réception des événements de mesure d’audience, si tu l’acceptes.</li>
+                <li>Resend — envoi des codes de connexion par e-mail, et réception des e-mails écrits à l’adresse de contact.</li>
               </ul>
               <p>
                 La base de données et l’API sont hébergées aux États-Unis. Ces transferts hors de l’Union européenne
@@ -134,8 +170,8 @@ export default function Confidentialite() {
                 définir des directives sur le sort de tes données après ton décès.
               </p>
               <p>
-                Dans Réglages, tu peux supprimer ton compte et changer ton choix sur la mesure d’audience. La
-                suppression efface immédiatement ton compte, ta collection (notes et photos comprises) et tes
+                Dans Réglages, tu peux changer ton choix sur la mesure d’audience. Pour supprimer ton compte, écris à
+                <Contact /> ; la suppression efface immédiatement ton compte, ta collection (notes et photos comprises) et tes
                 sessions sur tous tes appareils ; les contributions au Wiki, qui n’ont jamais été liées à ton compte,
                 restent anonymes. Pour obtenir
                 une copie de tes données (portabilité) ou exercer tes autres droits, écris à <Contact /> : une réponse

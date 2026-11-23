@@ -1,23 +1,30 @@
 import { useEffect, useState } from 'react'
-import { BarChart3, Cpu, Database, Eraser, Lock, MonitorSmartphone, Radio, ShieldCheck, Trash2, UserRound } from 'lucide-react'
+import { Bell, Cpu, Database, Eraser, Lock, Radio, Repeat2, ShieldCheck, UserCog, Trash2, UserRound } from 'lucide-react'
 import { api, ErreurAPI, jeton, NonAutorise } from '../api'
 import { CONTACT } from '../config'
 import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../suivi'
 import { moteurNatif } from '../scanner'
+import { activerNotifications, desactiverNotifications, notificationsActives, notificationsPossibles } from '../notifications'
 import LienInstagram from './LienInstagram'
 
 type Props = {
   emailUtilisateur: string
   joignable: boolean
   surVerrouiller: () => void
-  surStats: () => void
+  /** Propriétaire : page Administration (comptes, fiches, membres signalés, message à tous). */
+  surAdministration: () => void
   /** Nombre de canettes de la collection (pour la confirmation du vidage). */
   nbCanettes: number
   surCollectionVidee: (retirees: number) => void
+  /** Après un changement de réglage qui touche la collection (partage des doublons) : la recharger. */
+  surPreferencesChangees: () => Promise<void>
 }
 
+/** Bouton « Supprimer mon compte » : masqué pour tous pour l'instant (passer à true pour le rétablir). */
+const SUPPRESSION_COMPTE_VISIBLE = false
+
 export default function Settings({
-  emailUtilisateur, joignable, surVerrouiller, surStats, nbCanettes, surCollectionVidee,
+  emailUtilisateur, joignable, surVerrouiller, surAdministration, nbCanettes, surCollectionVidee, surPreferencesChangees,
 }: Props) {
   const [sante, setSante] = useState<{ status: string; version: string; references: number } | null>(null)
 
@@ -83,15 +90,57 @@ export default function Settings({
     }
   }
 
-  const deconnecterPartout = async () => {
-    if (!confirm('Se déconnecter de tous les appareils ? Il faudra redemander un code partout, ici compris.')) return
+  // Partage des doublons (réglage du compte) : null tant que le serveur n'a pas répondu.
+  const [partage, setPartage] = useState<boolean | null>(null)
+  const [partageOccupe, setPartageOccupe] = useState(false)
+  useEffect(() => {
+    api.moi().then((m) => setPartage(m.partage_doubles ?? true)).catch(() => setPartage(null))
+  }, [joignable])
+
+  const basculerPartage = async () => {
+    if (partage === null) return
     setErreurCompte(null)
+    setPartageOccupe(true)
     try {
-      await api.deconnexionPartout()
-      quitter()
+      setPartage((await api.reglerPartageDoubles(!partage)).partage_doubles)
+      await surPreferencesChangees()
     } catch (e) {
       if (e instanceof NonAutorise) surVerrouiller()
-      else setErreurCompte('Déconnexion impossible, réessaie avec le réseau.')
+      else setErreurCompte('Réglage non modifié, réessaie avec le réseau.')
+    } finally {
+      setPartageOccupe(false)
+    }
+  }
+
+  // Notifications système de cet appareil (messages du service) : null tant que l'état n'est pas connu.
+  const possibles = notificationsPossibles()
+  const [notifs, setNotifs] = useState<boolean | null>(null)
+  const [notifsOccupe, setNotifsOccupe] = useState(false)
+  useEffect(() => {
+    if (possibles) notificationsActives().then(setNotifs).catch(() => setNotifs(false))
+  }, [possibles])
+
+  const basculerNotifs = async () => {
+    setErreurCompte(null)
+    setNotifsOccupe(true)
+    try {
+      if (notifs) {
+        await desactiverNotifications()
+        setNotifs(false)
+      } else {
+        const r = await activerNotifications()
+        setNotifs(r === 'active')
+        if (r === 'refusee') setErreurCompte('Notifications refusées : autorise-les dans les réglages du téléphone.')
+        if (r === 'indisponible') setErreurCompte('Notifications indisponibles pour le moment.')
+        if (r === 'sans-service-worker') {
+          setErreurCompte('Notifications indisponibles ici : elles fonctionnent sur le site en ligne, dans l’appli installée.')
+        }
+      }
+    } catch (e) {
+      if (e instanceof NonAutorise) surVerrouiller()
+      else setErreurCompte('Notifications non modifiées, réessaie avec le réseau.')
+    } finally {
+      setNotifsOccupe(false)
     }
   }
 
@@ -155,36 +204,44 @@ export default function Settings({
           </div>
         </div>
 
-        {/* Statistiques du service : réservées au propriétaire (OWNER_EMAIL). */}
+        {/* Administration : réservée au propriétaire (OWNER_EMAIL). */}
         {proprietaire === true && (
-          <>
-            <h2 className="reglages-titre">Administration</h2>
-            <div className="reglages-actions">
-              <button className="accueil-co-secondaire" onClick={surStats}>
-                <BarChart3 size={18} />
-                Statistiques
-              </button>
-            </div>
-          </>
+          <div className="reglages-actions reglages-admin">
+            <button className="accueil-co-secondaire" onClick={surAdministration}>
+              <UserCog size={18} />
+              Administration
+            </button>
+          </div>
         )}
 
         <h2 className="reglages-titre">Compte et confidentialité</h2>
         <div className="reglages-actions">
+          {/* Seul réglage du partage : activé, toutes les canettes en 2 exemplaires ou plus comptent comme doubles. */}
           <button
-            className="accueil-co-secondaire"
-            onClick={() => {
-              void api.deconnexion().catch(() => {})
-              jeton.effacer()
-              surVerrouiller()
-            }}
+            className={`accueil-co-secondaire reglages-bascule${partage ? ' actif' : ''}`}
+            role="switch"
+            aria-checked={partage === true}
+            disabled={partage === null || partageOccupe}
+            onClick={() => void basculerPartage()}
           >
-            <Lock size={18} />
-            Se déconnecter
+            <Repeat2 size={18} />
+            Partage des doublons
+            <span className="reglages-bascule-etat">{partage === null ? '…' : partage ? 'Activé' : 'Désactivé'}</span>
           </button>
-          <button className="accueil-co-secondaire" onClick={() => void deconnecterPartout()}>
-            <MonitorSmartphone size={18} />
-            Déconnecter tous les appareils
-          </button>
+          {/* Notifications système : sur iPhone, seulement dans l'appli installée (sinon le bouton n'apparaît pas). */}
+          {possibles && (
+            <button
+              className={`accueil-co-secondaire reglages-bascule${notifs ? ' actif' : ''}`}
+              role="switch"
+              aria-checked={notifs === true}
+              disabled={notifs === null || notifsOccupe}
+              onClick={() => void basculerNotifs()}
+            >
+              <Bell size={18} />
+              Notifications
+              <span className="reglages-bascule-etat">{notifs === null ? '…' : notifs ? 'Activées' : 'Désactivées'}</span>
+            </button>
+          )}
           <button className="accueil-co-secondaire" onClick={() => { window.location.hash = 'confidentialite' }}>
             <ShieldCheck size={18} />
             Confidentialité
@@ -195,7 +252,9 @@ export default function Settings({
               {mesure === 'oui' ? 'Refuser la mesure d’audience' : 'Accepter la mesure d’audience'}
             </button>
           )}
-          {!vidage && (
+          <span className="reglages-espace" aria-hidden="true" />
+          {/* Réservé au propriétaire : masqué pour les comptes ordinaires. */}
+          {proprietaire === true && !vidage && (
             <button
               className="accueil-co-secondaire reglages-danger"
               disabled={nbCanettes === 0}
@@ -208,7 +267,19 @@ export default function Settings({
               {nbCanettes === 0 ? 'Collection déjà vide' : 'Vider ma collection'}
             </button>
           )}
-          {proprietaire === false && !suppression && (
+          <button
+            className="accueil-co-secondaire"
+            onClick={() => {
+              void api.deconnexion().catch(() => {})
+              jeton.effacer()
+              surVerrouiller()
+            }}
+          >
+            <Lock size={18} />
+            Se déconnecter
+          </button>
+          {/* Masqué pour tous (SUPPRESSION_COMPTE_VISIBLE) ; la route et le panneau restent en place. */}
+          {SUPPRESSION_COMPTE_VISIBLE && proprietaire === false && !suppression && (
             <button
               className="accueil-co-secondaire reglages-danger"
               onClick={() => {

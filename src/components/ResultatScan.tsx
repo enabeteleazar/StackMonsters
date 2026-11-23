@@ -32,13 +32,14 @@ type Etape =
 
 /**
  * Résultat d'un scan, sans cul-de-sac :
- * 1. déjà possédée : fiche miniature et « +1 » ;
+ * 1. déjà possédée : un exemplaire est ajouté tout de suite et « Doublon ajouté » est notifié (sans réseau,
+ *    la fiche miniature et le « +1 » restent proposés) ;
  * 2. présente dans le Wiki : ajout immédiat, lueur de succès, choix rapide de l'état ;
  * 3. inconnue : invitation à créer la fiche, formulaire court (nom et photo). Si le nom correspond à une
  *    fiche du Wiki qui n'a qu'un code interne, le code scanné peut lui être associé.
  */
 export default function ResultatScan(p: Props) {
-  const [etape, setEtape] = useState<Etape>(p.existante ? { nom: 'possedee' } : { nom: 'recherche' })
+  const [etape, setEtape] = useState<Etape>({ nom: 'recherche' })
   const [occupe, setOccupe] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
   const [nb, setNb] = useState(p.existante?.nb ?? 1)
@@ -95,10 +96,28 @@ export default function ResultatScan(p: Props) {
     })
   }
 
+  /** Canette déjà possédée : +1 immédiat, puis simple notification. En cas d'échec, l'écran « +1 » reste. */
+  const ajouterDoublon = async (canette: Canette) => {
+    try {
+      const { nb: total } = await api.ajuster(canette.ean, 1)
+      await p.surCollectionChangee()
+      p.surTermine(`Doublon ajouté · ${canette.nom || 'Canette'} × ${total}`)
+    } catch (e) {
+      setConnue(canette)
+      setNb(canette.nb)
+      setEtape({ nom: 'possedee' })
+      echec(e, 'Doublon non ajouté')
+    }
+  }
+
   useEffect(() => {
-    if (p.existante || lance.current) return
+    if (lance.current) return
     lance.current = true
     void (async () => {
+      if (p.existante) {
+        await ajouterDoublon(p.existante)
+        return
+      }
       try {
         const liste = codeValide ? (await api.wiki()).fiches : []
         setFiches(liste)
@@ -108,7 +127,13 @@ export default function ResultatScan(p: Props) {
           return
         }
         // Code supplémentaire d'une fiche : la canette est peut-être déjà possédée sous le code principal.
-        if (fiche.ean !== code && (await montrerSiPossedee(fiche.ean))) return
+        if (fiche.ean !== code) {
+          const deja = await lirePossedee(fiche.ean)
+          if (deja) {
+            await ajouterDoublon(deja)
+            return
+          }
+        }
         await ajouterDepuisFiche(fiche)
       } catch (e) {
         if (e instanceof NonAutorise) p.surNonAutorise()
@@ -119,18 +144,24 @@ export default function ResultatScan(p: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /** Affiche la canette possédée sous ce code, le cas échéant ; faux si elle n'est pas dans la collection. */
-  const montrerSiPossedee = async (ean: string) => {
+  /** Canette de la collection sous ce code ; null si elle n'y est pas. */
+  const lirePossedee = async (ean: string) => {
     try {
-      const deja = await api.lire(ean)
-      setConnue(deja)
-      setNb(deja.nb)
-      setEtape({ nom: 'possedee' })
-      return true
+      return await api.lire(ean)
     } catch (e) {
-      if (e instanceof ErreurAPI && e.status === 404) return false
+      if (e instanceof ErreurAPI && e.status === 404) return null
       throw e
     }
+  }
+
+  /** Affiche la canette possédée sous ce code, le cas échéant ; faux si elle n'est pas dans la collection. */
+  const montrerSiPossedee = async (ean: string) => {
+    const deja = await lirePossedee(ean)
+    if (!deja) return false
+    setConnue(deja)
+    setNb(deja.nb)
+    setEtape({ nom: 'possedee' })
+    return true
   }
 
   // Le code scanné rejoint la fiche (pour tous) : code principal si elle n'avait qu'un code interne,
@@ -184,7 +215,7 @@ export default function ResultatScan(p: Props) {
         {etape.nom === 'recherche' && (
           <div className="vide">
             <Loader2 size={30} className="anim-tourne" />
-            Recherche dans le Wiki…
+            {p.existante ? 'Ajout du doublon…' : 'Recherche dans le Wiki…'}
           </div>
         )}
 

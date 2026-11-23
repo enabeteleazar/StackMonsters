@@ -1,11 +1,11 @@
-// Suivi du trafic vers le tableau de bord StackMonsters (via ntfy.sh).
-// Actif seulement en production et si VITE_TRACK_TOPIC est défini (Vercel → Environment Variables).
+// Suivi du trafic vers le tableau de bord StackMonsters (https://stackmonster-dashboard.vercel.app).
+// Actif seulement en production. VITE_TRACK_URL permet de changer l'adresse de collecte (vide : adresse par défaut).
 // Rien ne part sans consentement. Pour ne pas compter vos propres visites : localStorage.setItem('sm_ignore', '1')
 
 type Evenement = 'visit' | 'connection' | 'can_added'
 
-const TOPIC = import.meta.env.VITE_TRACK_TOPIC as string | undefined
-const actif = import.meta.env.PROD && !!TOPIC
+const COLLECTE = (import.meta.env.VITE_TRACK_URL as string | undefined) || 'https://stackmonster-dashboard.vercel.app/api/collect'
+const actif = import.meta.env.PROD
 
 const lire = (cle: string): string | null => {
   try {
@@ -101,7 +101,7 @@ function provenance(): string {
 export function suivre(type: Evenement): void {
   if (!actif || lire('sm_ignore') || consentement() !== 'oui') return
   try {
-    void fetch(`https://ntfy.sh/${TOPIC}`, {
+    void fetch(COLLECTE, {
       method: 'POST',
       keepalive: true,
       body: JSON.stringify({ type, vid: identifiant(), device: appareil(), source: provenance() }),

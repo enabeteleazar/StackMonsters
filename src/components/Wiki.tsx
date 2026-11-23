@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { BookOpen, Flag, Loader2, PlusCircle, Search, ShieldQuestion, WifiOff } from 'lucide-react'
+import { BookOpen, Flag, Loader2, Plus, Search, SearchCheck, ShieldQuestion, SlidersHorizontal, WifiOff, X } from 'lucide-react'
 import { api, NonAutorise } from '../api'
-import { CATEGORIES, REGIONS, VARIANTES } from '../categories'
 import { estCodeInterne, normaliserCodeBarres } from '../codeBarres'
 import type { FicheWiki as Fiche, ResultatRechercheWiki, TriWiki } from '../types'
 import FicheWiki from './FicheWiki'
+import FiltresWiki, { libelleGamme, NOUVEAUTES, SANS_CATEGORIE, TRIS } from './FiltresWiki'
 import PhotoWiki from './PhotoWiki'
 import PropositionWiki from './PropositionWiki'
 
@@ -26,17 +26,6 @@ function typeCode(ean: string): TypeCode {
   return normaliserCodeBarres(ean) ? 'reel' : 'autre'
 }
 
-const TRIS: { valeur: TriWiki; libelle: string }[] = [
-  { valeur: 'pertinence', libelle: 'Pertinence' },
-  { valeur: 'nom', libelle: 'Nom A → Z' },
-  { valeur: 'recent', libelle: 'Plus récentes' },
-]
-
-/** Valeur du filtre de gamme pour les fiches sans catégorie (aucune catégorie ne porte ce nom). */
-const SANS_CATEGORIE = '__sans__'
-/** Valeur du filtre de gamme pour les fiches au statut Nouveauté (30 jours), toutes catégories confondues. */
-const NOUVEAUTES = '__nouveautes__'
-
 /**
  * Catalogue global : toutes les canettes répertoriées, tous comptes confondus. La recherche, les filtres,
  * le tri et la pagination se font côté serveur (le catalogue peut compter beaucoup de fiches).
@@ -54,9 +43,13 @@ export default function Wiki({ surNonAutorise }: Props) {
   const [tri, setTri] = useState<TriWiki>('pertinence')
   // Propriétaire : n'afficher que les fiches qui ont des erreurs signalées.
   const [signaleesSeules, setSignaleesSeules] = useState(false)
+  // Échanges : mes canettes recherchées, ou celles dont quelqu'un a des doubles.
+  const [jeChercheSeules, setJeChercheSeules] = useState(false)
+  const [doublesSeules, setDoublesSeules] = useState(false)
   // Propriétaire : n'afficher que les fiches à vérifier (créées par des membres).
   const [aVerifierSeules, setAVerifierSeules] = useState(false)
   const [propositionOuverte, setPropositionOuverte] = useState(false)
+  const [filtresOuverts, setFiltresOuverts] = useState(false)
   const [ouverte, setOuverte] = useState<string | null>(null)
   const requeteEnCours = useRef(0)
 
@@ -80,6 +73,7 @@ export default function Wiki({ surNonAutorise }: Props) {
               ? { nouveautes: true }
               : { categorie: gamme }),
           region, variante, tri, page, signalees: signaleesSeules, a_verifier: aVerifierSeules,
+          je_cherche: jeChercheSeules, doubles: doublesSeules,
         })
         if (numero !== requeteEnCours.current) return // une recherche plus récente a pris le relais
         setResultat(r)
@@ -92,7 +86,7 @@ export default function Wiki({ surNonAutorise }: Props) {
         if (numero === requeteEnCours.current) setChargement(false)
       }
     },
-    [qEnvoyee, gamme, region, variante, tri, signaleesSeules, aVerifierSeules, surNonAutorise],
+    [qEnvoyee, gamme, region, variante, tri, signaleesSeules, aVerifierSeules, jeChercheSeules, doublesSeules, surNonAutorise],
   )
 
   useEffect(() => {
@@ -100,7 +94,26 @@ export default function Wiki({ surNonAutorise }: Props) {
   }, [charger])
 
   const peutEditer = resultat?.peut_editer ?? false
-  const filtresActifs = !!(qEnvoyee || gamme || region || variante || signaleesSeules || aVerifierSeules)
+  const filtresActifs = !!(qEnvoyee || gamme || region || variante || signaleesSeules || aVerifierSeules || jeChercheSeules || doublesSeules)
+  // Filtres du panneau en cours, affichés en pastilles sous la recherche (le tri par défaut n'en est pas un).
+  const pastilles = [
+    gamme && { cle: 'gamme', libelle: libelleGamme(gamme), retirer: () => setGamme('') },
+    region && { cle: 'region', libelle: region, retirer: () => setRegion('') },
+    variante && { cle: 'variante', libelle: variante, retirer: () => setVariante('') },
+    jeChercheSeules && { cle: 'je-cherche', libelle: 'Je cherche', retirer: () => setJeChercheSeules(false) },
+    doublesSeules && { cle: 'doubles', libelle: 'Doubles dispo', retirer: () => setDoublesSeules(false) },
+    tri !== 'pertinence' && {
+      cle: 'tri', libelle: TRIS.find((t) => t.valeur === tri)?.libelle ?? tri, retirer: () => setTri('pertinence'),
+    },
+  ].filter((p): p is { cle: string; libelle: string; retirer: () => void } => !!p)
+  const effacerFiltres = () => {
+    setGamme('')
+    setRegion('')
+    setVariante('')
+    setTri('pertinence')
+    setJeChercheSeules(false)
+    setDoublesSeules(false)
+  }
   const fiche = ouverte ? (fiches.find((f) => f.ean === ouverte) ?? null) : null
   const fermer = useCallback(() => setOuverte(null), [])
   const toutEffacer = () => {
@@ -110,6 +123,8 @@ export default function Wiki({ surNonAutorise }: Props) {
     setVariante('')
     setSignaleesSeules(false)
     setAVerifierSeules(false)
+    setJeChercheSeules(false)
+    setDoublesSeules(false)
   }
 
   return (
@@ -117,74 +132,57 @@ export default function Wiki({ surNonAutorise }: Props) {
       <span className="lueur-page" aria-hidden="true" />
 
       <div className="collec-contenu wiki-contenu">
-        <div className="collec-tete">
+        {/* En-tête compact : titre et nombre de canettes sur une ligne. */}
+        <div className="wiki-tete">
           <h1 className="collec-titre">
             Le Wiki <b>Monster.</b>
           </h1>
           {resultat && (
             <p className="collec-compte">
-              <b>{resultat.total_catalogue}</b> Canettes répertoriées
+              <b>{resultat.total_catalogue}</b> canettes
             </p>
           )}
         </div>
-        <span className="accueil-public-trait" aria-hidden="true" />
 
-        <button className="accueil-co-secondaire wiki-proposer" onClick={() => setPropositionOuverte(true)}>
-          <PlusCircle size={20} />
-          Proposer une canette
-        </button>
-
-        <label className="collec-recherche wiki-recherche">
-          <Search size={18} />
-          <input
-            value={q}
-            name="recherche-wiki"
-            type="search"
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Nom, saveur, pays, gamme ou code-barres"
-            aria-label="Chercher dans le Wiki"
-          />
-        </label>
-        <div className="wiki-gammes" role="radiogroup" aria-label="Filtrer par gamme">
-          {['', NOUVEAUTES, ...CATEGORIES, ...(peutEditer ? [SANS_CATEGORIE] : [])].map((categorie) => (
-            <button
-              key={categorie || 'toutes'}
-              role="radio"
-              aria-checked={gamme === categorie}
-              onClick={() => setGamme(categorie)}
-            >
-              {categorie === SANS_CATEGORIE ? 'Sans catégorie' : categorie === NOUVEAUTES ? 'Nouveautés' : categorie || 'Toutes'}
-            </button>
-          ))}
+        {/* Recherche et bouton Filtres, collés en haut de l'écran quand on fait défiler. */}
+        <div className="wiki-barre">
+          <label className="collec-recherche wiki-recherche">
+            <Search size={18} />
+            <input
+              value={q}
+              name="recherche-wiki"
+              type="search"
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Nom, saveur, pays, gamme, code"
+              aria-label="Chercher dans le Wiki"
+            />
+          </label>
+          <button
+            className={`wiki-filtres${pastilles.length ? ' actif' : ''}`}
+            aria-haspopup="dialog"
+            aria-label={pastilles.length ? `Filtres, ${pastilles.length} actif${pastilles.length > 1 ? 's' : ''}` : 'Filtres'}
+            onClick={() => setFiltresOuverts(true)}
+          >
+            <SlidersHorizontal size={18} />
+            <span>Filtres</span>
+            {!!pastilles.length && <b>{pastilles.length}</b>}
+          </button>
         </div>
-        <div className="wiki-options">
-          <label>
-            <span>Pays</span>
-            <select name="pays-wiki" value={region} onChange={(e) => setRegion(e.target.value)} aria-label="Filtrer par pays">
-              <option value="">Tous</option>
-              {REGIONS.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Variante</span>
-            <select name="variante-wiki" value={variante} onChange={(e) => setVariante(e.target.value)} aria-label="Filtrer par variante">
-              <option value="">Toutes</option>
-              {VARIANTES.map((v) => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Tri</span>
-            <select name="tri-wiki" value={tri} onChange={(e) => setTri(e.target.value as TriWiki)} aria-label="Trier">
-              {TRIS.map((t) => (
-                <option key={t.valeur} value={t.valeur}>{t.libelle}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+        {!!pastilles.length && (
+          <div className="wiki-pastilles" aria-label="Filtres actifs">
+            {pastilles.map((p) => (
+              <button key={p.cle} onClick={p.retirer} aria-label={`Retirer le filtre ${p.libelle}`}>
+                {p.libelle}
+                <X size={14} aria-hidden="true" />
+              </button>
+            ))}
+            {pastilles.length > 1 && (
+              <button className="wiki-pastilles-effacer" onClick={effacerFiltres}>
+                Tout effacer
+              </button>
+            )}
+          </div>
+        )}
 
         {peutEditer && (resultat?.a_verifier ?? 0) > 0 && (
           <button
@@ -249,6 +247,11 @@ export default function Wiki({ surNonAutorise }: Props) {
                       {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
                       {peutEditer && f.moderation === 'en_attente' && <span className="badge-moderation">À vérifier</span>}
                       {peutEditer && f.moderation === 'refusee' && <span className="badge-moderation refusee">Refusée</span>}
+                      {f.je_cherche && (
+                        <span className="wiki-cherche" role="img" aria-label="Tu la cherches">
+                          <SearchCheck size={13} />
+                        </span>
+                      )}
                       {!!f.signalements?.length && (
                         <span className="wiki-signale" role="img" aria-label="Erreur signalée">
                           <Flag size={12} />
@@ -286,7 +289,11 @@ export default function Wiki({ surNonAutorise }: Props) {
           ) : (
             <div className="collec-vide wiki-vide">
               <BookOpen size={34} />
-              <span>Aucune canette ne correspond à cette recherche.</span>
+              <span>
+                {jeChercheSeules && !qEnvoyee && !gamme && !region && !variante && !doublesSeules
+                  ? 'Tu ne cherches aucune canette pour l’instant : ouvre une fiche et touche « Je la cherche ».'
+                  : 'Aucune canette ne correspond à cette recherche.'}
+              </span>
               {resultat.suggestions.length > 0 && (
                 <div className="wiki-suggestions">
                   <span>Tu cherchais :</span>
@@ -306,6 +313,35 @@ export default function Wiki({ surNonAutorise }: Props) {
           ))}
       </div>
 
+      {/* Proposer une canette : bouton rond flottant, au-dessus de la barre de navigation. */}
+      <button className="wiki-fab" aria-label="Proposer une canette" title="Proposer une canette" onClick={() => setPropositionOuverte(true)}>
+        <Plus size={26} />
+      </button>
+
+      {filtresOuverts && (
+        <FiltresWiki
+          gamme={gamme}
+          region={region}
+          variante={variante}
+          tri={tri}
+          jeCherche={jeChercheSeules}
+          doubles={doublesSeules}
+          nbJeCherche={resultat?.je_cherche ?? 0}
+          proprietaire={peutEditer}
+          total={chargement ? null : (resultat?.total ?? null)}
+          surChange={(f) => {
+            if (f.gamme !== undefined) setGamme(f.gamme)
+            if (f.region !== undefined) setRegion(f.region)
+            if (f.variante !== undefined) setVariante(f.variante)
+            if (f.tri !== undefined) setTri(f.tri)
+            if (f.jeCherche !== undefined) setJeChercheSeules(f.jeCherche)
+            if (f.doubles !== undefined) setDoublesSeules(f.doubles)
+          }}
+          surEffacer={effacerFiltres}
+          surFermeture={() => setFiltresOuverts(false)}
+        />
+      )}
+
       {propositionOuverte && (
         <PropositionWiki
           proprietaire={peutEditer}
@@ -322,7 +358,8 @@ export default function Wiki({ surNonAutorise }: Props) {
           surFermeture={fermer}
           surNonAutorise={surNonAutorise}
           surEnregistree={(eanOriginal, maj) => {
-            setFiches((liste) => liste.map((f) => (f.ean === eanOriginal ? maj : f)))
+            // Une modification par le propriétaire ne renvoie pas les marques du compte : on garde les précédentes.
+            setFiches((liste) => liste.map((f) => (f.ean === eanOriginal ? { ...f, ...maj } : f)))
             setOuverte(maj.ean)
           }}
           surSupprimee={(ean) => {
