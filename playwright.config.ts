@@ -16,7 +16,11 @@ export default defineConfig({
   testMatch: '*.e2e.ts', // nom distinct : Vitest ne doit pas exécuter ces fichiers
   workers: 1,
   retries: process.env.CI ? 1 : 0,
-  use: { baseURL: 'http://127.0.0.1:5273', ...devices['Pixel 7'] },
+  // Animations réduites (l'appli respecte prefers-reduced-motion) : les fumées floutées et animées en boucle de
+  // l'accueil et de la connexion rendaient chaque image coûteuse dans Chromium sans écran ; sur une machine chargée,
+  // Playwright attendait jusqu'à 12 s qu'un bouton soit « stable », et les parcours à plusieurs comptes dépassaient
+  // les 30 s par test (échecs intermittents, par exemple « signaler un membre » au clic sur l'onglet Membres).
+  use: { baseURL: 'http://127.0.0.1:5273', ...devices['Pixel 7'], reducedMotion: 'reduce' },
   webServer: [
     {
       command: `${python} -m uvicorn api.index:app --host 127.0.0.1 --port 8055 >> ${JOURNAL_API} 2>&1`,
