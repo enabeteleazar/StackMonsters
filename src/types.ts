@@ -74,6 +74,8 @@ export type FicheWiki = {
   codes: string[]
   /** Propriétaire seulement : d'où vient la fiche (sans lien avec un compte) et sa dernière correction. */
   provenance?: { source: string; cree: string; corrigee: string | null }
+  /** Visible de tous : fiche ajoutée par un membre, pas encore validée (« En cours de vérification »). */
+  en_verification?: boolean
   /** Modération : fiche créée par un membre « à vérifier », puis acceptée ou refusée par le propriétaire. */
   moderation?: 'en_attente' | 'acceptee' | 'refusee'
   /** Propriétaire seulement : historique des décisions de modération. */

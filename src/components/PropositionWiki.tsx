@@ -85,7 +85,7 @@ export default function PropositionWiki({ proprietaire, surFermeture, surPropose
           <p>
             {proprietaire
               ? 'Elle sera ajoutée au Wiki tout de suite.'
-              : 'Elle apparaîtra dans le Wiki « à vérifier » jusqu\u2019à sa validation. Elle n\u2019est pas ajoutée à ta collection.'}
+              : 'Elle apparaîtra dans le Wiki « En cours de vérification » jusqu\u2019à sa validation. Elle n\u2019est pas ajoutée à ta collection.'}
           </p>
         </div>
 

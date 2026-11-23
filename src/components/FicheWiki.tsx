@@ -301,6 +301,13 @@ export default function FicheWiki({
               </div>
             )}
 
+            {!peutEditer && fiche.en_verification && (
+              <div className="fiche-moderation verification" role="status">
+                <ShieldQuestion size={18} />
+                <span>En cours de vérification : fiche ajoutée par un membre, pas encore validée par l’équipe.</span>
+              </div>
+            )}
+
             {peutEditer && fiche.moderation && fiche.moderation !== 'acceptee' && (
               <div className={`fiche-moderation ${fiche.moderation}`} role="status">
                 {fiche.moderation === 'en_attente' ? <ShieldQuestion size={18} /> : <Ban size={18} />}

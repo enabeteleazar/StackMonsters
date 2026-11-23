@@ -1359,6 +1359,8 @@ def _fiche(r: dict, proprietaire: bool = False) -> dict:
         "description": r["description"], "photo": r["maj"] if r["a_photo"] else None,
         "codes": list(r["codes"]),
         "doubles": r["doubles"], "recherches": r["recherches"],
+        # Visible de tous (option B, #9) : la fiche, ajoutée par un membre, attend la décision du propriétaire.
+        "en_verification": r["moderation"] == "en_attente",
     }
     if proprietaire:
         fiche["moderation"] = r["moderation"]
@@ -1519,7 +1521,11 @@ def wiki_recherche(
             "SELECT COUNT(*) AS n FROM wiki WHERE moderation = 'en_attente'"
         ).fetchone()["n"] if proprio else 0
         fiches = _marquer_recherches(cx, [_fiche(r, proprio) for r in lignes], u["id"])
-        nb_je_cherche = cx.execute("SELECT COUNT(*) AS n FROM recherches WHERE user_id = %s", (u["id"],)).fetchone()["n"]
+        # Les « Je la cherche » d'une fiche refusée sont gardés mais invisibles pour un membre (comme la fiche).
+        nb_je_cherche = cx.execute(
+            "SELECT COUNT(*) AS n FROM recherches r JOIN wiki w ON w.ean = r.fiche WHERE r.user_id = %s"
+            + ("" if proprio else " AND w.moderation <> 'refusee'"), (u["id"],),
+        ).fetchone()["n"]
     return {
         "peut_editer": proprio,
         "fiches": fiches,
@@ -1592,7 +1598,10 @@ _EN_RELATION_VALIDE = (
     "AND (SELECT u.partage_doubles FROM users u WHERE u.id = e.chercheur) "
     "AND (SELECT u.partage_doubles FROM users u WHERE u.id = e.possesseur) "
     "AND NOT EXISTS (SELECT 1 FROM signalements_membres s WHERE "
-    "(s.auteur = e.chercheur AND s.signale = e.possesseur) OR (s.auteur = e.possesseur AND s.signale = e.chercheur))"
+    "(s.auteur = e.chercheur AND s.signale = e.possesseur) OR (s.auteur = e.possesseur AND s.signale = e.chercheur)) "
+    # Fiche refusée par le propriétaire (#9) : les mises en relation pas encore acceptées sont masquées ; les
+    # conversations déjà ouvertes ne passent pas par cette règle et restent lisibles et validables.
+    "AND EXISTS (SELECT 1 FROM wiki w WHERE w.ean = e.fiche AND w.moderation <> 'refusee')"
 )
 
 CONVERSATIONS = ("acceptee", "terminee", "fermee")
@@ -1605,6 +1614,7 @@ def _reperer_paires(cx: psycopg.Connection, user_id: int) -> None:
     cx.execute(
         "INSERT INTO echanges (fiche, chercheur, possesseur, statut, cree, maj) "
         "SELECT DISTINCT r.fiche, r.user_id, c.user_id, 'signalee', %s, %s FROM recherches r "
+        "JOIN wiki w ON w.ean = r.fiche AND w.moderation <> 'refusee' "  # aucune mise en relation sur une fiche refusée
         "JOIN users ur ON ur.id = r.user_id AND ur.partage_doubles "
         "JOIN collection c ON c.nb >= 2 AND c.user_id <> r.user_id AND (c.ean = r.fiche OR "
         "c.ean IN (SELECT k.ean FROM wiki_codes k WHERE k.fiche = r.fiche)) "
