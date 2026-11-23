@@ -203,10 +203,13 @@ export default function App() {
   // s'affiche donc aussi à la réception, pas seulement à l'ouverture.
   const [annonce, setAnnonce] = useState<{ id: number; titre: string; texte: string; cree: number } | null>(null)
   // Message d'accueil (#34) : lu une fois à la connexion ; un compte qui l'a déjà vu (ailleurs aussi) ne l'a plus.
-  const [accueil, setAccueil] = useState<{ titre: string; texte: string } | null>(null)
+  // undefined tant que la réponse n'est pas arrivée : les autres popups (invitation à installer, messages, échanges)
+  // attendent, pour ne pas s'afficher puis disparaître sous l'accueil.
+  const [accueil, setAccueil] = useState<{ titre: string; texte: string } | null | undefined>(undefined)
   useEffect(() => {
     if (etatAcces !== 'prive') return
-    api.accueil().then((r) => setAccueil(r.accueil)).catch(() => {})
+    setAccueil(undefined)
+    api.accueil().then((r) => setAccueil(r.accueil)).catch(() => setAccueil(null))
   }, [etatAcces])
   useEffect(() => {
     if (etatAcces !== 'prive') return
@@ -450,7 +453,7 @@ export default function App() {
 
       {/* Message du propriétaire à tous : une fois par compte, à l'ouverture de l'appli. */}
       {/* Nouvelle notification d'échange : une popup à la fois, après le message du propriétaire. */}
-      {!accueil && !annonce && popupEchange && (
+      {accueil === null && !annonce && popupEchange && (
         <PopupEchange
           texte={popupEchange.texte}
           surVoir={() => {
@@ -473,7 +476,7 @@ export default function App() {
         />
       )}
 
-      {!accueil && annonce && (
+      {accueil === null && annonce && (
         <Annonce
           annonce={annonce}
           surFermeture={() => {
@@ -528,7 +531,7 @@ export default function App() {
       )}
 
       {message && <div className="toast">{message}</div>}
-      {invitation && !accueil && <InvitationInstallation surFermeture={() => setInvitation(false)} />}
+      {invitation && accueil === null && <InvitationInstallation surFermeture={() => setInvitation(false)} />}
     </>
   )
 }
