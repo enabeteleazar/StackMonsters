@@ -853,6 +853,22 @@ def test_suppression_de_compte_efface_ses_donnees_seulement(env):
     assert c.get("/api/cans", headers=h).json() == []
 
 
+def test_suppression_de_compte_efface_ses_echanges_sans_gener_l_autre(env):
+    """#3 : les mises en relation, conversations, messages et recherches du compte partent avec lui (comme
+    l'annonce la politique de confidentialité) ; l'autre membre garde une page Échanges qui fonctionne."""
+    c, codes = env
+    ha, hb, eid = _conversation_ouverte(c, codes)
+    c.post(f"/api/echanges/{eid}/messages", json={"texte": "Rendez-vous samedi"}, headers=hb)
+    assert supprimer(c, hb, B).status_code == 204
+    ea = _echanges(c, ha)
+    assert ea["conversations"] == [] and ea["notifications"] == [] and ea["non_lus"] == 0
+    assert c.get(f"/api/echanges/{eid}/messages", headers=ha).status_code == 404
+    with ix.base() as cx:
+        for table in ("echanges", "messages", "recherches"):
+            assert cx.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"] == 0, table
+    assert c.get("/api/cans/2000000000015", headers=ha).json()["nb"] == 2  # sa collection n'a pas bougé
+
+
 def test_suppression_exige_l_adresse_du_compte(env):
     c, codes = env
     h = connecter(c, codes, A)
@@ -2285,6 +2301,34 @@ def test_valider_refuse_si_le_double_n_existe_plus(env):
     assert c.post(f"/api/echanges/{eid}/valider", headers=ha).status_code == 409
     assert c.get("/api/cans/2000000000015", headers=ha).json()["nb"] == 1  # rien n'a bougé
     assert c.get("/api/cans/2000000000015", headers=hb).status_code == 404
+
+
+def test_signalement_non_traite_bloque_la_suppression_du_compte_vise(env, monkeypatch):
+    """#3, option b : le compte visé par un signalement non traité ne peut pas se supprimer (409, message clair) ;
+    l'auteur du signalement, lui, le peut ; une fois le signalement traité, la suppression redevient possible."""
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    ha, hb, eid = _conversation_ouverte(c, codes)
+    hc = connecter(c, codes, C)
+    c.post(f"/api/echanges/{eid}/signaler", json={"motif": "Arnaque ou tentative de vente"}, headers=hb)  # B signale A
+    r = supprimer(c, ha, A)
+    assert r.status_code == 409 and r.json()["detail"] == ix.SUPPRESSION_SIGNALEMENT
+    assert "contact@stackmonsters.fr" in r.json()["detail"]
+    assert c.get("/api/auth/moi", headers=ha).status_code == 200  # rien n'a été supprimé
+    with ix.base() as cx:
+        assert cx.execute("SELECT COUNT(*) AS n FROM signalements_membres").fetchone()["n"] == 1
+    # Le propriétaire traite le signalement : la suppression redevient possible (le signalement part avec le compte).
+    sid = c.get("/api/admin/signalements-membres", headers=hc).json()[0]["id"]
+    assert c.post(f"/api/admin/signalements-membres/{sid}/traite", headers=hc).status_code == 200
+    assert supprimer(c, ha, A).status_code == 204
+
+
+def test_l_auteur_d_un_signalement_peut_supprimer_son_compte(env, monkeypatch):
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    ha, hb, eid = _conversation_ouverte(c, codes)
+    c.post(f"/api/echanges/{eid}/signaler", json={"motif": "Arnaque ou tentative de vente"}, headers=hb)
+    assert supprimer(c, hb, B).status_code == 204
 
 
 def test_signaler_ferme_la_conversation_et_bloque_la_paire(env, monkeypatch):

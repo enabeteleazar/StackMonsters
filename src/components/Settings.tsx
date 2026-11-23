@@ -6,6 +6,7 @@ import { consentement, definirConsentement, EVENEMENT_CONSENTEMENT } from '../su
 import { moteurNatif } from '../scanner'
 import { activerNotifications, desactiverNotifications, notificationsActives, notificationsPossibles } from '../notifications'
 import LienInstagram from './LienInstagram'
+import { oublierDonneesLocales } from '../notificationsVues'
 
 type Props = {
   emailUtilisateur: string
@@ -20,8 +21,6 @@ type Props = {
   surPreferencesChangees: () => Promise<void>
 }
 
-/** Bouton « Supprimer mon compte » : masqué pour tous pour l'instant (passer à true pour le rétablir). */
-const SUPPRESSION_COMPTE_VISIBLE = false
 
 export default function Settings({
   emailUtilisateur, joignable, surVerrouiller, surAdministration, nbCanettes, surCollectionVidee, surPreferencesChangees,
@@ -60,9 +59,12 @@ export default function Settings({
     setSuppressionEnCours(true)
     try {
       await api.supprimerCompte(saisieSuppression)
+      oublierDonneesLocales(emailUtilisateur) // rien ne reste du compte sur cet appareil
       quitter()
     } catch (e) {
       if (e instanceof NonAutorise) surVerrouiller()
+      // Signalement en cours d'examen (#3) : le serveur explique pourquoi et à qui écrire.
+      else if (e instanceof ErreurAPI && e.status === 409) setErreurCompte(e.detail)
       else setErreurCompte('Suppression impossible, réessaie avec le réseau. Ton compte n’a pas été supprimé.')
     } finally {
       setSuppressionEnCours(false)
@@ -278,8 +280,8 @@ export default function Settings({
             <Lock size={18} />
             Se déconnecter
           </button>
-          {/* Masqué pour tous (SUPPRESSION_COMPTE_VISIBLE) ; la route et le panneau restent en place. */}
-          {SUPPRESSION_COMPTE_VISIBLE && proprietaire === false && !suppression && (
+          {/* Suppression du compte par le membre lui-même (#3) ; jamais pour le compte propriétaire. */}
+          {proprietaire === false && !suppression && (
             <button
               className="accueil-co-secondaire reglages-danger"
               onClick={() => {

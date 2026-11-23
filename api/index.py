@@ -1121,6 +1121,11 @@ def deconnexion_partout(u: dict = Depends(utilisateur), cx: psycopg.Connection =
         cx.execute("DELETE FROM sessions WHERE user_id = %s", (u["id"],))
 
 
+SUPPRESSION_SIGNALEMENT = (
+    "Un signalement te concernant est en cours d'examen : écris à contact@stackmonsters.fr pour supprimer ton compte."
+)
+
+
 @router.delete("/auth/compte", status_code=204)
 def supprimer_compte(
     s: Suppression, u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion),
@@ -1135,6 +1140,11 @@ def supprimer_compte(
     if s.confirmation.strip().lower() != u["email"]:
         raise HTTPException(422, "confirmation différente de l'adresse du compte")
     with cx.transaction():
+        # #3, décision d'Eleazar (option b) : un signalement non traité visant ce compte bloque la suppression, sinon
+        # elle effacerait le signalement et sa preuve (cascade) avant l'examen du propriétaire.
+        if cx.execute("SELECT 1 FROM signalements_membres WHERE signale = %s AND traite IS NULL LIMIT 1",
+                      (u["id"],)).fetchone():
+            raise HTTPException(409, SUPPRESSION_SIGNALEMENT)
         cx.execute("DELETE FROM codes WHERE email = %s", (u["email"],))
         cx.execute("DELETE FROM users WHERE id = %s", (u["id"],))
 

@@ -198,11 +198,42 @@ test('vider sa collection : réservé au propriétaire, garde le compte et le Wi
   await expect(page.locator('.wiki-grille').getByText(nom)).toBeVisible() // la fiche du Wiki reste
 })
 
-test('le bouton « Supprimer mon compte » est masqué', async ({ page }) => {
-  await connecter(page, email())
+test('la suppression du compte exige l’adresse et efface la collection', async ({ page, browser }) => {
+  const adresse = email()
+  const nom = `À effacer ${unique()}`
+  await connecter(page, adresse)
+  await ajouterParCode(page, ean13(), nom)
   await nav(page, 'Réglages').click()
-  await expect(page.getByRole('button', { name: 'Se déconnecter', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Supprimer mon compte' })).toHaveCount(0)
+
+  const autre = await nouvellePage(browser)
+  await connecter(autre, adresse)
+
+  // Une clé locale liée au compte (popups déjà vues) : elle doit disparaître avec lui.
+  await page.evaluate((a) => localStorage.setItem(`sm-notifs-vues:${a}`, '["n-1-signalee"]'), adresse)
+
+  // Annuler ne supprime rien.
+  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
+  await expect(page.getByText('ta collection : canettes, quantités, états, notes et photos')).toBeVisible()
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  await expect(page.getByRole('button', { name: 'Supprimer définitivement' })).toHaveCount(0)
+
+  // Le bouton reste inactif tant que l'adresse saisie n'est pas celle du compte.
+  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
+  const confirmer = page.getByRole('button', { name: 'Supprimer définitivement' })
+  await page.getByLabel(/Pour confirmer/).fill('mauvaise@example.com')
+  await expect(confirmer).toBeDisabled()
+  await page.getByLabel(/Pour confirmer/).fill(adresse.toUpperCase())
+  await confirmer.click()
+  await expect(page.getByRole('button', { name: 'Entrez' })).toBeVisible()
+  // Rien ne reste du compte sur cet appareil.
+  expect(await page.evaluate((a) => Object.keys(localStorage).filter((k) => k.toLowerCase().includes(a)), adresse)).toEqual([])
+
+  await autre.reload() // l'autre appareil perd aussi l'accès
+  await expect(autre.getByRole('button', { name: 'Entrez' })).toBeVisible()
+
+  await connecter(page, adresse)
+  await nav(page, 'Collection').click()
+  await expect(page.getByText(nom)).toHaveCount(0)
 })
 
 test('déconnexion : cet appareil seulement', async ({ page, browser }) => {
@@ -658,6 +689,50 @@ test('échanges : signaler un membre ferme la conversation, le propriétaire l�
   await expect(carte.locator('.bulle')).toContainText('Je te la vends 20 €')
   await carte.getByRole('button', { name: 'Marquer comme traité' }).click()
   await expect(carte).toHaveCount(0)
+})
+
+test('un membre visé par un signalement en cours ne peut pas supprimer son compte', async ({ page, browser }) => {
+  const nom = `Bloque ${unique()}`
+  const code = ean13()
+  const adresse = email()
+  await connecter(page, adresse) // le membre qui sera signalé
+  await ajouterParCode(page, code, nom)
+  await saisirCode(page, code)
+  await expect(page.getByText(`Doublon ajouté · ${nom} × 2`)).toBeVisible()
+
+  const autre = await nouvellePage(browser)
+  await connecter(autre, email())
+  await nav(autre, 'Wiki').click()
+  await autre.getByLabel('Chercher dans le Wiki').fill(nom)
+  await autre.locator('.wiki-grille').getByText(nom).click()
+  await autre.getByRole('button', { name: 'Je la cherche' }).click()
+  await expect(autre.getByRole('button', { name: 'Je ne la cherche plus' })).toBeVisible()
+  await autre.getByRole('button', { name: 'Fermer' }).first().click()
+  await autre.getByRole('button', { name: /^Échanges/ }).click()
+  await autre.getByRole('button', { name: 'Échange', exact: true }).click()
+  await page.reload()
+  await page.getByRole('dialog', { name: 'Échanges' }).getByRole('button', { name: 'Voir' }).click()
+  await page.getByRole('button', { name: 'Échange', exact: true }).click()
+  await expect(page.getByLabel('Ton message')).toBeVisible()
+  await autre.reload()
+  await autre.getByRole('button', { name: /^Échanges/ }).click()
+  await autre.getByRole('tab', { name: /Messagerie/ }).click()
+  await autre.getByRole('button', { name: new RegExp(nom) }).click()
+  await autre.getByRole('button', { name: 'Signaler' }).click()
+  await autre.getByLabel('Arnaque ou tentative de vente').check()
+  await autre.getByRole('button', { name: 'Envoyer le signalement' }).click()
+  await expect(autre.getByText('Conversation fermée après un signalement.')).toBeVisible()
+
+  // Le membre signalé tente de supprimer son compte : refusé, avec l'adresse à qui écrire ; il reste connecté.
+  await page.reload()
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Supprimer mon compte' }).click()
+  await page.getByLabel(/Pour confirmer/).fill(adresse)
+  await page.getByRole('button', { name: 'Supprimer définitivement' }).click()
+  await expect(page.getByRole('alert')).toContainText('Un signalement te concernant est en cours d’examen'.replace('’', "'"))
+  await expect(page.getByRole('alert')).toContainText('contact@stackmonsters.fr')
+  await page.reload()
+  await expect(nav(page, 'Réglages')).toBeVisible() // toujours connecté : rien n'a été supprimé
 })
 
 test('administration : bloquer un compte, puis message à tous en popup', async ({ page, browser }) => {

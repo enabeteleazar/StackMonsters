@@ -38,3 +38,20 @@ export function marquerPopupVue(email: string, id: string): void {
     // stockage indisponible (navigation privée) : la popup pourra revenir, sans gravité
   }
 }
+
+/** Compte supprimé : efface de l'appareil toutes les clés locales qui contiennent son adresse
+ * (popups déjà vues, etc.). */
+export function oublierDonneesLocales(email: string): void {
+  const adresse = email.trim().toLowerCase()
+  if (!adresse) return
+  try {
+    const cles: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.toLowerCase().includes(adresse)) cles.push(k)
+    }
+    for (const k of cles) localStorage.removeItem(k)
+  } catch {
+    // stockage indisponible : rien à effacer
+  }
+}
