@@ -247,6 +247,9 @@ export default function Wiki({ surNonAutorise }: Props) {
                       {f.status === 'Nouveauté' && <span className="bandeau-nouveaute">Nouveauté</span>}
                       {peutEditer && f.moderation === 'en_attente' && <span className="badge-moderation">À vérifier</span>}
                       {peutEditer && f.moderation === 'refusee' && <span className="badge-moderation refusee">Refusée</span>}
+                      {!peutEditer && f.en_verification && (
+                        <span className="badge-moderation verification">En cours de vérification</span>
+                      )}
                       {f.je_cherche && (
                         <span className="wiki-cherche" role="img" aria-label="Tu la cherches">
                           <SearchCheck size={13} />

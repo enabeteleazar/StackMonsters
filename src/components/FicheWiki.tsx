@@ -237,6 +237,14 @@ export default function FicheWiki({
           )}
         </div>
 
+        {/* Membres : fiche pas encore validée (#9), annoncée dès le nom, avant les informations. */}
+        {!peutEditer && fiche.en_verification && (
+          <div className="fiche-moderation verification" role="status">
+            <ShieldQuestion size={18} />
+            <span>En cours de vérification : fiche ajoutée par un membre, pas encore validée par l’équipe.</span>
+          </div>
+        )}
+
         {edition ? (
           <Formulaire
             fiche={fiche}
