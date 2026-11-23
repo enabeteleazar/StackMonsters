@@ -2210,6 +2210,10 @@ def test_fiche_refusee_masque_les_mises_en_relation_mais_garde_les_conversations
     assert c.post(f"/api/echanges/{n['id']}/valider", headers=ha).status_code == 200
     assert c.post(f"/api/echanges/{n['id']}/valider", headers=hb).json()["statut"] == "terminee"
     assert c.get("/api/cans/2000000000015", headers=hb).json()["nb"] == 1
+    # La canette reçue s'affiche normalement dans sa collection, même si la fiche lui est cachée dans le Wiki.
+    ligne = next(x for x in c.get("/api/cans", headers=hb).json() if x["ean"] == "2000000000015")
+    assert ligne["nom"] == "Mango" and ligne["nb"] == 1
+    assert fiche(c, hb, "2000000000015") is None  # toujours cachée dans son Wiki
 
 
 def test_aucune_mise_en_relation_creee_sur_une_fiche_refusee(env, monkeypatch):

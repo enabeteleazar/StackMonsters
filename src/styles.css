@@ -445,11 +445,14 @@ body:has(nav.nav-bas) #racine{min-height:100vh}
 .badge-moderation.refusee{background:#ff5a5a}
 /* Membres : fiche pas encore validée (#9), distincte du « À vérifier » orange du propriétaire. */
 .badge-moderation.verification{right:6px;background:rgba(10,12,7,.82);color:#cfe9ff;border:1px solid rgba(120,190,255,.55);
-  white-space:normal;line-height:1.15;text-align:center}
+  white-space:normal;line-height:1.15;text-align:center;padding:3px 5px;letter-spacing:.03em;border-radius:8px}
+@media (max-width:360px){.badge-moderation.verification{font-size:8px;letter-spacing:0}}
 .verdict .fiche-moderation{display:flex;align-items:flex-start;gap:10px;margin:0 0 14px;padding:12px 14px;border-radius:14px;
   font-size:14px;line-height:1.45;border:1px solid rgba(255,159,26,.5);background:rgba(255,159,26,.08);color:#ffcf8a}
 .verdict .fiche-moderation svg{flex:0 0 auto;margin-top:1px}
 .verdict .fiche-moderation.refusee{border-color:rgba(255,90,90,.5);background:rgba(255,90,90,.08);color:#ff9a9a}
+/* Fiche cherchée : l'icône « Tu la cherches » occupe le coin bas gauche, la pastille passe au-dessus. */
+.wiki-photo:has(.wiki-cherche) .badge-moderation{bottom:34px}
 .verdict .fiche-moderation.verification{border-color:rgba(120,190,255,.5);background:rgba(120,190,255,.08);color:#cfe9ff}
 .verdict .fiche-moderer{display:grid;gap:10px;margin:0 0 16px}
 .verdict .fiche-historique{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:4px;font-size:13px;color:var(--alu)}
