@@ -46,6 +46,11 @@ Réglages → « Supprimer mon compte », puis recopie ton adresse pour confirme
 sessions sur tous tes appareils sont effacés immédiatement. Tu peux aussi écrire à contact@stackmonsters.fr.
 (En 0.7.0, le bouton n'existe pas : écrire à contact@stackmonsters.fr.)
 
+**La suppression de mon compte est refusée.** (0.7.1, texte exact de l'appli à reprendre après la relecture de #3)
+Un signalement te concernant est en cours d'examen par l'équipe : la suppression depuis l'appli est possible
+une fois qu'il est traité. Écris-nous à contact@stackmonsters.fr, on traite ta demande.
+(Support : ne pas détailler le signalement, ni dire qui l'a fait. Transmettre la demande à Eleazar, qui décide.)
+
 ## Appli et notifications
 
 **Comment j'installe l'appli ?** (0.7.0, vérifié en émulation seulement)
