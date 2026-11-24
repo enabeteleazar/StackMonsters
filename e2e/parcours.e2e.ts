@@ -32,7 +32,9 @@ async function connecter(page: Page, adresse: string) {
   await page.getByRole('button', { name: 'Se connecter' }).click()
   await expect(nav(page, 'Réglages')).toBeVisible()
   // Invitation à installer l'appli (première connexion sur cet appareil) : refermée pour la suite du parcours.
+  // Elle attend la réponse du message d'accueil (#34) : on lui laisse un court instant pour apparaître.
   const invitation = page.getByRole('dialog', { name: /Installe StackMonsters/ })
+  await invitation.waitFor({ timeout: 1500 }).catch(() => {})
   if (await invitation.isVisible()) await invitation.getByRole('button', { name: /Compris|Plus tard/ }).click()
 }
 
@@ -838,4 +840,49 @@ test('administration : notification de test vers ses propres appareils, rien che
   await expect(membre.getByRole('dialog')).toHaveCount(0)
   await membre.getByRole('button', { name: /^Échanges/ }).click()
   await expect(membre.locator('.annonce-notif')).toHaveCount(0)
+})
+
+// Dernier du fichier : tant qu'il est actif, le message d'accueil s'affiche à chaque nouveau compte.
+test('message d’accueil : désactivé par défaut, puis une seule fois pour un nouveau compte', async ({ page, browser }) => {
+  test.setTimeout(60_000)
+  await connecter(page, PROPRIETAIRE)
+  await nav(page, 'Réglages').click()
+  await page.getByRole('button', { name: 'Administration' }).click()
+  await page.getByRole('tab', { name: 'Message' }).click()
+  const interrupteur = page.getByRole('switch')
+  await expect(interrupteur).not.toBeChecked() // désactivé par défaut, texte provisoire
+  await expect(page.getByText('Texte provisoire, jamais enregistré.', { exact: false })).toBeVisible()
+
+  // Désactivé : un nouveau compte ne voit rien.
+  const avant = await nouvellePage(browser)
+  await connecter(avant, email())
+  await avant.waitForTimeout(800)
+  await expect(avant.getByRole('dialog', { name: 'Bienvenue sur StackMonsters' })).toHaveCount(0)
+
+  try {
+    await page.getByLabel('Titre du message d’accueil').fill('Bienvenue parmi nous')
+    await page.getByLabel('Texte du message d’accueil').fill('Scanne ta première canette pour commencer.')
+    await interrupteur.check()
+    await page.getByRole('button', { name: 'Enregistrer le message d’accueil' }).click()
+    await expect(page.getByText('Message d’accueil enregistré et actif')).toBeVisible()
+
+    // Nouveau compte : la popup d'accueil, une seule fois (même après rechargement).
+    const membre = await nouvellePage(browser)
+    await connecter(membre, email())
+    const popup = membre.getByRole('dialog', { name: 'Bienvenue parmi nous' })
+    await expect(popup).toContainText('Scanne ta première canette pour commencer.')
+    await popup.getByRole('button', { name: 'OK' }).click()
+    await expect(popup).toHaveCount(0)
+    const invitation = membre.getByRole('dialog', { name: /Installe StackMonsters/ })
+    if (await invitation.isVisible()) await invitation.getByRole('button', { name: /Compris|Plus tard/ }).click()
+    await membre.reload()
+    await expect(nav(membre, 'Accueil')).toBeVisible()
+    await membre.waitForTimeout(800)
+    await expect(membre.getByRole('dialog', { name: 'Bienvenue parmi nous' })).toHaveCount(0)
+  } finally {
+    // Remis à l'état initial pour les autres parcours : désactivé.
+    await page.getByRole('switch').uncheck()
+    await page.getByRole('button', { name: 'Enregistrer le message d’accueil' }).click()
+    await expect(page.getByText('Message d’accueil enregistré, désactivé')).toBeVisible()
+  }
 })

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Home, LayoutGrid, MessagesSquare, ScanLine, Settings2 } from 'lucide-react'
+import { avecDelai } from './delai'
 import { api, jeton, NonAutorise, renouvelerJeton } from './api'
 import AccueilPublic from './components/AccueilPublic'
 import Acces from './components/Acces'
@@ -28,6 +29,8 @@ type Vue = 'accueil' | 'collec' | 'wiki' | 'reglages' | 'stats' | 'echanges' | '
 
 /** Relecture des échanges (notifications, messages non lus) tant que l'appli est affichée. */
 const RELECTURE_ECHANGES_MS = 60_000
+/** Message d'accueil (#34) : au-delà, les autres popups s'affichent sans attendre. */
+const DELAI_ACCUEIL_MS = 3000
 type EtatAcces = 'verification' | 'accueil' | 'connexion' | 'prive'
 
 export default function App() {
@@ -202,6 +205,16 @@ export default function App() {
   // qu'une notification arrive pendant que l'appli est ouverte (le service worker la prévient) : la popup
   // s'affiche donc aussi à la réception, pas seulement à l'ouverture.
   const [annonce, setAnnonce] = useState<{ id: number; titre: string; texte: string; cree: number } | null>(null)
+  // Message d'accueil (#34) : lu une fois à la connexion ; un compte qui l'a déjà vu (ailleurs aussi) ne l'a plus.
+  // undefined tant que la réponse n'est pas arrivée : les autres popups (invitation à installer, messages, échanges)
+  // attendent, pour ne pas s'afficher puis disparaître sous l'accueil.
+  const [accueil, setAccueil] = useState<{ titre: string; texte: string } | null | undefined>(undefined)
+  useEffect(() => {
+    if (etatAcces !== 'prive') return
+    setAccueil(undefined)
+    // Au plus 3 s d'attente : sur un réseau lent, on continue sans accueil (il reste « non vu » pour la prochaine fois).
+    void avecDelai(api.accueil(), DELAI_ACCUEIL_MS, null).then((r) => setAccueil(r?.accueil ?? null))
+  }, [etatAcces])
   useEffect(() => {
     if (etatAcces !== 'prive') return
     const lire = () => {
@@ -444,7 +457,7 @@ export default function App() {
 
       {/* Message du propriétaire à tous : une fois par compte, à l'ouverture de l'appli. */}
       {/* Nouvelle notification d'échange : une popup à la fois, après le message du propriétaire. */}
-      {!annonce && popupEchange && (
+      {accueil === null && !annonce && popupEchange && (
         <PopupEchange
           texte={popupEchange.texte}
           surVoir={() => {
@@ -455,7 +468,19 @@ export default function App() {
         />
       )}
 
-      {annonce && (
+      {/* Message d'accueil d'un nouveau compte : avant tout le reste (messages à tous, échanges, installation). */}
+      {accueil && (
+        <Annonce
+          annonce={accueil}
+          accueil
+          surFermeture={() => {
+            void api.accueilVu().catch(() => {})
+            setAccueil(null)
+          }}
+        />
+      )}
+
+      {accueil === null && annonce && (
         <Annonce
           annonce={annonce}
           surFermeture={() => {
@@ -510,7 +535,7 @@ export default function App() {
       )}
 
       {message && <div className="toast">{message}</div>}
-      {invitation && <InvitationInstallation surFermeture={() => setInvitation(false)} />}
+      {invitation && accueil === null && <InvitationInstallation surFermeture={() => setInvitation(false)} />}
     </>
   )
 }
