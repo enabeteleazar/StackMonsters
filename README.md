@@ -394,6 +394,9 @@ Tests : `pnpm test` ; `TEST_DATABASE_URL=… python -m pytest tests` (jamais sur
 
 Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetable**, puis
 `E2E_DATABASE_URL=… E2E_PYTHON=.venv/bin/python pnpm exec playwright test`.
+**Une seule suite e2e à la fois sur la machine** : les ports 5273 et 8055 sont fixes, et il n'y a qu'une base e2e
+partagée, `sm_e2e`, recréée à chaque suite. Prévenir les autres avant d'en lancer une. Pas de base e2e par agent
+sans l'accord d'Eleazar.
 
 ## Limites assumées
 - Les limites par IP ralentissent l'inscription en masse sans l'empêcher (réseaux de nombreuses IP) ; pas de
