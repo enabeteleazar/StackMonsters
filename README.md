@@ -396,7 +396,7 @@ Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetabl
 `E2E_DATABASE_URL=… E2E_PYTHON=.venv/bin/python pnpm exec playwright test`.
 **Une seule suite e2e à la fois sur la machine** : les ports 5273 et 8055 sont fixes, et il n'y a qu'une base e2e
 partagée, `sm_e2e`. Prévenir les autres avant d'en lancer une. Pas de base e2e par agent sans l'accord d'Eleazar.
-Elle est **remise à zéro automatiquement avant chaque suite** (`e2e/global-setup.ts` → `scripts/reinit_e2e.py` :
+Elle est **remise à zéro automatiquement avant chaque suite**, juste avant le démarrage de l'API de test (`scripts/reinit_e2e.py` :
 schéma vidé puis toutes les migrations), sinon les compteurs anti-abus et les données des suites précédentes
 faussent les parcours. Garde-fou : refus, sans rien toucher, si la base n'est pas locale ou si son nom n'est pas
 `sm_e2e` ou `e2e_…`. La base doit seulement exister (créée une fois : `CREATE DATABASE sm_e2e`).

@@ -1,6 +1,6 @@
 """Remet à zéro la base des tests de bout en bout (E2E_DATABASE_URL) : schéma vidé, puis toutes les migrations.
 
-Appelé par e2e/global-setup.ts avant chaque suite Playwright, pour que les données et les compteurs anti-abus des
+Appelé par playwright.config.ts juste avant le démarrage de l'API de test (chaque suite), pour que les données et les compteurs anti-abus des
 suites précédentes ne faussent pas les parcours.
 
 Garde-fou : refus (sortie 1, rien n'est touché) si la base n'est pas LOCALE (localhost, 127.x, ::1, socket, conteneur

@@ -13,8 +13,6 @@ const python = process.env.E2E_PYTHON ?? 'python'
 
 export default defineConfig({
   testDir: 'e2e',
-  // Base e2e remise à zéro avant chaque suite (garde-fou : locale, « sm_e2e » ou « e2e_… » seulement).
-  globalSetup: './e2e/global-setup.ts',
   testMatch: '*.e2e.ts', // nom distinct : Vitest ne doit pas exécuter ces fichiers
   workers: 1,
   retries: process.env.CI ? 1 : 0,
@@ -27,7 +25,10 @@ export default defineConfig({
   use: { baseURL: 'http://127.0.0.1:5273', ...devices['Pixel 7'], reducedMotion: 'reduce', trace: 'retain-on-failure' },
   webServer: [
     {
-      command: `${python} -m uvicorn api.index:app --host 127.0.0.1 --port 8055 >> ${JOURNAL_API} 2>&1`,
+      // Base e2e remise à zéro AVANT le démarrage de l'API (scripts/reinit_e2e.py, garde-fou : locale, « sm_e2e » ou
+      // « e2e_… » seulement ; un refus empêche la suite de démarrer). Pas en globalSetup : Playwright attend que le
+      // serveur réponde avant de le lancer, et sur une base vide l'API répond 503, d'où un blocage.
+      command: `${python} scripts/reinit_e2e.py && ${python} -m uvicorn api.index:app --host 127.0.0.1 --port 8055 >> ${JOURNAL_API} 2>&1`,
       url: 'http://127.0.0.1:8055/auth/moi',
       ignoreHTTPSErrors: true,
       reuseExistingServer: false,
