@@ -1,13 +1,15 @@
 import { defineConfig, devices } from '@playwright/test'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 
 // Une base dédiée est obligatoire : ces tests créent et suppriment des comptes.
 const base = process.env.E2E_DATABASE_URL
 if (!base) throw new Error('E2E_DATABASE_URL manquante : utiliser une base jetable, jamais la production.')
 
+// Journal de l'API (les tests y lisent les codes de connexion). Il est vidé par la commande du serveur, au démarrage
+// d'uvicorn, une seule fois par suite : pas ici, car cette config est relue par chaque processus de test (et par le
+// nouveau processus lancé après un échec), ce qui effaçait le journal en cours de suite (#36).
 const JOURNAL_API = 'e2e-results/api.log'
 mkdirSync('e2e-results', { recursive: true })
-writeFileSync(JOURNAL_API, '')
 
 const python = process.env.E2E_PYTHON ?? 'python'
 
@@ -26,9 +28,9 @@ export default defineConfig({
   webServer: [
     {
       // Base e2e remise à zéro AVANT le démarrage de l'API (scripts/reinit_e2e.py, garde-fou : locale, « sm_e2e » ou
-      // « e2e_… » seulement ; un refus empêche la suite de démarrer). Pas en globalSetup : Playwright attend que le
-      // serveur réponde avant de le lancer, et sur une base vide l'API répond 503, d'où un blocage.
-      command: `${python} scripts/reinit_e2e.py && ${python} -m uvicorn api.index:app --host 127.0.0.1 --port 8055 >> ${JOURNAL_API} 2>&1`,
+      // « e2e_… » seulement ; un refus empêche la suite de démarrer) : ordre garanti, indépendant de Playwright.
+      // « > » vide le journal au démarrage d'uvicorn.
+      command: `${python} scripts/reinit_e2e.py && ${python} -m uvicorn api.index:app --host 127.0.0.1 --port 8055 > ${JOURNAL_API} 2>&1`,
       url: 'http://127.0.0.1:8055/auth/moi',
       ignoreHTTPSErrors: true,
       reuseExistingServer: false,
