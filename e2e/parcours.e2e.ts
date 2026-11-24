@@ -871,7 +871,12 @@ test('message d’accueil : désactivé par défaut, puis une seule fois pour un
     await connecter(membre, email())
     const popup = membre.getByRole('dialog', { name: 'Bienvenue parmi nous' })
     await expect(popup).toContainText('Scanne ta première canette pour commencer.')
-    await popup.getByRole('button', { name: 'OK' }).click()
+    // « Vu » est enregistré par le serveur : attendre sa réponse avant de recharger (sinon le rechargement peut
+    // annuler la requête, et la popup revient, à juste titre).
+    await Promise.all([
+      membre.waitForResponse((r) => r.url().endsWith('/api/accueil/vu') && r.status() === 204),
+      popup.getByRole('button', { name: 'OK' }).click(),
+    ])
     await expect(popup).toHaveCount(0)
     const invitation = membre.getByRole('dialog', { name: /Installe StackMonsters/ })
     if (await invitation.isVisible()) await invitation.getByRole('button', { name: /Compris|Plus tard/ }).click()
