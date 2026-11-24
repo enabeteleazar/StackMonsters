@@ -81,25 +81,43 @@ function appareil(): 'mobile' | 'desktop' {
   return mobile ? 'mobile' : 'desktop'
 }
 
+/** Plateforme désignée par une valeur d'utm_source ou par l'hôte du site référent (en minuscules) ; null sinon. */
+function plateformeDe(t: string): string | null {
+  if (!t) return null
+  if (/instagram/.test(t)) return 'instagram'
+  if (/facebook|^fb$|(^|\.)fb\.(com|me)$/.test(t)) return 'facebook'
+  if (/tiktok/.test(t)) return 'tiktok'
+  if (/twitter|^t\.co$|^x$|(^|\.)x\.com$/.test(t)) return 'twitter'
+  return null
+}
+
+/** Plateforme dont le navigateur intégré a ouvert la page (user-agent) ; null sinon. */
+function plateformeDuNavigateur(ua: string): string | null {
+  if (/Instagram/.test(ua)) return 'instagram'
+  if (/FBAN|FBAV|FB_IAB/.test(ua)) return 'facebook'
+  if (/musical_ly|BytedanceWebview|TikTok/i.test(ua)) return 'tiktok'
+  return null
+}
+
 /**
- * Site d'origine d'une visite, déduit du paramètre utm_source, du site référent et du navigateur intégré d'une appli
- * (Instagram, Facebook, TikTok). Aucune donnée supplémentaire : seulement la catégorie renvoyée.
+ * Site d'origine d'une visite (Instagram, Facebook, TikTok, Twitter/X, autre site, accès direct). Ordre de priorité
+ * fixe : utm_source (le lien posté par l'équipe), puis le site référent, puis le navigateur intégré d'une appli.
+ * Aucune donnée supplémentaire : seulement la catégorie renvoyée.
  */
 export function provenanceDe(ua: string, referent: string, recherche: string, hoteActuel: string): string {
   let hote = ''
   try {
-    hote = referent ? new URL(referent).hostname : ''
+    hote = referent ? new URL(referent).hostname.toLowerCase() : ''
   } catch {
     /* référent invalide */
   }
-  const utm = new URLSearchParams(recherche).get('utm_source') ?? ''
-  const s = `${utm} ${hote}`.toLowerCase()
-  if (/instagram/.test(s) || /Instagram/.test(ua)) return 'instagram'
-  if (/facebook|fb\.com|fb\.me|(^|\s)fb(\s|$)/.test(s) || /FBAN|FBAV|FB_IAB/.test(ua)) return 'facebook'
-  // TikTok : tiktok.com (et vm.tiktok.com), utm_source=tiktok, ou son navigateur intégré.
-  if (/tiktok/.test(s) || /musical_ly|BytedanceWebview|TikTok/i.test(ua)) return 'tiktok'
-  if (/twitter|(^|[\s.])t\.co(\s|$)|(^|[\s.])x\.com|(^|\s)x(\s|$)/.test(s)) return 'twitter'
-  return hote && hote !== hoteActuel ? 'other' : 'direct'
+  const utm = (new URLSearchParams(recherche).get('utm_source') ?? '').trim().toLowerCase()
+  return (
+    plateformeDe(utm) ??
+    plateformeDe(hote) ??
+    plateformeDuNavigateur(ua) ??
+    (hote && hote !== hoteActuel ? 'other' : 'direct')
+  )
 }
 
 function provenance(): string {
