@@ -134,7 +134,13 @@ export const api = {
       { method: 'POST' },
     ),
   adminAnnonces: () =>
-    requete<{ annonces: { id: number; titre: string; texte: string; cree: number; notifies: number }[]; appareils: number; push: boolean }>(
+    requete<{
+      annonces: { id: number; titre: string; texte: string; cree: number; notifies: number }[]
+      appareils: number
+      push: boolean
+      /** Notification de test disponible sur ce déploiement (NOTIF_TEST_ACTIVE=1, Preview seulement). */
+      notif_test: boolean
+    }>(
       '/admin/annonces',
     ),
   /** Message d'accueil (#34) : pour un compte qui ne l'a pas encore vu, s'il est actif. */

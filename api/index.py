@@ -2114,10 +2114,19 @@ def _service_de_notification(endpoint: str) -> str:
     return hote or "inconnu"
 
 
+def _notif_test_active() -> bool:
+    """Notification de test (#31) : seulement là où NOTIF_TEST_ACTIVE=1 (Preview), pas en production pour l'instant
+    (décision d'Eleazar du 23/11)."""
+    return os.environ.get("NOTIF_TEST_ACTIVE") == "1"
+
+
 @router.post("/admin/push/test")
 def admin_push_test(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depends(connexion)) -> dict:
     """Notification de test, envoyée UNIQUEMENT aux appareils abonnés du compte qui la demande (propriétaire).
-    N'écrit rien dans annonces : ni popup ni historique chez les membres. Les abonnements expirés sont effacés."""
+    N'écrit rien dans annonces : ni popup ni historique chez les membres. Les abonnements expirés sont effacés.
+    Sans NOTIF_TEST_ACTIVE=1, la route n'existe pas (404), pour tout le monde."""
+    if not _notif_test_active():
+        raise HTTPException(404, "Not Found")
     _reserve_au_proprietaire(u)
     with cx.transaction():
         abonnements = cx.execute(
@@ -2148,7 +2157,7 @@ def admin_annonces(u: dict = Depends(utilisateur), cx: psycopg.Connection = Depe
     with cx.transaction():
         annonces = cx.execute("SELECT id, titre, texte, cree, notifies FROM annonces ORDER BY id DESC LIMIT 20").fetchall()
         n = cx.execute("SELECT COUNT(*) AS n FROM abonnements_push").fetchone()["n"]
-    return {"annonces": annonces, "appareils": n, "push": _cles_vapid() is not None}
+    return {"annonces": annonces, "appareils": n, "push": _cles_vapid() is not None, "notif_test": _notif_test_active()}
 
 
 @router.get("/annonce")
