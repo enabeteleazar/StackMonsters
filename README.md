@@ -380,8 +380,23 @@ Dans `.env.local`, mets chaque valeur entre **guillemets simples** (`DATABASE_UR
 Les migrations de production passent par `scripts/migrer_schema.py`, avec le feu vert d'Eleazar, pas par `./dev.sh`.
 En local, saisis un e-mail : le code s'affiche dans le terminal (ligne `[dev]`).
 Tests : `pnpm test` ; `TEST_DATABASE_URL=… python -m pytest tests` (jamais sur la production).
+
+**Bases de test : une par agent** (décision d'Eleazar, 24/11/2026). Dans le conteneur local `stackmonsters-test-pg`
+(port 55432), chacun lance pytest sur **sa** base, `test_<prénom>`, par exemple
+`TEST_DATABASE_URL=postgresql://postgres:…@127.0.0.1:55432/test_donald .venv/bin/python -m pytest -q tests`.
+- **Jamais deux pytest en même temps sur la même base.** Les tests vident et recréent des tables : deux lancements
+  simultanés se perturbent, avec des échecs au hasard (« connexion requise »…). C'est la cause probable des échecs
+  isolés observés le 23/11 (voir #36).
+- La base `postgres` du conteneur ne sert plus aux tests partagés.
+- Créer une nouvelle base dans ce conteneur reste soumis à l'accord d'Eleazar ; ne supprimer que la sienne.
+- Chaque agent travaille dans son propre `git worktree` (par exemple `../StackMonsters-donald`), pas dans l'arbre
+  commun : du code non commité ne doit jamais être chargé par le `./dev.sh` d'un autre (incident du 23/11).
+
 Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetable**, puis
 `E2E_DATABASE_URL=… E2E_PYTHON=.venv/bin/python pnpm exec playwright test`.
+**Une seule suite e2e à la fois sur la machine** : les ports 5273 et 8055 sont fixes, et il n'y a qu'une base e2e
+partagée, `sm_e2e`, recréée à chaque suite. Prévenir les autres avant d'en lancer une. Pas de base e2e par agent
+sans l'accord d'Eleazar.
 
 ## Limites assumées
 - Les limites par IP ralentissent l'inscription en masse sans l'empêcher (réseaux de nombreuses IP) ; pas de
