@@ -81,20 +81,29 @@ function appareil(): 'mobile' | 'desktop' {
   return mobile ? 'mobile' : 'desktop'
 }
 
-function provenance(): string {
-  const ua = navigator.userAgent
+/**
+ * Site d'origine d'une visite, déduit du paramètre utm_source, du site référent et du navigateur intégré d'une appli
+ * (Instagram, Facebook, TikTok). Aucune donnée supplémentaire : seulement la catégorie renvoyée.
+ */
+export function provenanceDe(ua: string, referent: string, recherche: string, hoteActuel: string): string {
   let hote = ''
   try {
-    hote = document.referrer ? new URL(document.referrer).hostname : ''
+    hote = referent ? new URL(referent).hostname : ''
   } catch {
     /* référent invalide */
   }
-  const utm = new URLSearchParams(location.search).get('utm_source') ?? ''
+  const utm = new URLSearchParams(recherche).get('utm_source') ?? ''
   const s = `${utm} ${hote}`.toLowerCase()
   if (/instagram/.test(s) || /Instagram/.test(ua)) return 'instagram'
   if (/facebook|fb\.com|fb\.me|(^|\s)fb(\s|$)/.test(s) || /FBAN|FBAV|FB_IAB/.test(ua)) return 'facebook'
+  // TikTok : tiktok.com (et vm.tiktok.com), utm_source=tiktok, ou son navigateur intégré.
+  if (/tiktok/.test(s) || /musical_ly|BytedanceWebview|TikTok/i.test(ua)) return 'tiktok'
   if (/twitter|(^|[\s.])t\.co(\s|$)|(^|[\s.])x\.com|(^|\s)x(\s|$)/.test(s)) return 'twitter'
-  return hote && hote !== location.hostname ? 'other' : 'direct'
+  return hote && hote !== hoteActuel ? 'other' : 'direct'
+}
+
+function provenance(): string {
+  return provenanceDe(navigator.userAgent, document.referrer, location.search, location.hostname)
 }
 
 /** Envoie un événement ; n'échoue jamais et ne bloque jamais l'appli. */
