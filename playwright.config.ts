@@ -20,7 +20,9 @@ export default defineConfig({
   // l'accueil et de la connexion rendaient chaque image coûteuse dans Chromium sans écran ; sur une machine chargée,
   // Playwright attendait jusqu'à 12 s qu'un bouton soit « stable », et les parcours à plusieurs comptes dépassaient
   // les 30 s par test (échecs intermittents, par exemple « signaler un membre » au clic sur l'onglet Membres).
-  use: { baseURL: 'http://127.0.0.1:5273', ...devices['Pixel 7'], reducedMotion: 'reduce' },
+  // Trace gardée seulement en cas d'échec : de quoi analyser une instabilité sans ralentir les passages verts
+  // (« --trace off » en ligne de commande la désactive).
+  use: { baseURL: 'http://127.0.0.1:5273', ...devices['Pixel 7'], reducedMotion: 'reduce', trace: 'retain-on-failure' },
   webServer: [
     {
       command: `${python} -m uvicorn api.index:app --host 127.0.0.1 --port 8055 >> ${JOURNAL_API} 2>&1`,
