@@ -46,10 +46,12 @@ Réglages → « Supprimer mon compte », puis recopie ton adresse pour confirme
 sessions sur tous tes appareils sont effacés immédiatement. Tu peux aussi écrire à contact@stackmonsters.fr.
 (En 0.7.0, le bouton n'existe pas : écrire à contact@stackmonsters.fr.)
 
-**La suppression de mon compte est refusée.** (0.7.1, texte exact de l'appli à reprendre après la relecture de #3)
-Un signalement te concernant est en cours d'examen par l'équipe : la suppression depuis l'appli est possible
-une fois qu'il est traité. Écris-nous à contact@stackmonsters.fr, on traite ta demande.
-(Support : ne pas détailler le signalement, ni dire qui l'a fait. Transmettre la demande à Eleazar, qui décide.)
+**La suppression de mon compte est refusée.** (0.7.1)
+L'appli affiche : « Un signalement te concernant est en cours d'examen : écris à contact@stackmonsters.fr pour
+supprimer ton compte. »
+Réponse : « Bien reçu : ta demande de suppression est enregistrée. Elle sera traitée dès la fin de l'examen en
+cours, et au plus tard dans un mois. On te confirme par e-mail quand c'est fait. »
+(Support : ne pas détailler le signalement, ni dire qui l'a fait. Suivre la demande comme indiqué ci-dessous.)
 
 ## Appli et notifications
 
@@ -69,3 +71,22 @@ Autorise d'abord StackMonsters dans les réglages du téléphone (Notifications)
 > regarde vite.
 
 (Ne jamais demander le code de connexion.)
+
+## Processus support
+
+### Demandes de suppression de compte reçues à contact@
+
+Délai légal : **un mois** à compter de la réception de l'e-mail (droit à l'effacement). Cas typique : membre
+visé par un signalement non traité, pour qui l'appli refuse la suppression (0.7.1).
+
+1. **Jour 0, à réception** (Eleazar, ou Dennis qui transmet) : répondre avec le texte ci-dessus et noter la
+   demande dans un suivi tenu par Eleazar, hors du dépôt (date de réception, adresse du compte ; aucune autre
+   donnée). Jamais dans une issue GitHub.
+2. **Examen** : Eleazar traite le signalement dans l'Administration (« Marquer comme traité », ou blocage).
+3. **Suppression** : une fois le signalement traité, le membre peut supprimer son compte lui-même depuis les
+   Réglages ; sinon Eleazar le supprime depuis Administration → Comptes. Confirmer au membre par e-mail.
+4. **Relance** : si la demande est ouverte depuis plus de **3 semaines**, la QA prévient le chef de projet pour
+   qu'elle soit close avant la fin du mois.
+
+Ne jamais faire circuler l'adresse du membre ni le contenu du signalement entre agents : seulement « une demande
+de suppression reçue le JJ/MM ».
