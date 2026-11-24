@@ -2653,6 +2653,7 @@ def test_mail_entrant_ignore_les_autres_evenements(boite):
 def test_notification_de_test_seulement_vers_les_appareils_du_proprietaire(env, monkeypatch):
     c, codes = env
     monkeypatch.setenv("OWNER_EMAIL", C)
+    monkeypatch.setenv("NOTIF_TEST_ACTIVE", "1")
     monkeypatch.setenv("VAPID_PUBLIC_KEY", "cle-publique")
     monkeypatch.setenv("VAPID_PRIVATE_KEY", "cle-privee")
     envois = []
@@ -2686,9 +2687,28 @@ def test_notification_de_test_seulement_vers_les_appareils_du_proprietaire(env, 
     assert c.get("/api/annonce", headers=ha).json()["annonce"] is None
 
 
+def test_notification_de_test_desactivee_sans_la_variable(env, monkeypatch):
+    """#31 : sans NOTIF_TEST_ACTIVE=1 (la production), la route répond 404 à tous et l'Administration le sait."""
+    c, codes = env
+    monkeypatch.setenv("OWNER_EMAIL", C)
+    monkeypatch.delenv("NOTIF_TEST_ACTIVE", raising=False)
+    monkeypatch.setattr(ix, "envoyer_push", lambda *a: (_ for _ in ()).throw(AssertionError("aucun envoi")))
+    hc, ha = connecter(c, codes, C), connecter(c, codes, A)
+    assert c.post("/api/admin/push/test", headers=hc).status_code == 404
+    assert c.post("/api/admin/push/test", headers=ha).status_code == 404  # même réponse pour un membre
+    assert c.get("/api/admin/annonces", headers=hc).json()["notif_test"] is False
+    for valeur in ("0", "true", ""):  # seule la valeur exacte « 1 » l'active
+        monkeypatch.setenv("NOTIF_TEST_ACTIVE", valeur)
+        assert c.post("/api/admin/push/test", headers=hc).status_code == 404
+    monkeypatch.setenv("NOTIF_TEST_ACTIVE", "1")
+    assert c.get("/api/admin/annonces", headers=hc).json()["notif_test"] is True
+    assert c.post("/api/admin/push/test", headers=ha).status_code == 403  # activée : réservée au propriétaire
+
+
 def test_notification_de_test_sans_cles(env, monkeypatch):
     c, codes = env
     monkeypatch.setenv("OWNER_EMAIL", C)
+    monkeypatch.setenv("NOTIF_TEST_ACTIVE", "1")
     monkeypatch.delenv("VAPID_PUBLIC_KEY", raising=False)
     monkeypatch.delenv("VAPID_PRIVATE_KEY", raising=False)
     monkeypatch.setattr(ix, "envoyer_push", lambda *a: (_ for _ in ()).throw(AssertionError("aucun envoi")))

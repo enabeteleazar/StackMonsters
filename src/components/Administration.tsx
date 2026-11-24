@@ -377,14 +377,19 @@ function MessageATous({ echec, surMessage }: { echec: (e: unknown) => void; surM
         <Send size={17} /> Envoyer à tous
       </button>
 
-      <h2 className="reglages-titre">Tester sur mes appareils</h2>
-      <p className="sous">
-        Envoie une notification système uniquement aux appareils abonnés de ton compte. Les membres ne voient rien.
-      </p>
-      <button className="btn btn-fantome" disabled={test.occupe} onClick={() => void tester()}>
-        <BellRing size={17} /> M’envoyer une notification de test
-      </button>
-      {test.resultat && <p className="admin-test-resultat" role="status">{test.resultat}</p>}
+      {/* Notification de test (#31) : seulement là où le serveur l'active (Preview), pas en production. */}
+      {etat?.notif_test && (
+        <>
+          <h2 className="reglages-titre">Tester sur mes appareils</h2>
+          <p className="sous">
+            Envoie une notification système uniquement aux appareils abonnés de ton compte. Les membres ne voient rien.
+          </p>
+          <button className="btn btn-fantome" disabled={test.occupe} onClick={() => void tester()}>
+            <BellRing size={17} /> M’envoyer une notification de test
+          </button>
+          {test.resultat && <p className="admin-test-resultat" role="status">{test.resultat}</p>}
+        </>
+      )}
 
       {!!etat?.annonces.length && (
         <>

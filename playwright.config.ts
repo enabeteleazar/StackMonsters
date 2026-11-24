@@ -38,6 +38,8 @@ export default defineConfig({
         // Tous les comptes de test viennent de 127.0.0.1 : les limites par IP les bloqueraient.
         SM_COMPTES_MAX_IP_JOUR: '1000',
         SM_COMPTES_MAX_HEURE: '1000',
+        // Notification de test (#31) : active ici comme en Preview (absente en production : route 404, bouton caché).
+        NOTIF_TEST_ACTIVE: '1',
         SM_DEMANDES_MAX_HEURE: '1000',
         SM_DEMANDES_MAX_IP: '1000',
         SM_DEMANDES_MAX_IP_JOUR: '1000',
