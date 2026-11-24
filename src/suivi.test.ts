@@ -42,6 +42,20 @@ describe('provenanceDe', () => {
     }
   })
 
+  it('priorité fixe : utm_source, puis site référent, puis navigateur intégré', () => {
+    const TIKTOK_UA = `${CHROME} musical_ly_2023409030`
+    const INSTA_UA = 'Mozilla/5.0 (iPhone) Instagram 312.0'
+    expect(p(TIKTOK_UA, '', '?utm_source=instagram')).toBe('instagram') // l'utm l'emporte sur le navigateur
+    expect(p(INSTA_UA, '', '?utm_source=tiktok')).toBe('tiktok') // dans les deux sens
+    expect(p(INSTA_UA, 'https://www.tiktok.com/')).toBe('tiktok') // le référent l'emporte sur le navigateur
+    expect(p(CHROME, 'https://l.facebook.com/', '?utm_source=tiktok')).toBe('tiktok') // l'utm sur le référent
+    expect(p(INSTA_UA, '', '?utm_source=newsletter')).toBe('instagram') // utm inconnu : on passe à la suite
+    expect(p(CHROME, 'https://www.google.com/', '?utm_source=newsletter')).toBe('other')
+    expect(p(CHROME, '', '?utm_source=fb')).toBe('facebook')
+    expect(p(CHROME, 'https://x.com/stackmonsters')).toBe('twitter')
+    expect(p(CHROME, '', '?utm_source=x')).toBe('twitter')
+  })
+
   it('garde les autres provenances', () => {
     expect(p('Mozilla/5.0 (iPhone) Instagram 312.0')).toBe('instagram')
     expect(p(CHROME, 'https://l.facebook.com/l.php')).toBe('facebook')
