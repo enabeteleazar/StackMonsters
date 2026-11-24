@@ -385,12 +385,13 @@ Tests : `pnpm test` ; `TEST_DATABASE_URL=… python -m pytest tests` (jamais sur
 (port 55432), chacun lance pytest sur **sa** base, `test_<prénom>`, par exemple
 `TEST_DATABASE_URL=postgresql://postgres:…@127.0.0.1:55432/test_donald .venv/bin/python -m pytest -q tests`.
 - **Jamais deux pytest en même temps sur la même base.** Les tests vident et recréent des tables : deux lancements
-  simultanés se perturbent, avec des échecs au hasard (« connexion requise »…). C'est la cause des échecs isolés
-  observés le 23/11.
+  simultanés se perturbent, avec des échecs au hasard (« connexion requise »…). C'est la cause probable des échecs
+  isolés observés le 23/11 (voir #36).
 - La base `postgres` du conteneur ne sert plus aux tests partagés.
 - Créer une nouvelle base dans ce conteneur reste soumis à l'accord d'Eleazar ; ne supprimer que la sienne.
 - Chaque agent travaille dans son propre `git worktree` (par exemple `../StackMonsters-donald`), pas dans l'arbre
   commun : du code non commité ne doit jamais être chargé par le `./dev.sh` d'un autre (incident du 23/11).
+
 Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetable**, puis
 `E2E_DATABASE_URL=… E2E_PYTHON=.venv/bin/python pnpm exec playwright test`.
 
