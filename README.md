@@ -396,12 +396,10 @@ Bout en bout : `pnpm exec playwright install chromium`, migrer une base **jetabl
 `E2E_DATABASE_URL=… E2E_PYTHON=.venv/bin/python pnpm exec playwright test`.
 **Une seule suite e2e à la fois sur la machine** : les ports 5273 et 8055 sont fixes, et il n'y a qu'une base e2e
 partagée, `sm_e2e`. Prévenir les autres avant d'en lancer une. Pas de base e2e par agent sans l'accord d'Eleazar.
-Rien dans le dépôt ne la remet à zéro : la vider puis la migrer **avant chaque suite** (sinon les compteurs
-anti-abus et les données des suites précédentes faussent les parcours) :
-```bash
-docker exec stackmonsters-test-pg psql -U postgres -c "DROP DATABASE IF EXISTS sm_e2e" -c "CREATE DATABASE sm_e2e"
-DATABASE_URL=postgresql://postgres:…@127.0.0.1:55432/sm_e2e .venv/bin/python scripts/migrer_schema.py
-```
+Elle est **remise à zéro automatiquement avant chaque suite** (`e2e/global-setup.ts` → `scripts/reinit_e2e.py` :
+schéma vidé puis toutes les migrations), sinon les compteurs anti-abus et les données des suites précédentes
+faussent les parcours. Garde-fou : refus, sans rien toucher, si la base n'est pas locale ou si son nom n'est pas
+`sm_e2e` ou `e2e_…`. La base doit seulement exister (créée une fois : `CREATE DATABASE sm_e2e`).
 
 ## Limites assumées
 - Les limites par IP ralentissent l'inscription en masse sans l'empêcher (réseaux de nombreuses IP) ; pas de

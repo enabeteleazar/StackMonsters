@@ -13,6 +13,8 @@ const python = process.env.E2E_PYTHON ?? 'python'
 
 export default defineConfig({
   testDir: 'e2e',
+  // Base e2e remise à zéro avant chaque suite (garde-fou : locale, « sm_e2e » ou « e2e_… » seulement).
+  globalSetup: './e2e/global-setup.ts',
   testMatch: '*.e2e.ts', // nom distinct : Vitest ne doit pas exécuter ces fichiers
   workers: 1,
   retries: process.env.CI ? 1 : 0,
