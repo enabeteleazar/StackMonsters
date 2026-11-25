@@ -39,9 +39,10 @@ workflows:
         script: |
           xcodebuild \
             -project ios/App/App.xcodeproj \
-            -target App \
+            -scheme App \
             -sdk iphonesimulator \
             -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$CM_BUILD_DIR/build/ios/DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
