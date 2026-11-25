@@ -1,0 +1,53 @@
+workflows:
+  ios-unsigned:
+    name: StackMonsters - iOS unsigned build
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      node: v24.22.2
+      xcode: latest
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: feature/capacitor
+          include: true
+          source: true
+
+    scripts:
+      - name: Install pnpm
+        script: |
+          npm install --global pnpm@12.23.0
+          node --version
+          pnpm --version
+
+      - name: Install dependencies
+        script: |
+          pnpm install --frozen-lockfile
+
+      - name: Build web application
+        script: |
+          pnpm build
+
+      - name: Synchronize Capacitor iOS
+        script: |
+          pnpm exec cap sync ios
+
+      - name: Build iOS without code signing
+        script: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -target App \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath "$CM_BUILD_DIR/build/ios/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+    artifacts:
+      - build/ios/DerivedData/Build/Products/Debug-iphonesimulator/*.app
+      - /tmp/xcodebuild_logs/*.log
