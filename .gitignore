@@ -15,3 +15,7 @@ e2e-results/
 test-results/
 playwright-report/
 .ROADMAP.md
+
+# Local agents and backups
+.claude/
+StackMonsters-Backup/
